@@ -12,6 +12,8 @@
   "extensions": {
     "recommendations": [
       "ms-vscode.cpptools-extension-pack",
+      "streetsidesoftware.code-spell-checker",
+      "adrianwilczynski.namespace",
       "ms-dotnettools.csdevkit"
     ]
   }
