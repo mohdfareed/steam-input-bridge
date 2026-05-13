@@ -18,18 +18,38 @@ internal static class CliConnection
         Func<ViiperPhysicalMouse, CancellationToken, Task<int>> action,
         CancellationToken cancellationToken)
     {
-        ViiperOptions viiperOptions = CreateViiperOptions();
-        ViiperPhysicalMouse mouse = await ViiperPhysicalMouse.ConnectAsync(viiperOptions, cancellationToken).ConfigureAwait(false);
+        using CancellationTokenSource cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        void OnCancel(object? sender, ConsoleCancelEventArgs eventArgs)
+        {
+            eventArgs.Cancel = true;
+            cancellationSource.Cancel();
+        }
+
+        Console.CancelKeyPress += OnCancel;
 
         try
         {
-            await Task.Delay(DefaultSettleMs, cancellationToken).ConfigureAwait(false);
+            ViiperOptions viiperOptions = CreateViiperOptions();
+            ViiperPhysicalMouse mouse = await ViiperPhysicalMouse.ConnectAsync(viiperOptions, cancellationSource.Token).ConfigureAwait(false);
 
-            return await action(mouse, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(DefaultSettleMs, cancellationSource.Token).ConfigureAwait(false);
+                return await action(mouse, cancellationSource.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                await mouse.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationSource.IsCancellationRequested)
+        {
+            return 0;
         }
         finally
         {
-            await mouse.DisposeAsync().ConfigureAwait(false);
+            Console.CancelKeyPress -= OnCancel;
         }
     }
 

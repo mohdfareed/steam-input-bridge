@@ -6,35 +6,16 @@ using System.Threading.Tasks;
 using PhysicalMouse;
 using PhysicalMouse.Viiper;
 
-internal static class CliDiagnosticsCommands
+internal static class CliTestCommands
 {
+    private static readonly int[] SmokePresetDpis = [400, 800, 1600, 3200, 100, 6400];
+
+    private const double SmokeTravelInches = 0.25;
+    private const int SmokeMinSteps = 120;
+    private const int SmokeStepDelayMs = 2;
+
     // MARK: Commands
     // ========================================================================
-
-    internal static Command CreateSmokeCommand()
-    {
-        Command command = new("smoke", "Move out and back with a pause.");
-
-        command.SetAction(async (parseResult, cancellationToken) =>
-        {
-            const int distance = 300;
-            const int pauseMs = 1000;
-
-            _ = await CliConnection.ExecuteAsync(
-                async (mouse, ct) =>
-                {
-                    await CliConnection.PrintConnectionAsync(mouse).ConfigureAwait(false);
-                    await mouse.SendAsync(new MouseReport(MouseButtons.None, distance, 0, 0), ct).ConfigureAwait(false);
-                    await Task.Delay(pauseMs, ct).ConfigureAwait(false);
-                    await mouse.SendAsync(new MouseReport(MouseButtons.None, -distance, 0, 0), ct).ConfigureAwait(false);
-                    await Console.Out.WriteLineAsync($"Smoke OK. Moved +{distance}, waited {pauseMs} ms, then moved -{distance}.").ConfigureAwait(false);
-                    return 0;
-                },
-                cancellationToken).ConfigureAwait(false);
-        });
-
-        return command;
-    }
 
     internal static Command CreateBenchCommand()
     {
@@ -79,22 +60,52 @@ internal static class CliDiagnosticsCommands
         return command;
     }
 
-    internal static Command CreateSmoothCommand()
+    internal static Command CreateSmokeCommand()
     {
-        Command command = new("smooth", "Draw a slow circle for visual checking.");
+        Command command = new("smoke", "Run a horizontal sweep for visual checking.");
+        Option<int?> dpiOption = new("--dpi")
+        {
+            Description = "Lock to one DPI and loop until Ctrl+C.",
+        };
+
+        command.Options.Add(dpiOption);
+
+        dpiOption.Validators.Add(result =>
+        {
+            int? dpi = result.GetValue(dpiOption);
+            if (dpi.HasValue && dpi.Value < 1)
+            {
+                result.AddError("--dpi must be greater than 0.");
+            }
+        });
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            const int radius = 80;
-            const int steps = 240;
-            const int durationMs = 4000;
+            int? dpi = parseResult.GetValue(dpiOption);
 
             _ = await CliConnection.ExecuteAsync(
                 async (mouse, ct) =>
                 {
                     await CliConnection.PrintConnectionAsync(mouse).ConfigureAwait(false);
-                    await DrawCircleAsync(mouse, radius, steps, durationMs, ct).ConfigureAwait(false);
-                    await Console.Out.WriteLineAsync($"Smooth OK. Drew a circle with radius {radius}, {steps} steps, over {durationMs} ms.").ConfigureAwait(false);
+
+                    if (dpi.HasValue)
+                    {
+                        await Console.Out.WriteLineAsync($"DPI {dpi.Value}. Press Ctrl+C to stop.").ConfigureAwait(false);
+                        while (!ct.IsCancellationRequested)
+                        {
+                            await RunSmokeAsync(mouse, dpi.Value, ct).ConfigureAwait(false);
+                        }
+
+                        return 0;
+                    }
+
+                    foreach (int presetDpi in SmokePresetDpis)
+                    {
+                        await Console.Out.WriteLineAsync($"DPI {presetDpi}.").ConfigureAwait(false);
+                        await RunSmokeAsync(mouse, presetDpi, ct).ConfigureAwait(false);
+                    }
+
+                    await Console.Out.WriteLineAsync("Smoke OK.").ConfigureAwait(false);
                     return 0;
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -106,44 +117,36 @@ internal static class CliDiagnosticsCommands
     // MARK: Helpers
     // ========================================================================
 
-    private static async Task DrawCircleAsync(
+    private static async Task RunSmokeAsync(
         ViiperPhysicalMouse mouse,
-        int radius,
-        int steps,
-        int durationMs,
+        int dpi,
         CancellationToken cancellationToken)
     {
-        double stepDelayMs = durationMs / (double)steps;
-        double previousX = 0;
-        double previousY = 0;
+        int distance = Math.Max(1, (int)Math.Round(dpi * SmokeTravelInches));
+        int steps = Math.Max(SmokeMinSteps, distance);
+        await MoveLinearAsync(mouse, distance, steps, cancellationToken).ConfigureAwait(false);
+        await MoveLinearAsync(mouse, -distance, steps, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task MoveLinearAsync(
+        ViiperPhysicalMouse mouse,
+        int totalDelta,
+        int steps,
+        CancellationToken cancellationToken)
+    {
+        int sent = 0;
 
         for (int step = 1; step <= steps; step++)
         {
-            double angle = step * (Math.PI * 2.0 / steps);
-            double targetX = radius * Math.Cos(angle);
-            double targetY = radius * Math.Sin(angle);
-            int dx = (int)Math.Round(targetX - previousX);
-            int dy = (int)Math.Round(targetY - previousY);
-
-            if (dx != 0 || dy != 0)
+            int target = (int)Math.Round(totalDelta * step / (double)steps);
+            int delta = target - sent;
+            if (delta != 0)
             {
-                await mouse.SendAsync(new MouseReport(MouseButtons.None, dx, dy, 0), cancellationToken).ConfigureAwait(false);
+                await mouse.SendAsync(new MouseReport(MouseButtons.None, delta, 0, 0), cancellationToken).ConfigureAwait(false);
+                sent = target;
             }
 
-            previousX += dx;
-            previousY += dy;
-
-            if (step < steps)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(stepDelayMs), cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        int returnDx = -(int)Math.Round(previousX);
-        int returnDy = -(int)Math.Round(previousY);
-        if (returnDx != 0 || returnDy != 0)
-        {
-            await mouse.SendAsync(new MouseReport(MouseButtons.None, returnDx, returnDy, 0), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(SmokeStepDelayMs, cancellationToken).ConfigureAwait(false);
         }
     }
 

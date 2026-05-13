@@ -13,9 +13,8 @@ internal static class Program
         root.Subcommands.Add(CliBasicCommands.CreateMoveCommand());
         root.Subcommands.Add(CliBasicCommands.CreateClickCommand());
         root.Subcommands.Add(CliBasicCommands.CreateWheelCommand());
-        root.Subcommands.Add(CliDiagnosticsCommands.CreateSmokeCommand());
-        root.Subcommands.Add(CliDiagnosticsCommands.CreateBenchCommand());
-        root.Subcommands.Add(CliDiagnosticsCommands.CreateSmoothCommand());
+        root.Subcommands.Add(CliTestCommands.CreateSmokeCommand());
+        root.Subcommands.Add(CliTestCommands.CreateBenchCommand());
         return root.Parse(args).InvokeAsync();
     }
 }
