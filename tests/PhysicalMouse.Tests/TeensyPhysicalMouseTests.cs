@@ -4,15 +4,11 @@ using PhysicalMouse.Teensy;
 
 namespace PhysicalMouse.Tests;
 
-/// <summary>
-/// Tests for <see cref="TeensyPhysicalMouse" />.
-/// </summary>
+/// <summary>Tests for <see cref="TeensyPhysicalMouse" />.</summary>
 [TestClass]
 public sealed class TeensyPhysicalMouseTests
 {
-    /// <summary>
-    /// Checks disconnected state.
-    /// </summary>
+    /// <summary>Checks disconnected state.</summary>
     [TestMethod]
     public async Task IsConnectedIsFalse()
     {
@@ -28,9 +24,7 @@ public sealed class TeensyPhysicalMouseTests
         }
     }
 
-    /// <summary>
-    /// Checks the current placeholder behavior.
-    /// </summary>
+    /// <summary>Checks the current placeholder behavior.</summary>
     [TestMethod]
     public async Task SendAsyncThrowsNotImplementedException()
     {

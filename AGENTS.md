@@ -6,6 +6,15 @@ This repository is for forwarding mouse input to a physical mouse transport.
 Keep discussion and code scoped to this repository only.
 Do not mention other applications, launch flows, or the larger system context.
 
+## Maintenance Rule
+
+Treat this file as living project memory.
+
+- Keep `AGENTS.md` updated when you learn stable preferences, conventions, design decisions, workflow expectations, or repo-specific rules that should carry forward to future tasks.
+- Add only durable guidance that is likely to matter again.
+- Prefer updating this file during the same task where the preference or rule becomes clear.
+- Do not add temporary notes, one-off debugging details, or stale implementation trivia.
+
 ## Current Stack
 
 - .NET 10

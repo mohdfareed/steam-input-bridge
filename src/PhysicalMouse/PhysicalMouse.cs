@@ -4,27 +4,19 @@ using System.Threading.Tasks;
 
 namespace PhysicalMouse;
 
-/// <summary>
-/// Sends mouse reports to a transport.
-/// </summary>
+/// <summary>Sends mouse reports to a transport.</summary>
 public interface IPhysicalMouse : IAsyncDisposable
 {
-    /// <summary>
-    /// Gets whether the transport is connected.
-    /// </summary>
+    /// <summary>Gets whether the transport is connected.</summary>
     bool IsConnected { get; }
 
-    /// <summary>
-    /// Sends one mouse report.
-    /// </summary>
+    /// <summary>Sends one mouse report.</summary>
     /// <param name="report">Report to send.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     ValueTask SendAsync(MouseReport report, CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Mouse button flags.
-/// </summary>
+/// <summary>Mouse button flags.</summary>
 [Flags]
 public enum MouseButtons
 {
@@ -42,9 +34,7 @@ public enum MouseButtons
     Forward = 1 << 4,
 }
 
-/// <summary>
-/// Relative mouse input.
-/// </summary>
+/// <summary>Relative mouse input.</summary>
 /// <param name="Buttons">Current button state.</param>
 /// <param name="DeltaX">Horizontal delta.</param>
 /// <param name="DeltaY">Vertical delta.</param>
@@ -55,14 +45,10 @@ public readonly record struct MouseReport(
     int DeltaY,
     int WheelDelta)
 {
-    /// <summary>
-    /// Empty input.
-    /// </summary>
+    /// <summary>Empty input.</summary>
     public static MouseReport Empty => default;
 
-    /// <summary>
-    /// Gets whether the report has no input.
-    /// </summary>
+    /// <summary>Gets whether the report has no input.</summary>
     public bool IsEmpty =>
         Buttons == MouseButtons.None &&
         DeltaX == 0 &&

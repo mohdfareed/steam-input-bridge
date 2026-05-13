@@ -4,9 +4,7 @@ using System.Threading.Tasks;
 
 namespace PhysicalMouse.Teensy;
 
-/// <summary>
-/// Teensy 4.0 transport.
-/// </summary>
+/// <summary>Teensy 4.0 transport.</summary>
 public sealed class TeensyPhysicalMouse : IPhysicalMouse
 {
     /// <inheritdoc />
