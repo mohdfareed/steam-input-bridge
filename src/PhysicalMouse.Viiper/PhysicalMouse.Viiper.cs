@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Viiper.Client;
 using Viiper.Client.Devices.Mouse;
 using Viiper.Client.Types;
@@ -27,12 +28,16 @@ public sealed class ViiperOptions
 
     /// <summary>Gets whether a created device should be removed on dispose.</summary>
     public bool RemoveCreatedDeviceOnDispose { get; init; }
+
+    /// <summary>Logger for transport lifecycle events.</summary>
+    public ILogger? Logger { get; init; }
 }
 
 /// <summary>VIIPER transport.</summary>
 public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDisposable
 {
     private readonly ViiperClient? _client;
+    private readonly ILogger? _logger;
     private readonly bool _removeCreatedDeviceOnDispose;
     private ViiperDevice? _device;
     private int _isConnected;
@@ -42,9 +47,11 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
 
     /// <summary>Wraps an existing VIIPER device.</summary>
     /// <param name="device">Connected device stream.</param>
-    public ViiperPhysicalMouse(ViiperDevice device)
+    /// <param name="logger">Logger for lifecycle events.</param>
+    public ViiperPhysicalMouse(ViiperDevice device, ILogger? logger = null)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
+        _logger = logger;
         _isConnected = 1;
         HookDisconnect(device);
     }
@@ -54,10 +61,12 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
         ViiperDevice device,
         uint busId,
         string deviceId,
+        ILogger? logger,
         bool removeCreatedDeviceOnDispose)
     {
         _client = client;
         _device = device;
+        _logger = logger;
         BusId = busId;
         DeviceId = deviceId;
         _removeCreatedDeviceOnDispose = removeCreatedDeviceOnDispose;
@@ -97,6 +106,11 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
             // reconnect to a known device first when sticky IDs are available
             if (options.BusId.HasValue && !string.IsNullOrWhiteSpace(options.DeviceId))
             {
+                if (options.Logger is not null)
+                {
+                    Log.ConnectingKnownDevice(options.Logger, options.BusId.Value, options.DeviceId, null);
+                }
+
                 ViiperDevice device = await client.ConnectDeviceAsync(
                     options.BusId.Value,
                     options.DeviceId,
@@ -107,6 +121,7 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
                     device,
                     options.BusId.Value,
                     options.DeviceId,
+                    options.Logger,
                     removeCreatedDeviceOnDispose: false);
             }
 
@@ -115,6 +130,11 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
             Device? existingDevice = await FindReusableDeviceAsync(client, resolvedBusId, cancellationToken).ConfigureAwait(false);
             if (existingDevice is not null)
             {
+                if (options.Logger is not null)
+                {
+                    Log.ReusingDevice(options.Logger, existingDevice.BusID, existingDevice.DevId, null);
+                }
+
                 ViiperDevice device = await client.ConnectDeviceAsync(
                     existingDevice.BusID,
                     existingDevice.DevId,
@@ -125,7 +145,13 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
                     device,
                     existingDevice.BusID,
                     existingDevice.DevId,
+                    options.Logger,
                     removeCreatedDeviceOnDispose: false);
+            }
+
+            if (options.Logger is not null)
+            {
+                Log.CreatingDevice(options.Logger, resolvedBusId, null);
             }
 
             Device createdDevice = await client.BusDeviceAddAsync(
@@ -148,6 +174,7 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
                     device,
                     createdDevice.BusID,
                     createdDevice.DevId,
+                    options.Logger,
                     options.RemoveCreatedDeviceOnDispose);
             }
             catch
@@ -200,6 +227,10 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
             if (_removeCreatedDeviceOnDispose && _client is not null && BusId.HasValue && !string.IsNullOrWhiteSpace(DeviceId))
             {
                 _ = await _client.BusDeviceRemoveAsync(BusId.Value, DeviceId, CancellationToken.None).ConfigureAwait(false);
+                if (_logger is not null)
+                {
+                    Log.RemovedDevice(_logger, BusId.Value, DeviceId, null);
+                }
             }
         }
         finally
@@ -274,7 +305,61 @@ public sealed class ViiperPhysicalMouse : IPhysicalMouse, IDisposable, IAsyncDis
         device.OnDisconnect = () =>
         {
             _ = Interlocked.Exchange(ref _isConnected, 0);
+            if (_logger is not null)
+            {
+                if (BusId.HasValue && !string.IsNullOrWhiteSpace(DeviceId))
+                {
+                    Log.DisconnectedKnownDevice(_logger, BusId.Value, DeviceId, null);
+                }
+                else
+                {
+                    Log.DisconnectedDevice(_logger, null);
+                }
+            }
+
             onDisconnect?.Invoke();
         };
+    }
+
+    // MARK: Logging
+    // ========================================================================
+
+    private static class Log
+    {
+        public static readonly Action<ILogger, uint, string, Exception?> ConnectingKnownDevice =
+            LoggerMessage.Define<uint, string>(
+                LogLevel.Information,
+                new EventId(1, nameof(ConnectingKnownDevice)),
+                "Connecting to VIIPER mouse device {BusId}/{DeviceId}.");
+
+        public static readonly Action<ILogger, uint, string, Exception?> ReusingDevice =
+            LoggerMessage.Define<uint, string>(
+                LogLevel.Information,
+                new EventId(2, nameof(ReusingDevice)),
+                "Reusing VIIPER mouse device {BusId}/{DeviceId}.");
+
+        public static readonly Action<ILogger, uint, Exception?> CreatingDevice =
+            LoggerMessage.Define<uint>(
+                LogLevel.Information,
+                new EventId(3, nameof(CreatingDevice)),
+                "Creating VIIPER mouse device on bus {BusId}.");
+
+        public static readonly Action<ILogger, uint, string, Exception?> RemovedDevice =
+            LoggerMessage.Define<uint, string>(
+                LogLevel.Information,
+                new EventId(4, nameof(RemovedDevice)),
+                "Removed VIIPER mouse device {BusId}/{DeviceId}.");
+
+        public static readonly Action<ILogger, uint, string, Exception?> DisconnectedKnownDevice =
+            LoggerMessage.Define<uint, string>(
+                LogLevel.Information,
+                new EventId(5, nameof(DisconnectedKnownDevice)),
+                "VIIPER mouse device disconnected ({BusId}/{DeviceId}).");
+
+        public static readonly Action<ILogger, Exception?> DisconnectedDevice =
+            LoggerMessage.Define(
+                LogLevel.Information,
+                new EventId(6, nameof(DisconnectedDevice)),
+                "VIIPER mouse device disconnected.");
     }
 }

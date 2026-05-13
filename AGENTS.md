@@ -70,6 +70,15 @@ Do not set `LangVersion=latest`.
 - Keep tests in the solution.
 - Keep tests focused on behavior and mapping, not internal structure.
 
+## Logging Rules
+
+- Do not write to console directly from library code.
+- Do not create or manage log files from library code.
+- Use `ILogger` only when logging is needed.
+- Keep logging at the transport level, not the shared base interface.
+- Log lifecycle events only.
+- Do not log per-report hot-path traffic.
+
 ## Scripts
 
 - `scripts/build.ps1`: build the solution
