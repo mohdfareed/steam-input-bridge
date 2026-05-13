@@ -58,6 +58,8 @@ Do not set `LangVersion=latest`.
 - Map `MouseReport` directly to VIIPER mouse input.
 - Fail on unsupported ranges rather than clamping silently.
 - Keep implementation thin and explicit.
+- Use one VIIPER session model: create one mouse device on connect and remove it on dispose.
+- Do not add caller-controlled VIIPER device reuse or cleanup policy unless explicitly requested.
 
 ## Teensy Notes
 
@@ -135,4 +137,6 @@ The separator line is always 79 characters wide.
 - Avoid self-referential wording like "minimal" in project-facing text.
 - Use explicit `using` directives.
 - Prefer a small number of coherent files over many tiny files when the types are tightly related.
+- For CLI code, prefer a few coherent files grouped by command family or shared concerns.
+- Do not collapse the CLI into one large file, and do not split it into many tiny files with barely any logic.
 - Preserve the existing repo tone and conventions once established.

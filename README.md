@@ -8,7 +8,7 @@ Project for physical mouse forwarding transports.
 - `src/PhysicalMouse.Viiper`: VIIPER transport
 - `src/PhysicalMouse.Teensy`: Teensy 4.0 transport
 - `tests/PhysicalMouse.Tests`: tests
-- `tools/PhysicalMouse.Cli`: CLI for smoke tests and send benchmarks
+- `tools/PhysicalMouse.Cli`: CLI for connection checks, visible motion tests, and send benchmarks
 - `firmware`: microcontroller-side work
 
 ## Scripts
