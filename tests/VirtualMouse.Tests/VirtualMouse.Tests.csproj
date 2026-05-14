@@ -14,7 +14,6 @@
     <ProjectReference Include="..\..\src\PhysicalMouse\PhysicalMouse.csproj" />
     <ProjectReference Include="..\..\src\VirtualMouse\VirtualMouse.csproj" />
     <ProjectReference Include="..\..\src\VirtualMouse.RawInput\VirtualMouse.RawInput.csproj" />
-    <ProjectReference Include="..\..\src\VirtualMouse.SteamInput\VirtualMouse.SteamInput.csproj" />
   </ItemGroup>
 
   <ItemGroup>

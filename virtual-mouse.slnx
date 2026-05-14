@@ -6,7 +6,6 @@
     <Project Path="src/PhysicalMouse.Viiper/PhysicalMouse.Viiper.csproj" />
     <Project Path="src/VirtualMouse/VirtualMouse.csproj" />
     <Project Path="src/VirtualMouse.RawInput/VirtualMouse.RawInput.csproj" />
-    <Project Path="src/VirtualMouse.SteamInput/VirtualMouse.SteamInput.csproj" />
   </Folder>
 
   <Folder Name="/tests/">
@@ -16,8 +15,6 @@
 
   <Folder Name="/tools/">
     <Project Path="tools/PhysicalMouse.Cli/PhysicalMouse.Cli.csproj" />
-    <Project Path="tools/SteamInput.TestBench/SteamInput.TestBench.csproj" />
-    <Project Path="tools/SteamInput.TestBench.Launcher/SteamInput.TestBench.Launcher.csproj" />
   </Folder>
 
 </Solution>

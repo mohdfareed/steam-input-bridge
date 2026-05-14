@@ -5,7 +5,6 @@ using System.Threading;
 using PhysicalMouse;
 using VirtualMouse;
 using VirtualMouse.RawInput;
-using VirtualMouse.SteamInput;
 
 internal static class CliInputCommands
 {
@@ -17,7 +16,6 @@ internal static class CliInputCommands
     {
         Command command = new("input", "Read mouse input sources.");
         command.Subcommands.Add(CreateRawCommand());
-        command.Subcommands.Add(CreateSteamCommand());
         return command;
     }
 
@@ -34,25 +32,6 @@ internal static class CliInputCommands
                 .ConfigureAwait(false);
 
             await Console.Out.WriteLineAsync("input raw: running. Ctrl+C to stop.").ConfigureAwait(false);
-            RunInput(input, cancellationToken);
-        });
-
-        return command;
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static Command CreateSteamCommand()
-    {
-        Command command = new("steam", "Read Steam Input mouse reports.");
-        command.SetAction(async (parseResult, cancellationToken) =>
-        {
-            _ = parseResult;
-
-            using SteamInputVirtualMouse input = await SteamInputVirtualMouse
-                .ConnectAsync(cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-            await Console.Out.WriteLineAsync("input steam: running. Ctrl+C to stop.").ConfigureAwait(false);
             RunInput(input, cancellationToken);
         });
 

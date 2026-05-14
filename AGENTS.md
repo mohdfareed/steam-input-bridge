@@ -30,12 +30,9 @@ Do not set `LangVersion=latest`.
 - `src/PhysicalMouse.Teensy`: Teensy 4.0 transport
 - `src/VirtualMouse`: shared input contracts
 - `src/VirtualMouse.RawInput`: Windows Raw Input source
-- `src/VirtualMouse.SteamInput`: Steam Input source placeholder
 - `tests/PhysicalMouse.Tests`: tests
 - `tests/VirtualMouse.Tests`: virtual mouse tests
 - `tools/PhysicalMouse.Cli`: CLI harness
-- `tools/SteamInput.TestBench`: interactive Steam Input testbench
-- `tools/SteamInput.TestBench.Launcher`: publishes and launches the latest Steam Input testbench for Steam shortcuts
 - `firmware`: microcontroller-side code
 - `scripts`: repo scripts
 
@@ -79,16 +76,9 @@ Do not set `LangVersion=latest`.
 - Teensy 4.0 is planned but not implemented yet.
 - Placeholders may throw `NotImplementedException` until the transport is designed.
 
-## Steam Input Notes
-
-- Use Steamworks.NET as the C# binding unless there is a concrete reason to switch.
-- Steamworks.NET is the managed wrapper only; keep a native Steamworks runtime dependency so `steam_api64.dll` is published with Steam Input tools.
-- Keep Steam API lifecycle ownership explicit; do not silently shut down Steam API if the caller owns it.
-- Follow Valve's action-based Steam Input model; do not build around controller-specific assumptions.
-- Keep the Steam Input testbench interactive and use the launcher executable for Steam non-Steam shortcuts so each run refreshes the testbench build.
-
 ## Raw Input Notes
 
+- Treat Raw Input as the only virtual mouse input implementation until explicitly revisited.
 - Follow Microsoft's documented Raw Input model first.
 - Prefer the performance-oriented documented path over simplifying code by adding per-report allocations or extra native calls.
 - In a `WM_INPUT` handler, read the current event from `lParam` with `GetRawInputData`, then use `GetRawInputBuffer` only to drain additional queued events.
@@ -116,8 +106,6 @@ Do not set `LangVersion=latest`.
 
 - `scripts/build.ps1`: build the solution
 - `scripts/test.ps1`: run tests
-- `scripts/steam.ps1`: publish the Steam Input testbench launcher executable
-- `scripts/builld-testbench.ps1`: publish the Steam Input testbench executable
 
 ## Documentation Style
 
