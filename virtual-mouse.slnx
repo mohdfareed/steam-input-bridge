@@ -16,6 +16,8 @@
 
   <Folder Name="/tools/">
     <Project Path="tools/PhysicalMouse.Cli/PhysicalMouse.Cli.csproj" />
+    <Project Path="tools/SteamInput.TestBench/SteamInput.TestBench.csproj" />
+    <Project Path="tools/SteamInput.TestBench.Launcher/SteamInput.TestBench.Launcher.csproj" />
   </Folder>
 
 </Solution>

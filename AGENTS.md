@@ -34,6 +34,8 @@ Do not set `LangVersion=latest`.
 - `tests/PhysicalMouse.Tests`: tests
 - `tests/VirtualMouse.Tests`: virtual mouse tests
 - `tools/PhysicalMouse.Cli`: CLI harness
+- `tools/SteamInput.TestBench`: interactive Steam Input testbench
+- `tools/SteamInput.TestBench.Launcher`: publishes and launches the latest Steam Input testbench for Steam shortcuts
 - `firmware`: microcontroller-side code
 - `scripts`: repo scripts
 
@@ -82,6 +84,7 @@ Do not set `LangVersion=latest`.
 - Use Steamworks.NET as the C# binding unless there is a concrete reason to switch.
 - Keep Steam API lifecycle ownership explicit; do not silently shut down Steam API if the caller owns it.
 - Follow Valve's action-based Steam Input model; do not build around controller-specific assumptions.
+- Keep the Steam Input testbench interactive and use the launcher executable for Steam non-Steam shortcuts so each run refreshes the testbench build.
 
 ## Raw Input Notes
 
@@ -112,7 +115,8 @@ Do not set `LangVersion=latest`.
 
 - `scripts/build.ps1`: build the solution
 - `scripts/test.ps1`: run tests
-- `scripts/pack.ps1`: pack the solution
+- `scripts/steam.ps1`: publish the Steam Input testbench launcher executable
+- `scripts/builld-testbench.ps1`: publish the Steam Input testbench executable
 
 ## Documentation Style
 

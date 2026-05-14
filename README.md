@@ -15,8 +15,9 @@ Project for physical mouse forwarding transports.
 
 - `.\scripts\build.ps1`
 - `.\scripts\test.ps1`
-- `.\scripts\pack.ps1`
 - `.\scripts\cli.ps1`
+- `.\scripts\steam.ps1`
+- `.\scripts\builld-testbench.ps1`
 
 ## TODO
 
