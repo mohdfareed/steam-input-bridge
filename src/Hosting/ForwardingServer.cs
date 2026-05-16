@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Inputs.RawInput;
 using Inputs.Sdl;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Outputs.Viiper;
 
@@ -19,8 +20,8 @@ public enum ForwardingRouteKind
     Xpad,
 }
 
-/// <summary>Local forwarding host runtime options.</summary>
-public sealed record ForwardingHostRuntimeOptions
+/// <summary>Local forwarding server options.</summary>
+public sealed record ForwardingServerOptions
 {
     /// <summary>Route to host.</summary>
     public ForwardingRouteKind Route { get; init; }
@@ -35,15 +36,19 @@ public sealed record ForwardingHostRuntimeOptions
     public ILogger? Logger { get; init; }
 }
 
-/// <summary>Builds and runs local forwarding hosts.</summary>
-public static class ForwardingHostRuntime
+/// <summary>Runs a local forwarding server.</summary>
+public sealed class ForwardingServer(ForwardingServerOptions options) : IHostedService, IAsyncDisposable
 {
+    private readonly ForwardingServerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
+    private CancellationTokenSource? _runCancellation;
+    private Task? _runTask;
+
     /// <summary>Gets the control pipe name for a route.</summary>
-    public static string GetControlPipeName(ForwardingRouteKind route)
+    public static string GetPipeName(ForwardingRouteKind route)
     {
         return route switch
         {
-            ForwardingRouteKind.Mouse => ForwardingHostControlServer.DefaultPipeName,
+            ForwardingRouteKind.Mouse => ForwardingHostServer.DefaultPipeName,
             ForwardingRouteKind.Xpad => "Hosting.xpad",
             _ => throw new ArgumentOutOfRangeException(nameof(route)),
         };
@@ -60,10 +65,63 @@ public static class ForwardingHostRuntime
         };
     }
 
+    /// <summary>Starts the server in the background.</summary>
+    public Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        if (_runTask is not null)
+        {
+            throw new InvalidOperationException("Forwarding server is already running.");
+        }
+
+        _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _runTask = RunCoreAsync(_options, _runCancellation.Token);
+        return _runTask.IsCompleted ? _runTask : Task.CompletedTask;
+    }
+
+    /// <summary>Stops a background server started with <see cref="StartAsync" />.</summary>
+    public async Task StopAsync(CancellationToken cancellationToken = default)
+    {
+        Task? task = _runTask;
+        if (task is null)
+        {
+            return;
+        }
+
+        if (_runCancellation is not null)
+        {
+            await _runCancellation.CancelAsync().ConfigureAwait(false);
+        }
+
+        try
+        {
+            await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_runCancellation?.IsCancellationRequested == true)
+        {
+        }
+        finally
+        {
+            _runTask = null;
+            _runCancellation?.Dispose();
+            _runCancellation = null;
+        }
+    }
+
     /// <summary>Runs a local host until cancelled.</summary>
-    public static async Task RunAsync(
-        ForwardingHostRuntimeOptions options,
-        CancellationToken cancellationToken = default)
+    public Task RunAsync(CancellationToken cancellationToken = default)
+    {
+        return RunCoreAsync(_options, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static async Task RunCoreAsync(
+        ForwardingServerOptions options,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(options.Viiper);
@@ -73,9 +131,9 @@ public static class ForwardingHostRuntime
             throw new InvalidOperationException("Another forwarding host is already running for this route.");
         IForwardingRoute route = await CreateRouteAsync(options, cancellationToken).ConfigureAwait(false);
         ForwardingHost host = new(route, options.Logger);
-        ForwardingHostControlServer server = new(
+        ForwardingHostServer server = new(
             host,
-            GetControlPipeName(options.Route),
+            GetPipeName(options.Route),
             options.Logger);
 
         using CancellationTokenSource runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -89,7 +147,7 @@ public static class ForwardingHostRuntime
     }
 
     private static Task<IForwardingRoute> CreateRouteAsync(
-        ForwardingHostRuntimeOptions options,
+        ForwardingServerOptions options,
         CancellationToken cancellationToken)
     {
 #pragma warning disable CA2000 // Ownership transfers to ForwardingHost.

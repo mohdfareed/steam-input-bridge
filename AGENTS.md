@@ -77,6 +77,8 @@ Do not set `LangVersion=latest`.
 - Keep hot-path performance and benchmarkable boundaries as top priorities when shaping shared interfaces and transport code.
 - Prefer one local host process for production forwarding. The host owns Raw Input and the physical output transport; other processes should use control IPC instead of running their own forwarding loops.
 - Keep host IPC control-only. Do not forward per-report mouse traffic over IPC unless explicitly revisited.
+- Expose Hosting through normal app-facing `ForwardingServer` and `ForwardingClient` APIs. Keep named-pipe control details behind those types.
+- `ForwardingServer` should remain usable as a Microsoft `IHostedService` so CLI, tray, and WPF app hosts can compose it through Generic Host patterns.
 - Host routes are explicit. Mouse uses the default host control pipe; xpad uses a route-specific host control pipe and ownership name.
 - Host single-instance ownership must be safe across async continuations; do not use a thread-affine lock that has to be released on the acquiring thread.
 - Put durable Steam Input configuration forcing code in `src` as reusable library code; CLI tools should only expose or orchestrate it.

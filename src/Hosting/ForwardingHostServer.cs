@@ -9,8 +9,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Hosting;
 
-/// <summary>Serves local forwarding host control commands.</summary>
-public sealed class ForwardingHostControlServer(
+/// <summary>Serves local forwarding control commands.</summary>
+internal sealed class ForwardingHostServer(
     ForwardingHost host,
     string pipeName,
     ILogger? logger = null)
@@ -22,7 +22,7 @@ public sealed class ForwardingHostControlServer(
 
     /// <summary>Creates a server using the default pipe name.</summary>
     /// <param name="host">Forwarding host.</param>
-    public ForwardingHostControlServer(ForwardingHost host)
+    public ForwardingHostServer(ForwardingHost host)
         : this(host, DefaultPipeName, logger: null)
     {
     }
@@ -30,7 +30,7 @@ public sealed class ForwardingHostControlServer(
     /// <summary>Creates a server using the default pipe name.</summary>
     /// <param name="host">Forwarding host.</param>
     /// <param name="logger">Logger for lifecycle events.</param>
-    public ForwardingHostControlServer(ForwardingHost host, ILogger? logger)
+    public ForwardingHostServer(ForwardingHost host, ILogger? logger)
         : this(host, DefaultPipeName, logger)
     {
     }
@@ -159,7 +159,7 @@ internal static class ForwardingHostControlProtocol
         };
     }
 
-    public static ForwardingHostStatus ParseStatus(string response)
+    public static ForwardingStatus ParseStatus(string response)
     {
         const string Prefix = "STATUS route=";
         const string EnabledSeparator = " enabled=";
@@ -178,7 +178,7 @@ internal static class ForwardingHostControlProtocol
         ThrowIfInvalidSeparator(connectedIndex);
         ThrowIfInvalidSeparator(countIndex);
 
-        return new ForwardingHostStatus(
+        return new ForwardingStatus(
             response[Prefix.Length..enabledIndex],
             bool.Parse(response[(enabledIndex + EnabledSeparator.Length)..connectedIndex]),
             bool.Parse(response[(connectedIndex + ConnectedSeparator.Length)..countIndex]),

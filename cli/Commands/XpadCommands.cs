@@ -103,7 +103,7 @@ internal static class XpadCommands
         Command command = new(name, description);
         command.SetAction(async (_, cancellationToken) =>
         {
-            ForwardingHostEnableLease? lease = await HostCommands
+            ForwardingEnableLease? lease = await HostCommands
                 .TryEnableHostAsync(ForwardingRouteKind.Xpad, cancellationToken)
                 .ConfigureAwait(false);
             if (lease is null)

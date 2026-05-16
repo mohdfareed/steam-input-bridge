@@ -143,7 +143,7 @@ public sealed class ForwardingHostTests
     [TestMethod]
     public void ParseStatusReturnsValues()
     {
-        ForwardingHostStatus status = ForwardingHostControlProtocol.ParseStatus(
+        ForwardingStatus status = ForwardingHostControlProtocol.ParseStatus(
             "STATUS route=xpad enabled=true connected=false enabledClients=2");
 
         Assert.AreEqual("xpad", status.RouteId);
@@ -157,11 +157,11 @@ public sealed class ForwardingHostTests
     public void RouteSpecificRuntimeNamesAreDistinct()
     {
         Assert.AreNotEqual(
-            ForwardingHostRuntime.GetControlPipeName(ForwardingRouteKind.Mouse),
-            ForwardingHostRuntime.GetControlPipeName(ForwardingRouteKind.Xpad));
+            ForwardingServer.GetPipeName(ForwardingRouteKind.Mouse),
+            ForwardingServer.GetPipeName(ForwardingRouteKind.Xpad));
         Assert.AreNotEqual(
-            ForwardingHostRuntime.GetOwnershipName(ForwardingRouteKind.Mouse),
-            ForwardingHostRuntime.GetOwnershipName(ForwardingRouteKind.Xpad));
+            ForwardingServer.GetOwnershipName(ForwardingRouteKind.Mouse),
+            ForwardingServer.GetOwnershipName(ForwardingRouteKind.Xpad));
     }
 
     /// <summary>Checks status through the local pipe control server.</summary>
@@ -170,12 +170,12 @@ public sealed class ForwardingHostTests
     {
         string pipeName = $"Hosting.Tests.{Guid.NewGuid():N}";
         await using ForwardingHost host = CreateHost();
-        ForwardingHostControlServer server = new(host, pipeName);
+        ForwardingHostServer server = new(host, pipeName);
         using CancellationTokenSource cancellation = new();
         Task serverTask = server.RunAsync(cancellation.Token);
-        ForwardingHostControlClient client = new(pipeName, TimeSpan.FromSeconds(2));
+        ForwardingClient client = new(pipeName, TimeSpan.FromSeconds(2));
 
-        ForwardingHostStatus status = await client.GetStatusAsync().ConfigureAwait(false);
+        ForwardingStatus status = await client.GetStatusAsync().ConfigureAwait(false);
 
         Assert.AreEqual("mouse", status.RouteId);
         await cancellation.CancelAsync().ConfigureAwait(false);

@@ -6,7 +6,7 @@ Project for local input forwarding transports.
 
 - `Inputs` owns canonical input models and source implementations.
 - `Outputs` owns output reports and output sessions.
-- `Hosting` owns source-to-output routing and local host process ownership.
+- `Hosting` exposes `ForwardingServer`/`ForwardingClient` APIs and owns source-to-output routing plus local host process ownership.
 - `cli` wires commands to library code, prints results, and owns CLI-only tools.
 
 ## Projects

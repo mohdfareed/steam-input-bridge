@@ -39,7 +39,7 @@ internal static class HostCommands
         {
             ILogger logger = new ConsoleLogger("host");
             ForwardingRouteKind route = parseResult.GetValue(routeOption) ?? ForwardingRouteKind.Mouse;
-            ForwardingHostRuntimeOptions options = new()
+            ForwardingServerOptions options = new()
             {
                 Route = route,
                 SdlGamepad = CliOptions.CreateSdlGamepadOptions(parseResult, deviceIndexOption, pollMsOption),
@@ -62,7 +62,7 @@ internal static class HostCommands
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             ForwardingRouteKind route = parseResult.GetValue(routeOption) ?? ForwardingRouteKind.Mouse;
-            ForwardingHostEnableLease? lease = await TryEnableHostAsync(route, cancellationToken).ConfigureAwait(false);
+            ForwardingEnableLease? lease = await TryEnableHostAsync(route, cancellationToken).ConfigureAwait(false);
             if (lease is null)
             {
                 return;
@@ -95,13 +95,13 @@ internal static class HostCommands
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             ForwardingRouteKind route = parseResult.GetValue(routeOption) ?? ForwardingRouteKind.Mouse;
-            ForwardingHostStatus? maybeStatus = await TryGetStatusAsync(route, cancellationToken).ConfigureAwait(false);
+            ForwardingStatus? maybeStatus = await TryGetStatusAsync(route, cancellationToken).ConfigureAwait(false);
             if (!maybeStatus.HasValue)
             {
                 return;
             }
 
-            ForwardingHostStatus status = maybeStatus.Value;
+            ForwardingStatus status = maybeStatus.Value;
             string enabled = status.IsEnabled ? "true" : "false";
             string connected = status.IsConnected ? "true" : "false";
             await Console.Out.WriteLineAsync(
@@ -117,7 +117,7 @@ internal static class HostCommands
 
     [SupportedOSPlatform("windows")]
     private static async Task RunHostAsync(
-        ForwardingHostRuntimeOptions options,
+        ForwardingServerOptions options,
         CancellationToken cancellationToken)
     {
         using CancellationTokenSource runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -135,7 +135,11 @@ internal static class HostCommands
             await Console.Out.WriteLineAsync(
                 $"host: starting route={DisplayRoute(options.Route)}. Ctrl+C to stop.")
                 .ConfigureAwait(false);
-            await ForwardingHostRuntime.RunAsync(options, runCancellation.Token).ConfigureAwait(false);
+            ForwardingServer server = new(options);
+            await using (server.ConfigureAwait(false))
+            {
+                await server.RunAsync(runCancellation.Token).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -143,11 +147,11 @@ internal static class HostCommands
         }
     }
 
-    internal static async Task<ForwardingHostEnableLease?> TryEnableHostAsync(
+    internal static async Task<ForwardingEnableLease?> TryEnableHostAsync(
         ForwardingRouteKind route,
         CancellationToken cancellationToken)
     {
-        ForwardingHostControlClient client = CreateControlClient(route);
+        ForwardingClient client = CreateControlClient(route);
         try
         {
             return await client.EnableAsync(cancellationToken).ConfigureAwait(false);
@@ -166,11 +170,11 @@ internal static class HostCommands
         }
     }
 
-    private static async Task<ForwardingHostStatus?> TryGetStatusAsync(
+    private static async Task<ForwardingStatus?> TryGetStatusAsync(
         ForwardingRouteKind route,
         CancellationToken cancellationToken)
     {
-        ForwardingHostControlClient client = CreateControlClient(route);
+        ForwardingClient client = CreateControlClient(route);
         try
         {
             return await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
@@ -188,9 +192,9 @@ internal static class HostCommands
         }
     }
 
-    private static ForwardingHostControlClient CreateControlClient(ForwardingRouteKind route)
+    private static ForwardingClient CreateControlClient(ForwardingRouteKind route)
     {
-        return new ForwardingHostControlClient(ForwardingHostRuntime.GetControlPipeName(route));
+        return new ForwardingClient(route);
     }
 
     private static string DisplayRoute(ForwardingRouteKind route)
