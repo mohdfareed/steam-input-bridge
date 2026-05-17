@@ -15,10 +15,8 @@ public sealed class SteamCommandsTests
 
         CollectionAssert.Contains(names, "list");
         CollectionAssert.Contains(names, "force");
-        CollectionAssert.Contains(names, "force-desktop");
         CollectionAssert.Contains(names, "clear");
         CollectionAssert.Contains(names, "open-config");
-        CollectionAssert.Contains(names, "open-desktop-config");
     }
 
     /// <summary>Checks Steam command option and argument wiring.</summary>

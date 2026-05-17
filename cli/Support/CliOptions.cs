@@ -19,14 +19,14 @@ internal static class CliOptions
             $"Button press duration. Default: {defaultDurationMs}.");
     }
 
-    internal static Option<int?> CreateDeviceIndexOption(string description)
+    internal static Option<int?> CreateDeviceIndexOption(string name, string description)
     {
-        return CreateNonNegativeIntOption("--device-index", description);
+        return CreateNonNegativeIntOption(name, description);
     }
 
-    internal static Option<int?> CreatePollMsOption(string description)
+    internal static Option<int?> CreatePollMsOption(string name, string description)
     {
-        return CreateNonNegativeIntOption("--poll-ms", description);
+        return CreateNonNegativeIntOption(name, description);
     }
 
     internal static Option<ForwardingRouteKind?> CreateRouteOption()
@@ -34,6 +34,15 @@ internal static class CliOptions
         return new Option<ForwardingRouteKind?>("--route")
         {
             Description = "Route to control. Default: mouse.",
+        };
+    }
+
+    internal static Option<ForwardingRouteKind> CreateRequiredRouteOption()
+    {
+        return new Option<ForwardingRouteKind>("--route")
+        {
+            Description = "Route to control.",
+            Required = true,
         };
     }
 

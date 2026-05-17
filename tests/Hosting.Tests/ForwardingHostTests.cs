@@ -108,16 +108,17 @@ public sealed class ForwardingHostTests
     [TestMethod]
     public async Task ControlSessionReportsHostState()
     {
-        await using ForwardingHost host = CreateHost();
-        using ForwardingHostControlSession session = new(host, requestStop: null, logger: null);
+        await using ForwardingHostRuntime runtime = CreateRuntime();
+        using ForwardingHostControlSession session = new(runtime, requestStop: null, logger: null);
 
-        Assert.IsFalse(host.IsEnabled);
-        ForwardingStatus status = await session.GetStatusAsync().ConfigureAwait(false);
+        ForwardingHostStatus status = await session.GetStatusAsync().ConfigureAwait(false);
 
-        Assert.AreEqual("mouse", status.RouteId);
-        Assert.IsFalse(status.IsEnabled);
-        Assert.IsTrue(status.IsConnected);
-        Assert.AreEqual(0, status.EnabledClientCount);
+        Assert.AreEqual("mouse", status.Mouse.RouteId);
+        Assert.AreEqual(0, status.Mouse.EnabledClientCount);
+        Assert.IsFalse(status.Mouse.IsConnected);
+        Assert.AreEqual("xpad", status.Xpad.RouteId);
+        Assert.AreEqual(0, status.Xpad.EnabledClientCount);
+        Assert.IsFalse(status.Xpad.IsConnected);
     }
 
     /// <summary>Checks lease-counted enable state.</summary>
@@ -146,27 +147,29 @@ public sealed class ForwardingHostTests
     [TestMethod]
     public async Task ControlSessionEnableLeaseReleasesOnDispose()
     {
-        await using ForwardingHost host = CreateHost();
-        using ForwardingHostControlSession session = new(host, requestStop: null, logger: null);
+        await using ForwardingHostRuntime runtime = CreateRuntime();
+        using ForwardingHostControlSession session = new(runtime, requestStop: null, logger: null);
 
-        await session.EnableAsync().ConfigureAwait(false);
+        await session.EnableAsync(ForwardingRouteKind.Mouse).ConfigureAwait(false);
 
-        Assert.IsTrue(host.IsEnabled);
-        Assert.AreEqual(1, host.EnabledLeaseCount);
+        ForwardingHostStatus enabled = await session.GetStatusAsync().ConfigureAwait(false);
+        Assert.AreEqual(1, enabled.Mouse.EnabledClientCount);
+        Assert.IsTrue(enabled.Mouse.IsConnected);
 
         session.Dispose();
 
-        Assert.IsFalse(host.IsEnabled);
-        Assert.AreEqual(0, host.EnabledLeaseCount);
+        ForwardingHostStatus disabled = await runtime.GetStatusAsync().ConfigureAwait(false);
+        Assert.AreEqual(0, disabled.Mouse.EnabledClientCount);
+        Assert.IsFalse(disabled.Mouse.IsConnected);
     }
 
     /// <summary>Checks control session stop callback.</summary>
     [TestMethod]
     public async Task ControlSessionStopRequestsServerStop()
     {
-        await using ForwardingHost host = CreateHost();
+        await using ForwardingHostRuntime runtime = CreateRuntime();
         bool stopped = false;
-        using ForwardingHostControlSession session = new(host, () => stopped = true, logger: null);
+        using ForwardingHostControlSession session = new(runtime, () => stopped = true, logger: null);
 
         await session.StopAsync().ConfigureAwait(false);
 
@@ -175,24 +178,17 @@ public sealed class ForwardingHostTests
 
     /// <summary>Checks route-specific ownership and pipe names.</summary>
     [TestMethod]
-    public void RouteSpecificRuntimeNamesAreDistinct()
+    public void HostRuntimeNamesAreStable()
     {
-        Assert.AreEqual("mouse", ForwardingServer.GetRouteId(ForwardingRouteKind.Mouse));
-        Assert.AreEqual("xpad", ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad));
-        Assert.AreNotEqual(
-            ForwardingServer.GetPipeName(ForwardingRouteKind.Mouse),
-            ForwardingServer.GetPipeName(ForwardingRouteKind.Xpad));
-        Assert.AreNotEqual(
-            ForwardingServer.GetOwnershipName(ForwardingRouteKind.Mouse),
-            ForwardingServer.GetOwnershipName(ForwardingRouteKind.Xpad));
-        StringAssert.EndsWith(
-            ForwardingServer.GetPipeName(ForwardingRouteKind.Xpad),
-            ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad),
-            StringComparison.Ordinal);
-        StringAssert.EndsWith(
-            ForwardingServer.GetOwnershipName(ForwardingRouteKind.Xpad),
-            ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad),
-            StringComparison.Ordinal);
+        string mouseRouteId = ForwardingServer.GetRouteId(ForwardingRouteKind.Mouse);
+        string xpadRouteId = ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad);
+        string pipeName = ForwardingServer.PipeName;
+        string ownershipName = ForwardingServer.OwnershipName;
+
+        Assert.AreEqual("mouse", mouseRouteId);
+        Assert.AreEqual("xpad", xpadRouteId);
+        Assert.AreEqual("Hosting", pipeName);
+        Assert.AreEqual(@"Local\Hosting", ownershipName);
     }
 
     /// <summary>Checks status through the local pipe control server.</summary>
@@ -200,15 +196,15 @@ public sealed class ForwardingHostTests
     public async Task ControlClientGetsStatusFromServer()
     {
         string pipeName = $"Hosting.Tests.{Guid.NewGuid():N}";
-        await using ForwardingHost host = CreateHost();
-        ForwardingHostServer server = new(host, pipeName);
+        await using ForwardingHostRuntime runtime = CreateRuntime();
+        ForwardingHostServer server = new(runtime, pipeName);
         using CancellationTokenSource cancellation = new();
         Task serverTask = server.RunAsync(cancellation.Token);
         ForwardingClient client = new(pipeName, TimeSpan.FromSeconds(2));
 
-        ForwardingStatus status = await client.GetStatusAsync().ConfigureAwait(false);
+        ForwardingHostStatus status = await client.GetStatusAsync().ConfigureAwait(false);
 
-        Assert.AreEqual("mouse", status.RouteId);
+        Assert.AreEqual("mouse", status.Mouse.RouteId);
         await cancellation.CancelAsync().ConfigureAwait(false);
         try
         {
@@ -246,6 +242,23 @@ public sealed class ForwardingHostTests
 
         Assert.IsNotNull(first);
         Assert.IsNull(second);
+    }
+
+    private static ForwardingHostRuntime CreateRuntime()
+    {
+        HostedRouteController mouse = new(
+            ForwardingRouteIds.Mouse,
+            _ => Task.FromResult<IForwardingRoute>(new MouseForwardingRoute(
+                new TestMouseInputSource(),
+                new TestMouseOutput())),
+            logger: null);
+        HostedRouteController xpad = new(
+            ForwardingRouteIds.Xpad,
+            _ => Task.FromResult<IForwardingRoute>(new Xbox360ForwardingRoute(
+                new TestGamepadInputSource(new GamepadState(GamepadButtons.South, 0, 0, 0, 0, 0, 0, default)),
+                new TestXbox360Output())),
+            logger: null);
+        return new ForwardingHostRuntime(mouse, xpad, 0, "gamepad");
     }
 
     private static ForwardingHost CreateHost()

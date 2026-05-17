@@ -39,8 +39,8 @@ public sealed class CliOptionsTests
     public void CreateSdlGamepadOptionsReadsValues()
     {
         Command command = new("test");
-        Option<int?> deviceIndexOption = CliOptions.CreateDeviceIndexOption("device");
-        Option<int?> pollMsOption = CliOptions.CreatePollMsOption("poll");
+        Option<int?> deviceIndexOption = CliOptions.CreateDeviceIndexOption("--device-index", "device");
+        Option<int?> pollMsOption = CliOptions.CreatePollMsOption("--poll-ms", "poll");
         command.Options.Add(deviceIndexOption);
         command.Options.Add(pollMsOption);
 

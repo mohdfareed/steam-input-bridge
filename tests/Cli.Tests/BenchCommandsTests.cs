@@ -1,4 +1,5 @@
 using System.Linq;
+using Cli.Tools.Benchmarks;
 
 namespace Cli.Tests;
 
@@ -14,6 +15,16 @@ public sealed class BenchCommandsTests
 
         Assert.HasCount(0, command.Subcommands);
         Assert.HasCount(2, command.Arguments);
+        CollectionAssert.Contains(command.Options.Select(option => option.Name).ToArray(), "--count");
+    }
+
+    /// <summary>Checks fixed-input benchmark command shape.</summary>
+    [TestMethod]
+    public void CreateBenchCommandWithFixedInputHasOutputArgumentOnly()
+    {
+        System.CommandLine.Command command = BenchCommands.CreateBenchCommand(ForwardingBenchmarkInput.Raw);
+
+        Assert.HasCount(1, command.Arguments);
         CollectionAssert.Contains(command.Options.Select(option => option.Name).ToArray(), "--count");
     }
 }

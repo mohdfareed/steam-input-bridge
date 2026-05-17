@@ -5,27 +5,12 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Cli.Tools;
-using Hosting;
 using Inputs;
 using Inputs.Sdl;
 using Outputs;
 
 internal static class XpadCommands
 {
-    // MARK: Commands
-    // ========================================================================
-
-    internal static Command CreateXpadCommand(IServiceProvider? services = null)
-    {
-        Command command = new("xpad", "Forward SDL gamepad input to VIIPER Xbox 360 output.");
-        command.Subcommands.Add(CreateProbeCommand());
-        command.Subcommands.Add(CreateInputCommand());
-        command.Subcommands.Add(CreateTestCommand(services));
-        command.Subcommands.Add(CreateRunCommand("run", "Start forwarding xpad input."));
-        command.Subcommands.Add(CreateRunCommand("forward", "Forward SDL gamepad input to VIIPER Xbox 360 output."));
-        return command;
-    }
-
     internal static string DisplayButtons(GamepadButtons buttons)
     {
         return buttons == GamepadButtons.None
@@ -36,7 +21,7 @@ internal static class XpadCommands
     // MARK: Command Helpers
     // ========================================================================
 
-    private static Command CreateProbeCommand()
+    internal static Command CreateProbeCommand()
     {
         Command command = new("probe", "List SDL gamepads.");
         command.SetAction(async (_, _) =>
@@ -47,12 +32,14 @@ internal static class XpadCommands
         return command;
     }
 
-    private static Command CreateInputCommand()
+    internal static Command CreateInputCommand()
     {
         Command command = new("input", "Read SDL gamepad state changes.");
         Option<int?> deviceIndexOption = CliOptions.CreateDeviceIndexOption(
+            "--device-index",
             "Zero-based SDL gamepad index. Default: 0.");
         Option<int?> pollMsOption = CliOptions.CreatePollMsOption(
+            "--poll-ms",
             "SDL polling interval in milliseconds. Default: 1.");
         command.Options.Add(deviceIndexOption);
         command.Options.Add(pollMsOption);
@@ -70,9 +57,9 @@ internal static class XpadCommands
         return command;
     }
 
-    private static Command CreateTestCommand(IServiceProvider? services)
+    internal static Command CreatePressCommand(IServiceProvider? services = null)
     {
-        Command command = new("test", "Send a short Xbox 360 test report through VIIPER.");
+        Command command = new("press", "Send a short Xbox 360 test report through VIIPER.");
         Option<int?> durationMsOption = CliOptions.CreateDurationMsOption(250);
         command.Options.Add(durationMsOption);
 
@@ -86,42 +73,11 @@ internal static class XpadCommands
                     await XpadTestSender
                         .SendButtonPressAsync(output, Xbox360Buttons.A, TimeSpan.FromMilliseconds(durationMs), ct)
                         .ConfigureAwait(false);
-                    await Console.Out.WriteLineAsync("xpad test: sent A press.").ConfigureAwait(false);
+                    await Console.Out.WriteLineAsync("xpad press: sent A press.").ConfigureAwait(false);
                     return 0;
                 },
                 cancellationToken,
                 services).ConfigureAwait(false);
-        });
-
-        return command;
-    }
-
-    private static Command CreateRunCommand(string name, string description)
-    {
-        Command command = new(name, description);
-        command.SetAction(async (_, cancellationToken) =>
-        {
-            ForwardingEnableLease? lease = await HostCommands
-                .TryEnableHostAsync(ForwardingRouteKind.Xpad, cancellationToken)
-                .ConfigureAwait(false);
-            if (lease is null)
-            {
-                return;
-            }
-
-            await using (lease.ConfigureAwait(false))
-            {
-                try
-                {
-                    await Console.Out.WriteLineAsync(
-                        $"xpad {name}: enabled through host. Ctrl+C to release.")
-                        .ConfigureAwait(false);
-                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                }
-            }
         });
 
         return command;

@@ -16,10 +16,8 @@ internal static class SteamCommands
         Command command = new("steam", "Inspect and control Steam Input.");
         command.Subcommands.Add(CreateListCommand());
         command.Subcommands.Add(CreateForceCommand());
-        command.Subcommands.Add(CreateForceDesktopCommand());
         command.Subcommands.Add(CreateClearCommand());
         command.Subcommands.Add(CreateOpenConfigCommand());
-        command.Subcommands.Add(CreateOpenDesktopConfigCommand());
         return command;
     }
 
@@ -80,19 +78,6 @@ internal static class SteamCommands
         return command;
     }
 
-    private static Command CreateForceDesktopCommand()
-    {
-        Command command = new("force-desktop", "Force Steam Input to use the desktop configuration app id.");
-        command.SetAction(async (_, cancellationToken) =>
-        {
-            SteamInputClient client = new();
-            await client.ForceDesktopAsync(cancellationToken).ConfigureAwait(false);
-            await Console.Out.WriteLineAsync("forced desktop").ConfigureAwait(false);
-        });
-
-        return command;
-    }
-
     private static Command CreateClearCommand()
     {
         Command command = new("clear", "Clear Steam Input app id forcing.");
@@ -118,19 +103,6 @@ internal static class SteamCommands
             SteamInputClient client = new();
             await client.OpenControllerConfigAsync(appId, cancellationToken).ConfigureAwait(false);
             await Console.Out.WriteLineAsync($"opened appid={appId.ToString(CultureInfo.InvariantCulture)}").ConfigureAwait(false);
-        });
-
-        return command;
-    }
-
-    private static Command CreateOpenDesktopConfigCommand()
-    {
-        Command command = new("open-desktop-config", "Open Steam's desktop controller configurator.");
-        command.SetAction(async (_, cancellationToken) =>
-        {
-            SteamInputClient client = new();
-            await client.OpenDesktopControllerConfigAsync(cancellationToken).ConfigureAwait(false);
-            await Console.Out.WriteLineAsync("opened desktop").ConfigureAwait(false);
         });
 
         return command;

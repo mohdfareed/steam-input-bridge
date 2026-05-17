@@ -11,7 +11,7 @@ internal static class InputCommands
     // ========================================================================
 
     [SupportedOSPlatform("windows")]
-    internal static Command CreateInputCommand()
+    internal static Command CreateMouseInputCommand()
     {
         Command command = new("input", "Read Windows Raw Input mouse reports.");
         command.SetAction(async (parseResult, cancellationToken) =>

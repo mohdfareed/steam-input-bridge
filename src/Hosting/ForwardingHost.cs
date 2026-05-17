@@ -92,7 +92,6 @@ public sealed class ForwardingHost(IForwardingRoute route, ILogger? logger = nul
     }
 
     /// <summary>Runs forwarding until cancelled.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public void Run(CancellationToken cancellationToken = default)
     {
         ForwardingHostLog.Starting(logger, RouteId);

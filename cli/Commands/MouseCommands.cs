@@ -4,46 +4,12 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Cli.Tools;
-using Hosting;
 using Outputs;
 
 internal static class MouseCommands
 {
-    // MARK: Commands
-    // ========================================================================
-
     [SupportedOSPlatform("windows")]
-    internal static Command CreateMouseCommand(IServiceProvider? services = null)
-    {
-        Command command = new("mouse", "Forward Raw Input mouse reports.");
-        command.Subcommands.Add(CreateRunCommand(services));
-        command.Subcommands.Add(CreateForwardCommand(services));
-        command.Subcommands.Add(CreateNullifyCommand(services));
-        return command;
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static Command CreateRunCommand(IServiceProvider? services)
-    {
-        return CreateBridgeCommand(
-            "run",
-            "Start forwarding mouse input.",
-            MouseForwarding.RunRawInputToAsync,
-            services);
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static Command CreateForwardCommand(IServiceProvider? services)
-    {
-        return CreateBridgeCommand(
-            "forward",
-            "Forward Raw Input mouse reports to the output mouse.",
-            MouseForwarding.RunRawInputToAsync,
-            services);
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static Command CreateNullifyCommand(IServiceProvider? services)
+    internal static Command CreateMouseNullifyCommand(IServiceProvider? services = null)
     {
         return CreateBridgeCommand(
             "nullify",

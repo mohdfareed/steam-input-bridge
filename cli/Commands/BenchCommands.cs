@@ -11,26 +11,31 @@ internal static class BenchCommands
     // MARK: Commands
     // ========================================================================
 
-    internal static Command CreateBenchCommand()
+    internal static Command CreateBenchCommand(ForwardingBenchmarkInput? fixedInput = null)
     {
         Command command = new("bench", "Measure source-to-output forwarding cost.");
-        Argument<ForwardingBenchmarkInput> inputArgument = new("input")
-        {
-            Description = "Input source: raw or sdl.",
-        };
         Argument<ForwardingBenchmarkOutput> outputArgument = new("output")
         {
             Description = "Output transport: viiper or teensy.",
         };
         Option<int?> countOption = CliOptions.CreateCountOption(ForwardingBenchmarks.DefaultCount);
 
-        command.Arguments.Add(inputArgument);
+        Argument<ForwardingBenchmarkInput>? inputArgument = null;
+        if (!fixedInput.HasValue)
+        {
+            inputArgument = new("input")
+            {
+                Description = "Input source: raw or sdl.",
+            };
+            command.Arguments.Add(inputArgument);
+        }
+
         command.Arguments.Add(outputArgument);
         command.Options.Add(countOption);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            ForwardingBenchmarkInput input = parseResult.GetValue(inputArgument);
+            ForwardingBenchmarkInput input = fixedInput ?? parseResult.GetValue(inputArgument!);
             ForwardingBenchmarkOutput output = parseResult.GetValue(outputArgument);
             int count = parseResult.GetValue(countOption) ?? ForwardingBenchmarks.DefaultCount;
             await RunBenchAsync(input, output, count, cancellationToken).ConfigureAwait(false);
@@ -80,9 +85,9 @@ internal static class BenchCommands
         string? message = input switch
         {
             ForwardingBenchmarkInput.Raw when OperatingSystem.IsWindows() =>
-                $"bench raw viiper input: move the mouse until warmup {ForwardingBenchmarks.WarmupCount:N0} + reports {count:N0} are collected.",
+                $"test mouse bench viiper input: move the mouse until warmup {ForwardingBenchmarks.WarmupCount:N0} + reports {count:N0} are collected.",
             ForwardingBenchmarkInput.Sdl =>
-                $"bench sdl viiper input: move or press the controller until warmup {ForwardingBenchmarks.WarmupCount:N0} + reports {count:N0} are collected.",
+                $"test xpad bench viiper input: move or press the controller until warmup {ForwardingBenchmarks.WarmupCount:N0} + reports {count:N0} are collected.",
             _ => null,
         };
 

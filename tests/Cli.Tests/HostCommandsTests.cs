@@ -16,25 +16,26 @@ public sealed class HostCommandsTests
         string[] names = [.. HostCommands.CreateHostCommand().Subcommands.Select(command => command.Name)];
 
         CollectionAssert.Contains(names, "run");
-        CollectionAssert.Contains(names, "enable");
         CollectionAssert.Contains(names, "status");
+        CollectionAssert.Contains(names, "stop");
     }
 
     /// <summary>Checks route options.</summary>
     [TestMethod]
-    public void CreateHostCommandIncludesRouteOptions()
+    public void CreateHostCommandIncludesExpectedOptions()
     {
         System.CommandLine.Command host = HostCommands.CreateHostCommand();
         System.CommandLine.Command run = host.Subcommands.Single(command => command.Name == "run");
-        System.CommandLine.Command enable = host.Subcommands.Single(command => command.Name == "enable");
         System.CommandLine.Command status = host.Subcommands.Single(command => command.Name == "status");
+        System.CommandLine.Command stop = host.Subcommands.Single(command => command.Name == "stop");
 
-        CollectionAssert.Contains(run.Options.Select(option => option.Name).ToArray(), "--route");
-        CollectionAssert.Contains(enable.Options.Select(option => option.Name).ToArray(), "--route");
-        CollectionAssert.Contains(status.Options.Select(option => option.Name).ToArray(), "--route");
+        CollectionAssert.Contains(run.Options.Select(option => option.Name).ToArray(), "--xpad-device-index");
+        CollectionAssert.Contains(run.Options.Select(option => option.Name).ToArray(), "--xpad-poll-ms");
+        Assert.HasCount(0, status.Options);
+        Assert.HasCount(0, stop.Options);
     }
 
-    /// <summary>Checks host run xpad input options.</summary>
+    /// <summary>Checks host run xpad options.</summary>
     [TestMethod]
     public void CreateHostCommandRunIncludesSdlOptions()
     {
@@ -42,16 +43,16 @@ public sealed class HostCommandsTests
         System.CommandLine.Command run = host.Subcommands.Single(command => command.Name == "run");
         string[] names = [.. run.Options.Select(option => option.Name)];
 
-        CollectionAssert.Contains(names, "--device-index");
-        CollectionAssert.Contains(names, "--poll-ms");
+        CollectionAssert.Contains(names, "--xpad-device-index");
+        CollectionAssert.Contains(names, "--xpad-poll-ms");
     }
 
-    /// <summary>Checks xpad host run selection parses.</summary>
+    /// <summary>Checks host run xpad selection parses.</summary>
     [TestMethod]
     public void HostRunAcceptsXpadDeviceIndex()
     {
         Command host = HostCommands.CreateHostCommand();
-        ParseResult result = host.Parse("run --route xpad --device-index 1");
+        ParseResult result = host.Parse("run --xpad-device-index 1");
 
         Assert.HasCount(0, result.Errors);
     }

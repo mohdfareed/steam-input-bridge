@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading;
@@ -11,23 +12,21 @@ namespace Hosting;
 
 /// <summary>Serves local forwarding control commands.</summary>
 internal sealed class ForwardingHostServer(
-    ForwardingHost host,
+    ForwardingHostRuntime runtime,
     string pipeName,
     Action? requestStop = null,
     ILogger? logger = null)
 {
-    /// <summary>Runs the control server until cancelled.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(runtime);
         ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
         ForwardingHostControlLog.StartingServer(logger, pipeName);
 
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-#pragma warning disable CA2000 // Ownership transfers to the client handling task.
+#pragma warning disable CA2000
             NamedPipeServerStream pipe = CreatePipe();
 #pragma warning restore CA2000
             using CancellationTokenRegistration registration = cancellationToken.Register(static target =>
@@ -78,12 +77,12 @@ internal sealed class ForwardingHostServer(
 
     private async Task HandleConnectionAsync(Stream stream, CancellationToken cancellationToken)
     {
-        using CancellationTokenRegistration registration = cancellationToken.Register(static target =>
+        using CancellationTokenRegistration streamRegistration = cancellationToken.Register(static target =>
         {
             ((Stream)target!).Dispose();
         }, stream);
 
-        ForwardingHostControlSession target = new(host, requestStop, logger);
+        ForwardingHostControlSession target = new(runtime, requestStop, logger);
         using JsonRpc rpc = JsonRpc.Attach(stream, target);
 
         try
@@ -101,40 +100,37 @@ internal sealed class ForwardingHostServer(
 [GenerateShape(IncludeMethods = MethodShapeFlags.PublicInstance)]
 internal partial interface IForwardingHostControl
 {
-    Task<ForwardingStatus> GetStatusAsync();
+    Task<ForwardingHostStatus> GetStatusAsync();
 
-    Task EnableAsync();
+    Task EnableAsync(ForwardingRouteKind route);
 
     Task StopAsync();
 }
 
 internal sealed class ForwardingHostControlSession(
-    ForwardingHost host,
+    ForwardingHostRuntime runtime,
     Action? requestStop,
     ILogger? logger) : IForwardingHostControl, IDisposable
 {
-    private IDisposable? _lease;
+    private readonly Dictionary<ForwardingRouteKind, IDisposable> _leases = [];
 
-    public Task<ForwardingStatus> GetStatusAsync()
+    public Task<ForwardingHostStatus> GetStatusAsync()
     {
         ForwardingHostControlLog.ReceivedCommand(logger, nameof(GetStatusAsync));
-        return Task.FromResult(new ForwardingStatus(
-            host.RouteId,
-            host.IsEnabled,
-            host.IsConnected,
-            host.EnabledLeaseCount));
+        return runtime.GetStatusAsync();
     }
 
-    public Task EnableAsync()
+    public async Task EnableAsync(ForwardingRouteKind route)
     {
         ForwardingHostControlLog.ReceivedCommand(logger, nameof(EnableAsync));
-        if (_lease is null)
+        if (_leases.ContainsKey(route))
         {
-            _lease = host.Enable();
-            ForwardingHostControlLog.LeaseOpened(logger, host.RouteId);
+            return;
         }
 
-        return Task.CompletedTask;
+        IDisposable lease = await runtime.EnableAsync(route, CancellationToken.None).ConfigureAwait(false);
+        _leases.Add(route, lease);
+        ForwardingHostControlLog.LeaseOpened(logger, ForwardingServer.GetRouteId(route));
     }
 
     public Task StopAsync()
@@ -146,13 +142,13 @@ internal sealed class ForwardingHostControlSession(
 
     public void Dispose()
     {
-        IDisposable? lease = _lease;
-        _lease = null;
-        if (lease is not null)
+        foreach ((ForwardingRouteKind route, IDisposable lease) in _leases)
         {
             lease.Dispose();
-            ForwardingHostControlLog.LeaseClosed(logger, host.RouteId);
+            ForwardingHostControlLog.LeaseClosed(logger, ForwardingServer.GetRouteId(route));
         }
+
+        _leases.Clear();
     }
 }
 

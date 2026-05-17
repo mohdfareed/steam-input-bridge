@@ -75,7 +75,7 @@ Do not set `LangVersion=latest`.
 - Use direct callbacks for virtual mouse input hot paths; do not add event queues or buffering unless explicitly requested.
 - Push back when a requested change leaks caller responsibility into this repository, expands scope, or adds avoidable hot-path overhead.
 - Treat 1000 Hz mouse-rate input and sub-2-5 ms added latency as hot-path design targets.
-- Keep hot-path performance and benchmarkable boundaries as top priorities when shaping shared interfaces and transport code.
+- Keep hot-path performance and benchmark-able boundaries as top priorities when shaping shared interfaces and transport code.
 - Prefer one local host process for production forwarding. The host owns Raw Input and the physical output transport; other processes should use control IPC instead of running their own forwarding loops.
 - Keep host IPC control-only. Do not forward per-report mouse traffic over IPC unless explicitly revisited.
 - Expose Hosting through normal app-facing `ForwardingServer` and `ForwardingClient` APIs. Keep named-pipe control details behind those types.
@@ -140,13 +140,14 @@ Do not set `LangVersion=latest`.
 - Keep tests focused on behavior and mapping, not internal structure.
 - For retained CLI tools, prefer `System.CommandLine` over a hand-rolled parser.
 - Keep the CLI project at `cli/Cli.csproj`; do not put it under `tools`.
-- Keep daily forwarding commands under explicit device groups: `mouse run` for Raw Input mouse forwarding and `xpad run` for SDL gamepad to VIIPER Xbox 360 forwarding.
-- Keep mouse nullifier behavior in CLI tools; direct mouse forwarding is the backend/product path.
-- Keep synthetic xpad test input, such as one-shot Xbox button presses, in CLI tools. Backend gamepad code should focus on real SDL-to-output forwarding.
+- Keep the CLI split into `host` for host lifecycle, `client` for normal host control, `steam` for Steam product features, and `test` for diagnostics and manual tools.
+- Keep daily forwarding under `client run --route <route>`, not under top-level device command groups.
+- Keep one host process that owns all supported routes. Host startup config chooses route-specific setup such as the SDL gamepad device index, while each route connects lazily only when at least one client enables it.
+- Keep diagnostics such as probes, raw input viewers, nullifiers, synthetic button presses, and benchmark commands under `test`, not under product-facing command groups.
 - Do not add legacy or compatibility CLI aliases before the project has had a release. Keep only the current intended command shape.
 - Keep Steam Input controls under `steam` commands such as `list`, `force`, `clear`, and `open-config`; do not reuse `steam` as a mouse-forwarding command.
 - CLI output should be concise, aligned, and value-first; avoid prose verdicts and unexplained benchmark jargon.
-- Keep CLI `bench` as one command with input and output arguments, such as `bench raw viiper` or `bench sdl viiper`. It may print multiple measured repository boundaries for that pair, but do not reintroduce separate raw/bridge/all or xpad bench command trees.
+- Keep benchmark entrypoints under `test mouse bench <output>` and `test xpad bench <output>`. They may print multiple measured repository boundaries for that pair, but do not reintroduce separate raw/bridge/all or xpad bench command trees.
 - Keep benchmark mechanics under `cli/Tools/Benchmarks`; they are CLI testing tools, not app backend library code.
 - Do not fold external VIIPER client/device latency into repository-code benchmark claims.
 - Put shared CLI option and validation helpers in `cli/Support/CliOptions.cs`; command files should reuse them instead of duplicating validators.

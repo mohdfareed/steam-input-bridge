@@ -29,12 +29,10 @@ internal static class Program
         if (OperatingSystem.IsWindows())
         {
             root.Subcommands.Add(HostCommands.CreateHostCommand(services));
-            root.Subcommands.Add(InputCommands.CreateInputCommand());
-            root.Subcommands.Add(MouseCommands.CreateMouseCommand(services));
+            root.Subcommands.Add(ClientCommands.CreateClientCommand());
             root.Subcommands.Add(SteamCommands.CreateSteamCommand());
+            root.Subcommands.Add(TestCommands.CreateTestCommand(services));
         }
-        root.Subcommands.Add(BenchCommands.CreateBenchCommand());
-        root.Subcommands.Add(XpadCommands.CreateXpadCommand(services));
 
         return await root.Parse(args).InvokeAsync().ConfigureAwait(false);
     }

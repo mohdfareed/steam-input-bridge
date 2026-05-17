@@ -19,8 +19,8 @@ internal static class HostCommands
     {
         Command command = new("host", "Control the local forwarding host.");
         command.Subcommands.Add(CreateRunCommand(services));
-        command.Subcommands.Add(CreateEnableCommand());
         command.Subcommands.Add(CreateStatusCommand());
+        command.Subcommands.Add(CreateStopCommand());
         return command;
     }
 
@@ -28,22 +28,20 @@ internal static class HostCommands
     private static Command CreateRunCommand(IServiceProvider? services)
     {
         Command command = new("run", "Run the local forwarding host.");
-        Option<ForwardingRouteKind?> routeOption = CliOptions.CreateRouteOption();
         Option<int?> deviceIndexOption = CliOptions.CreateDeviceIndexOption(
-            "Zero-based SDL gamepad index for xpad hosts. Default: 0.");
+            "--xpad-device-index",
+            "Zero-based SDL gamepad index for xpad activation. Default: 0.");
         Option<int?> pollMsOption = CliOptions.CreatePollMsOption(
-            "SDL polling interval in milliseconds for xpad hosts. Default: 1.");
-        command.Options.Add(routeOption);
+            "--xpad-poll-ms",
+            "SDL polling interval in milliseconds for xpad activation. Default: 1.");
         command.Options.Add(deviceIndexOption);
         command.Options.Add(pollMsOption);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             ILogger logger = CreateLogger(services);
-            ForwardingRouteKind route = parseResult.GetValue(routeOption) ?? ForwardingRouteKind.Mouse;
             ForwardingServerOptions options = new()
             {
-                Route = route,
                 SdlGamepad = CliOptions.CreateSdlGamepadOptions(parseResult, deviceIndexOption, pollMsOption),
                 Viiper = ViiperConnection.CreateViiperOptions(services, logger),
                 Logger = logger,
@@ -55,60 +53,51 @@ internal static class HostCommands
         return command;
     }
 
-    private static Command CreateEnableCommand()
-    {
-        Command command = new("enable", "Enable host forwarding until cancelled.");
-        Option<ForwardingRouteKind?> routeOption = CliOptions.CreateRouteOption();
-        command.Options.Add(routeOption);
-
-        command.SetAction(async (parseResult, cancellationToken) =>
-        {
-            ForwardingRouteKind route = parseResult.GetValue(routeOption) ?? ForwardingRouteKind.Mouse;
-            ForwardingEnableLease? lease = await TryEnableHostAsync(route, cancellationToken).ConfigureAwait(false);
-            if (lease is null)
-            {
-                return;
-            }
-
-            await using (lease.ConfigureAwait(false))
-            {
-                try
-                {
-                    await Console.Out.WriteLineAsync(
-                        $"route={ForwardingServer.GetRouteId(route)} enabled=true. Ctrl+C to release.")
-                        .ConfigureAwait(false);
-                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                }
-            }
-        });
-
-        return command;
-    }
-
     private static Command CreateStatusCommand()
     {
         Command command = new("status", "Print host status.");
-        Option<ForwardingRouteKind?> routeOption = CliOptions.CreateRouteOption();
-        command.Options.Add(routeOption);
 
-        command.SetAction(async (parseResult, cancellationToken) =>
+        command.SetAction(async (_, cancellationToken) =>
         {
-            ForwardingRouteKind route = parseResult.GetValue(routeOption) ?? ForwardingRouteKind.Mouse;
-            ForwardingStatus? maybeStatus = await TryGetStatusAsync(route, cancellationToken).ConfigureAwait(false);
+            ForwardingHostStatus? maybeStatus = await TryGetStatusAsync(cancellationToken).ConfigureAwait(false);
             if (!maybeStatus.HasValue)
             {
                 return;
             }
 
-            ForwardingStatus status = maybeStatus.Value;
-            string enabled = status.IsEnabled ? "true" : "false";
-            string connected = status.IsConnected ? "true" : "false";
+            ForwardingHostStatus status = maybeStatus.Value;
             await Console.Out.WriteLineAsync(
-                $"route={status.RouteId} enabled={enabled} connected={connected} enabledClients={status.EnabledClientCount}")
+                $"host running=true xpadDeviceIndex={status.XpadDeviceIndex} xpadDeviceName=\"{status.XpadDeviceName ?? string.Empty}\"")
                 .ConfigureAwait(false);
+            await PrintRouteStatusAsync(status.Mouse).ConfigureAwait(false);
+            await PrintRouteStatusAsync(status.Xpad).ConfigureAwait(false);
+        });
+
+        return command;
+    }
+
+    private static Command CreateStopCommand()
+    {
+        Command command = new("stop", "Request a running host to stop.");
+        command.SetAction(async (_, cancellationToken) =>
+        {
+            ForwardingClient client = new();
+
+            try
+            {
+                await client.StopAsync(cancellationToken).ConfigureAwait(false);
+                await Console.Out.WriteLineAsync("host stopRequested=true").ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                await Console.Error.WriteLineAsync("host: not running").ConfigureAwait(false);
+                Environment.ExitCode = 1;
+            }
+            catch (IOException exception)
+            {
+                await Console.Error.WriteLineAsync($"host: unavailable ({exception.Message})").ConfigureAwait(false);
+                Environment.ExitCode = 1;
+            }
         });
 
         return command;
@@ -135,7 +124,7 @@ internal static class HostCommands
         try
         {
             await Console.Out.WriteLineAsync(
-                $"host: starting {DescribeRoute(options)}. Ctrl+C to stop.")
+                $"host: starting xpadDeviceIndex={options.SdlGamepad.DeviceIndex}. Ctrl+C to stop.")
                 .ConfigureAwait(false);
             ForwardingServer server = new(options);
             await using (server.ConfigureAwait(false))
@@ -149,45 +138,17 @@ internal static class HostCommands
         }
     }
 
-    internal static async Task<ForwardingEnableLease?> TryEnableHostAsync(
-        ForwardingRouteKind route,
+    private static async Task<ForwardingHostStatus?> TryGetStatusAsync(
         CancellationToken cancellationToken)
     {
-        ForwardingClient client = CreateControlClient(route);
-        try
-        {
-            return await client.EnableAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (TimeoutException)
-        {
-            await Console.Error.WriteLineAsync(
-                $"host route={ForwardingServer.GetRouteId(route)}: not running")
-                .ConfigureAwait(false);
-            Environment.ExitCode = 1;
-            return null;
-        }
-        catch (IOException exception)
-        {
-            await Console.Error.WriteLineAsync($"host: unavailable ({exception.Message})").ConfigureAwait(false);
-            Environment.ExitCode = 1;
-            return null;
-        }
-    }
-
-    private static async Task<ForwardingStatus?> TryGetStatusAsync(
-        ForwardingRouteKind route,
-        CancellationToken cancellationToken)
-    {
-        ForwardingClient client = CreateControlClient(route);
+        ForwardingClient client = new();
         try
         {
             return await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
-            await Console.Out.WriteLineAsync(
-                $"route={ForwardingServer.GetRouteId(route)} running=false")
-                .ConfigureAwait(false);
+            await Console.Out.WriteLineAsync("host running=false").ConfigureAwait(false);
             return null;
         }
         catch (IOException exception)
@@ -196,11 +157,6 @@ internal static class HostCommands
             Environment.ExitCode = 1;
             return null;
         }
-    }
-
-    private static ForwardingClient CreateControlClient(ForwardingRouteKind route)
-    {
-        return new ForwardingClient(route);
     }
 
     private static ILogger CreateLogger(IServiceProvider? services)
@@ -209,10 +165,9 @@ internal static class HostCommands
         return factory.CreateLogger("host");
     }
 
-    private static string DescribeRoute(ForwardingServerOptions options)
+    private static Task PrintRouteStatusAsync(ForwardingRouteStatus status)
     {
-        return options.Route == ForwardingRouteKind.Xpad
-            ? $"route={ForwardingServer.GetRouteId(options.Route)} deviceIndex={options.SdlGamepad.DeviceIndex}"
-            : $"route={ForwardingServer.GetRouteId(options.Route)}";
+        return Console.Out.WriteLineAsync(
+            $"route={status.RouteId} connected={(status.IsConnected ? "true" : "false")} enabledClients={status.EnabledClientCount}");
     }
 }

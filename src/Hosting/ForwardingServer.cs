@@ -1,8 +1,6 @@
 using System;
-using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
-using Inputs.RawInput;
 using Inputs.Sdl;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -21,12 +19,29 @@ public enum ForwardingRouteKind
     Xpad,
 }
 
+/// <summary>Per-route status reported by the local forwarding server.</summary>
+/// <param name="RouteId">Hosted route id.</param>
+/// <param name="IsConnected">Whether route input and output are connected.</param>
+/// <param name="EnabledClientCount">Number of connected enabled clients.</param>
+public readonly record struct ForwardingRouteStatus(
+    string RouteId,
+    bool IsConnected,
+    int EnabledClientCount);
+
+/// <summary>Host status reported by the local forwarding server.</summary>
+/// <param name="Mouse">Mouse route status.</param>
+/// <param name="Xpad">Gamepad route status.</param>
+/// <param name="XpadDeviceIndex">Configured SDL gamepad index.</param>
+/// <param name="XpadDeviceName">Configured SDL gamepad name when known.</param>
+public readonly record struct ForwardingHostStatus(
+    ForwardingRouteStatus Mouse,
+    ForwardingRouteStatus Xpad,
+    int XpadDeviceIndex,
+    string? XpadDeviceName);
+
 /// <summary>Local forwarding server options.</summary>
 public sealed record ForwardingServerOptions
 {
-    /// <summary>Route to host.</summary>
-    public ForwardingRouteKind Route { get; init; }
-
     /// <summary>SDL gamepad options for xpad routes.</summary>
     public SdlGamepadOptions SdlGamepad { get; init; } = new();
 
@@ -37,22 +52,15 @@ public sealed record ForwardingServerOptions
     public ILogger? Logger { get; init; }
 }
 
-internal readonly record struct ForwardingRouteRuntime(
-    string RouteId,
-    string PipeName,
-    string OwnershipName);
-
 /// <summary>Runs a local forwarding server.</summary>
 public sealed class ForwardingServer(ForwardingServerOptions options) : IHostedService, IAsyncDisposable
 {
-    private static readonly ForwardingRouteRuntime MouseRoute = new(
-        ForwardingRouteIds.Mouse,
-        "Hosting",
-        @"Local\Hosting");
-    private static readonly ForwardingRouteRuntime XpadRoute = new(
-        ForwardingRouteIds.Xpad,
-        "Hosting.xpad",
-        @"Local\Hosting.xpad");
+    /// <summary>Host control pipe name.</summary>
+    public const string PipeName = "Hosting";
+
+    /// <summary>Host single-instance ownership name.</summary>
+    public const string OwnershipName = @"Local\Hosting";
+
     private readonly ForwardingServerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
     private CancellationTokenSource? _runCancellation;
     private Task? _runTask;
@@ -66,27 +74,10 @@ public sealed class ForwardingServer(ForwardingServerOptions options) : IHostedS
     /// <summary>Gets the route id for a route kind.</summary>
     public static string GetRouteId(ForwardingRouteKind route)
     {
-        return GetRouteRuntime(route).RouteId;
-    }
-
-    /// <summary>Gets the control pipe name for a route.</summary>
-    public static string GetPipeName(ForwardingRouteKind route)
-    {
-        return GetRouteRuntime(route).PipeName;
-    }
-
-    /// <summary>Gets the single-instance ownership name for a route.</summary>
-    public static string GetOwnershipName(ForwardingRouteKind route)
-    {
-        return GetRouteRuntime(route).OwnershipName;
-    }
-
-    private static ForwardingRouteRuntime GetRouteRuntime(ForwardingRouteKind route)
-    {
         return route switch
         {
-            ForwardingRouteKind.Mouse => MouseRoute,
-            ForwardingRouteKind.Xpad => XpadRoute,
+            ForwardingRouteKind.Mouse => ForwardingRouteIds.Mouse,
+            ForwardingRouteKind.Xpad => ForwardingRouteIds.Xpad,
             _ => throw new ArgumentOutOfRangeException(nameof(route)),
         };
     }
@@ -153,140 +144,25 @@ public sealed class ForwardingServer(ForwardingServerOptions options) : IHostedS
         ArgumentNullException.ThrowIfNull(options.Viiper);
         ArgumentNullException.ThrowIfNull(options.SdlGamepad);
 
-        using HostSingleInstance instance = HostSingleInstance.TryAcquire(GetOwnershipName(options.Route)) ??
-            throw new InvalidOperationException("Another forwarding host is already running for this route.");
-        IForwardingRoute route = await CreateRouteAsync(options, cancellationToken).ConfigureAwait(false);
-        ForwardingHost host = new(route, options.Logger);
-        using CancellationTokenSource runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        ForwardingHostServer server = new(
-            host,
-            GetPipeName(options.Route),
-            () => runCancellation.Cancel(),
-            options.Logger);
+        using HostSingleInstance instance = HostSingleInstance.TryAcquire(OwnershipName) ??
+            throw new InvalidOperationException("Another forwarding host is already running.");
 
-        await using (host.ConfigureAwait(false))
-        {
-            Task forwardingTask = Task.Run(() => host.Run(runCancellation.Token), CancellationToken.None);
-            Task controlTask = server.RunAsync(runCancellation.Token);
-
-            await WaitForStopAsync(forwardingTask, controlTask, runCancellation).ConfigureAwait(false);
-        }
-    }
-
-    private static Task<IForwardingRoute> CreateRouteAsync(
-        ForwardingServerOptions options,
-        CancellationToken cancellationToken)
-    {
-#pragma warning disable CA2000 // Ownership transfers to ForwardingHost.
-        return options.Route switch
-        {
-            ForwardingRouteKind.Mouse => CreateMouseRouteAsync(options.Viiper, cancellationToken),
-            ForwardingRouteKind.Xpad => CreateXpadRouteAsync(
-                options.Viiper,
-                options.SdlGamepad,
-                cancellationToken),
-            _ => throw new ArgumentOutOfRangeException(nameof(options)),
-        };
-#pragma warning restore CA2000
-    }
-
-    private static Task<IForwardingRoute> CreateMouseRouteAsync(
-        ViiperOptions viiperOptions,
-        CancellationToken cancellationToken)
-    {
-        return OperatingSystem.IsWindows()
-            ? CreateWindowsMouseRouteAsync(viiperOptions, cancellationToken)
-            : throw new PlatformNotSupportedException("Mouse host routes require Windows.");
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static async Task<IForwardingRoute> CreateWindowsMouseRouteAsync(
-        ViiperOptions viiperOptions,
-        CancellationToken cancellationToken)
-    {
-        RawInputMouseSource? input = null;
-        ViiperMouseOutput? output = null;
+        ForwardingHostRuntime runtime = ForwardingHostRuntimeFactory.Create(options);
 
         try
         {
-            input = await RawInputMouseSource
-                .ConnectAsync(cancellationToken)
-                .ConfigureAwait(false);
-            await ViiperServer.EnsureRunningAsync(viiperOptions, cancellationToken).ConfigureAwait(false);
-            output = await ViiperMouseOutput
-                .ConnectAsync(viiperOptions, cancellationToken)
-                .ConfigureAwait(false);
+            using CancellationTokenSource runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            ForwardingHostServer server = new(
+                runtime,
+                PipeName,
+                () => runCancellation.Cancel(),
+                options.Logger);
 
-            MouseForwardingRoute route = new(input, output);
-            input = null;
-            output = null;
-            return route;
+            await server.RunAsync(runCancellation.Token).ConfigureAwait(false);
         }
         finally
         {
-            if (input is not null)
-            {
-                await input.DisposeAsync().ConfigureAwait(false);
-            }
-
-            if (output is not null)
-            {
-                await output.DisposeAsync().ConfigureAwait(false);
-            }
-        }
-    }
-
-    private static async Task<IForwardingRoute> CreateXpadRouteAsync(
-        ViiperOptions viiperOptions,
-        SdlGamepadOptions sdlOptions,
-        CancellationToken cancellationToken)
-    {
-        SdlGamepadSource? input = null;
-        ViiperXbox360Output? output = null;
-
-        try
-        {
-            input = await SdlGamepadSource
-                .ConnectAsync(sdlOptions, cancellationToken)
-                .ConfigureAwait(false);
-            await ViiperServer.EnsureRunningAsync(viiperOptions, cancellationToken).ConfigureAwait(false);
-            output = await ViiperXbox360Output
-                .ConnectAsync(viiperOptions, cancellationToken)
-                .ConfigureAwait(false);
-
-            Xbox360ForwardingRoute route = new(input, output);
-            input = null;
-            output = null;
-            return route;
-        }
-        finally
-        {
-            if (input is not null)
-            {
-                await input.DisposeAsync().ConfigureAwait(false);
-            }
-
-            if (output is not null)
-            {
-                await output.DisposeAsync().ConfigureAwait(false);
-            }
-        }
-    }
-
-    private static async Task WaitForStopAsync(
-        Task forwardingTask,
-        Task controlTask,
-        CancellationTokenSource cancellationSource)
-    {
-        _ = await Task.WhenAny(forwardingTask, controlTask).ConfigureAwait(false);
-        await cancellationSource.CancelAsync().ConfigureAwait(false);
-
-        try
-        {
-            await Task.WhenAll(forwardingTask, controlTask).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationSource.IsCancellationRequested)
-        {
+            await runtime.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

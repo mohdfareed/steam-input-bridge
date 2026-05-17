@@ -6,23 +6,9 @@ using StreamJsonRpc;
 
 namespace Hosting;
 
-/// <summary>Status reported by the local forwarding server.</summary>
-/// <param name="RouteId">Hosted route id.</param>
-/// <param name="IsEnabled">Whether forwarding is enabled.</param>
-/// <param name="IsConnected">Whether route input and output are connected.</param>
-/// <param name="EnabledClientCount">Number of connected enabled clients.</param>
-public readonly record struct ForwardingStatus(
-    string RouteId,
-    bool IsEnabled,
-    bool IsConnected,
-    int EnabledClientCount);
-
 /// <summary>Local forwarding client options.</summary>
 public sealed record ForwardingClientOptions
 {
-    /// <summary>Route to control.</summary>
-    public ForwardingRouteKind Route { get; init; }
-
     /// <summary>Connection timeout.</summary>
     public TimeSpan? ConnectTimeout { get; init; }
 }
@@ -31,12 +17,11 @@ public sealed record ForwardingClientOptions
 public sealed class ForwardingClient
 {
     private static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds(2);
-    private readonly string _pipeName;
     private readonly TimeSpan? _connectTimeout;
 
-    /// <summary>Creates a client for a route.</summary>
-    public ForwardingClient(ForwardingRouteKind route = ForwardingRouteKind.Mouse, TimeSpan? connectTimeout = null)
-        : this(new ForwardingClientOptions { Route = route, ConnectTimeout = connectTimeout })
+    /// <summary>Creates a client with the default host pipe.</summary>
+    public ForwardingClient(TimeSpan? connectTimeout = null)
+        : this(new ForwardingClientOptions { ConnectTimeout = connectTimeout })
     {
     }
 
@@ -44,27 +29,30 @@ public sealed class ForwardingClient
     public ForwardingClient(ForwardingClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _pipeName = ForwardingServer.GetPipeName(options.Route);
         _connectTimeout = options.ConnectTimeout;
     }
 
     internal ForwardingClient(string pipeName, TimeSpan? connectTimeout = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
-        _pipeName = pipeName;
+        PipeName = pipeName;
         _connectTimeout = connectTimeout;
     }
 
-    /// <summary>Enables forwarding until the returned lease is disposed.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task<ForwardingEnableLease> EnableAsync(CancellationToken cancellationToken = default)
+    private string PipeName { get; } = ForwardingServer.PipeName;
+
+    /// <summary>Enables forwarding for a route until the returned lease is disposed.</summary>
+    public async Task<ForwardingEnableLease> EnableAsync(
+        ForwardingRouteKind route,
+        CancellationToken cancellationToken = default)
     {
         NamedPipeClientStream pipe = CreatePipe();
+
         try
         {
             await ConnectAsync(pipe, cancellationToken).ConfigureAwait(false);
             IForwardingHostControl proxy = JsonRpc.Attach<IForwardingHostControl>(pipe);
-            await proxy.EnableAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+            await proxy.EnableAsync(route).WaitAsync(cancellationToken).ConfigureAwait(false);
             return new ForwardingEnableLease(pipe, proxy);
         }
         catch
@@ -75,11 +63,8 @@ public sealed class ForwardingClient
     }
 
     /// <summary>Gets host status.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task<ForwardingStatus> GetStatusAsync(CancellationToken cancellationToken = default)
+    public async Task<ForwardingHostStatus> GetStatusAsync(CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(_pipeName);
-
         using NamedPipeClientStream pipe = CreatePipe();
 
         await ConnectAsync(pipe, cancellationToken).ConfigureAwait(false);
@@ -89,11 +74,8 @@ public sealed class ForwardingClient
     }
 
     /// <summary>Requests the host to stop.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(_pipeName);
-
         using NamedPipeClientStream pipe = CreatePipe();
 
         await ConnectAsync(pipe, cancellationToken).ConfigureAwait(false);
@@ -104,11 +86,9 @@ public sealed class ForwardingClient
 
     private NamedPipeClientStream CreatePipe()
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(_pipeName);
-
         return new NamedPipeClientStream(
             ".",
-            _pipeName,
+            PipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
     }

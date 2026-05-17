@@ -68,8 +68,8 @@ internal static partial class ForwardingBenchmarks
 
         return
         [
-            new ForwardingBenchmarkResult("bench raw input api->callback", inputMeasurement),
-            new ForwardingBenchmarkResult("bench raw viiper bridge source->viiper-api", bridgeMeasurement),
+            new ForwardingBenchmarkResult("test mouse bench input api->callback", inputMeasurement),
+            new ForwardingBenchmarkResult("test mouse bench viiper bridge source->viiper-api", bridgeMeasurement),
         ];
     }
 
@@ -99,8 +99,8 @@ internal static partial class ForwardingBenchmarks
 
         return
         [
-            new ForwardingBenchmarkResult("bench sdl input api->callback", inputMeasurement),
-            new ForwardingBenchmarkResult("bench sdl viiper bridge source->viiper-api", bridgeMeasurement),
+            new ForwardingBenchmarkResult("test xpad bench input api->callback", inputMeasurement),
+            new ForwardingBenchmarkResult("test xpad bench viiper bridge source->viiper-api", bridgeMeasurement),
         ];
     }
 }
