@@ -13,6 +13,7 @@ namespace Hosting;
 internal sealed class ForwardingHostServer(
     ForwardingHost host,
     string pipeName,
+    Action? requestStop = null,
     ILogger? logger = null)
 {
     /// <summary>Runs the control server until cancelled.</summary>
@@ -82,7 +83,7 @@ internal sealed class ForwardingHostServer(
             ((Stream)target!).Dispose();
         }, stream);
 
-        ForwardingHostControlSession target = new(host, logger);
+        ForwardingHostControlSession target = new(host, requestStop, logger);
         using JsonRpc rpc = JsonRpc.Attach(stream, target);
 
         try
@@ -103,10 +104,13 @@ internal partial interface IForwardingHostControl
     Task<ForwardingStatus> GetStatusAsync();
 
     Task EnableAsync();
+
+    Task StopAsync();
 }
 
 internal sealed class ForwardingHostControlSession(
     ForwardingHost host,
+    Action? requestStop,
     ILogger? logger) : IForwardingHostControl, IDisposable
 {
     private IDisposable? _lease;
@@ -130,6 +134,13 @@ internal sealed class ForwardingHostControlSession(
             ForwardingHostControlLog.LeaseOpened(logger, host.RouteId);
         }
 
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync()
+    {
+        ForwardingHostControlLog.ReceivedCommand(logger, nameof(StopAsync));
+        requestStop?.Invoke();
         return Task.CompletedTask;
     }
 

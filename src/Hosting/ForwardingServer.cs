@@ -157,12 +157,13 @@ public sealed class ForwardingServer(ForwardingServerOptions options) : IHostedS
             throw new InvalidOperationException("Another forwarding host is already running for this route.");
         IForwardingRoute route = await CreateRouteAsync(options, cancellationToken).ConfigureAwait(false);
         ForwardingHost host = new(route, options.Logger);
+        using CancellationTokenSource runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         ForwardingHostServer server = new(
             host,
             GetPipeName(options.Route),
+            () => runCancellation.Cancel(),
             options.Logger);
 
-        using CancellationTokenSource runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         await using (host.ConfigureAwait(false))
         {
             Task forwardingTask = Task.Run(() => host.Run(runCancellation.Token), CancellationToken.None);

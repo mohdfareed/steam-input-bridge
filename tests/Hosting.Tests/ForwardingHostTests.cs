@@ -109,7 +109,7 @@ public sealed class ForwardingHostTests
     public async Task ControlSessionReportsHostState()
     {
         await using ForwardingHost host = CreateHost();
-        using ForwardingHostControlSession session = new(host, logger: null);
+        using ForwardingHostControlSession session = new(host, requestStop: null, logger: null);
 
         Assert.IsFalse(host.IsEnabled);
         ForwardingStatus status = await session.GetStatusAsync().ConfigureAwait(false);
@@ -147,7 +147,7 @@ public sealed class ForwardingHostTests
     public async Task ControlSessionEnableLeaseReleasesOnDispose()
     {
         await using ForwardingHost host = CreateHost();
-        using ForwardingHostControlSession session = new(host, logger: null);
+        using ForwardingHostControlSession session = new(host, requestStop: null, logger: null);
 
         await session.EnableAsync().ConfigureAwait(false);
 
@@ -158,6 +158,19 @@ public sealed class ForwardingHostTests
 
         Assert.IsFalse(host.IsEnabled);
         Assert.AreEqual(0, host.EnabledLeaseCount);
+    }
+
+    /// <summary>Checks control session stop callback.</summary>
+    [TestMethod]
+    public async Task ControlSessionStopRequestsServerStop()
+    {
+        await using ForwardingHost host = CreateHost();
+        bool stopped = false;
+        using ForwardingHostControlSession session = new(host, () => stopped = true, logger: null);
+
+        await session.StopAsync().ConfigureAwait(false);
+
+        Assert.IsTrue(stopped);
     }
 
     /// <summary>Checks route-specific ownership and pipe names.</summary>

@@ -88,6 +88,20 @@ public sealed class ForwardingClient
         return await proxy.GetStatusAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Requests the host to stop.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task StopAsync(CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(_pipeName);
+
+        using NamedPipeClientStream pipe = CreatePipe();
+
+        await ConnectAsync(pipe, cancellationToken).ConfigureAwait(false);
+        IForwardingHostControl proxy = JsonRpc.Attach<IForwardingHostControl>(pipe);
+        using IDisposable proxyHandle = (IDisposable)proxy;
+        await proxy.StopAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private NamedPipeClientStream CreatePipe()
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(_pipeName);
