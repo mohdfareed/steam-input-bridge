@@ -1,43 +1,39 @@
 using System;
 using System.IO;
+using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using VirtualMouse.Protocol;
+using VirtualMouse.Settings;
 
-namespace VirtualMouse.Client;
+namespace VirtualMouse.Hosting;
 
-// The app-facing client: connect it, send requests through it, then dispose it.
-public sealed class VirtualMouseClient(
-    IOptions<ConnectionOptions> options,
-    ILogger<VirtualMouseClient> logger) : IAsyncDisposable
+internal sealed class ClientConnection(
+    IOptions<HostingSettings> options,
+    ILogger<ClientConnection> logger) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private ClientConnection? _connection;
-    private bool _disposed;
+    private NamedPipeClientStream? _pipe;
+    private RequestResponsePipe? _messages;
 
-    // MARK: API
-    // ============================================================================
+    internal event EventHandler<ClientConnectionChangedEventArgs>? Changed;
 
-    public event EventHandler<ClientConnectionChangedEventArgs>? ConnectionChanged;
+    internal Guid? ClientId { get; private set; }
 
-    public Guid? ClientId { get; private set; }
+    internal ClientConnectionState State { get; private set; } = ClientConnectionState.Disconnected;
 
-    public ClientConnectionState State { get; private set; } = ClientConnectionState.Disconnected;
-
-    public async Task ConnectAsync(CancellationToken cancellationToken)
+    internal async Task ConnectAsync(CancellationToken cancellationToken)
     {
-        ThrowIfDisposed();
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_connection is not null)
+            if (_messages is not null)
             {
                 return;
             }
 
-            await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await OpenAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -45,17 +41,8 @@ public sealed class VirtualMouseClient(
         }
     }
 
-    public async Task<Ack> AckAsync(CancellationToken cancellationToken)
+    internal async Task WaitAsync(CancellationToken cancellationToken)
     {
-        ThrowIfDisposed();
-        return await GetConnection().AckAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task WaitAsync(CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-
-        // The CLI uses this as its lifetime; other callers can issue requests directly.
         while (!cancellationToken.IsCancellationRequested)
         {
             await Task
@@ -69,46 +56,52 @@ public sealed class VirtualMouseClient(
             catch (Exception exception) when (IsConnectionFailure(exception))
             {
                 logger.LogWarning("Server connection lost: {Message}", exception.Message);
-                await ClearConnectionAsync().ConfigureAwait(false);
+                await ClearAsync().ConfigureAwait(false);
                 await ReconnectAsync(cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    public async ValueTask DisposeAsync()
+    internal async ValueTask DisposeAsync()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        await ClearConnectionAsync().ConfigureAwait(false);
+        await ClearAsync().ConfigureAwait(false);
         _gate.Dispose();
     }
 
-    // MARK: Connection
-    // ============================================================================
+    ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        return DisposeAsync();
+    }
 
-    private async Task OpenConnectionAsync(CancellationToken cancellationToken)
+    private Task<Ack> AckAsync(CancellationToken cancellationToken)
+    {
+        return Messages.AckAsync(cancellationToken);
+    }
+
+    private async Task OpenAsync(CancellationToken cancellationToken)
     {
         string pipeName = options.Value.PipeName;
         SetState(ClientConnectionState.Connecting, null);
         logger.LogInformation("Connecting to server pipe {PipeName}", pipeName);
 
+        NamedPipeClientStream pipe = new(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         try
         {
-            ClientConnection connection = await ClientConnection
-                .ConnectAsync(pipeName, cancellationToken)
+            await pipe.ConnectAsync(cancellationToken).ConfigureAwait(false);
+            RequestResponsePipe messages = new(pipe);
+            ConnectResponse response = await messages
+                .ConnectAsync(Environment.ProcessId, cancellationToken)
                 .ConfigureAwait(false);
 
-            _connection = connection;
-            ClientId = connection.ClientId;
+            _pipe = pipe;
+            _messages = messages;
+            ClientId = response.ClientId;
             SetState(ClientConnectionState.Connected, ClientId);
             logger.LogInformation("Connected to server as {ClientId}", ClientId);
         }
         catch
         {
+            await pipe.DisposeAsync().ConfigureAwait(false);
             SetState(ClientConnectionState.Disconnected, null);
             throw;
         }
@@ -126,7 +119,7 @@ public sealed class VirtualMouseClient(
             catch (Exception exception) when (IsConnectionFailure(exception))
             {
                 logger.LogWarning("Reconnect failed: {Message}", exception.Message);
-                await ClearConnectionAsync().ConfigureAwait(false);
+                await ClearAsync().ConfigureAwait(false);
                 await Task
                     .Delay(TimeSpan.FromMilliseconds(options.Value.ReconnectDelayMilliseconds), cancellationToken)
                     .ConfigureAwait(false);
@@ -134,25 +127,25 @@ public sealed class VirtualMouseClient(
         }
     }
 
-    private async Task ClearConnectionAsync()
+    private async Task ClearAsync()
     {
-        ClientConnection? connection = Interlocked.Exchange(ref _connection, null);
-        if (connection is not null)
+        RequestResponsePipe? messages = Interlocked.Exchange(ref _messages, null);
+        if (messages is not null)
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
+            await messages.DisposeAsync().ConfigureAwait(false);
+        }
+
+        NamedPipeClientStream? pipe = Interlocked.Exchange(ref _pipe, null);
+        if (pipe is not null)
+        {
+            await pipe.DisposeAsync().ConfigureAwait(false);
         }
 
         ClientId = null;
         SetState(ClientConnectionState.Disconnected, null);
     }
 
-    // MARK: State
-    // ============================================================================
-
-    private ClientConnection GetConnection()
-    {
-        return _connection ?? throw new InvalidOperationException("Client is not connected.");
-    }
+    private RequestResponsePipe Messages => _messages ?? throw new InvalidOperationException("Client is not connected.");
 
     private void SetState(ClientConnectionState state, Guid? clientId)
     {
@@ -162,12 +155,7 @@ public sealed class VirtualMouseClient(
         }
 
         State = state;
-        ConnectionChanged?.Invoke(this, new ClientConnectionChangedEventArgs(state, clientId));
-    }
-
-    private void ThrowIfDisposed()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Changed?.Invoke(this, new ClientConnectionChangedEventArgs(state, clientId));
     }
 
     private static bool IsConnectionFailure(Exception exception)

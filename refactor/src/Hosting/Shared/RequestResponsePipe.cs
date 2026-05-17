@@ -4,11 +4,11 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace VirtualMouse.Protocol;
+namespace VirtualMouse.Hosting;
 
 // One JSON line is one request or response. Events can be added later without
 // changing the client/server object model.
-public sealed class RequestResponsePipe(Stream stream) : IAsyncDisposable
+internal sealed class RequestResponsePipe(Stream stream) : IAsyncDisposable
 {
     internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly StreamReader _reader = new(stream, leaveOpen: true);
@@ -16,9 +16,12 @@ public sealed class RequestResponsePipe(Stream stream) : IAsyncDisposable
     private readonly SemaphoreSlim _writeGate = new(1, 1);
 
     // MARK: API
-    // ========================================================================
+    // ============================================================================
 
-    public async Task<TResponse> SendAsync<TRequest, TResponse>(string method, TRequest request, CancellationToken cancellationToken)
+    internal async Task<TResponse> SendAsync<TRequest, TResponse>(
+        string method,
+        TRequest request,
+        CancellationToken cancellationToken)
     {
         Guid id = Guid.NewGuid();
         await WriteAsync(
@@ -30,7 +33,7 @@ public sealed class RequestResponsePipe(Stream stream) : IAsyncDisposable
         return ReadResponse<TResponse>(id, response);
     }
 
-    public async Task<TResponse> SendAsync<TResponse>(string method, CancellationToken cancellationToken)
+    internal async Task<TResponse> SendAsync<TResponse>(string method, CancellationToken cancellationToken)
     {
         Guid id = Guid.NewGuid();
         await WriteAsync(new RequestMessage(id, method, null), cancellationToken).ConfigureAwait(false);
@@ -39,7 +42,7 @@ public sealed class RequestResponsePipe(Stream stream) : IAsyncDisposable
         return ReadResponse<TResponse>(id, response);
     }
 
-    public async Task<RequestMessage?> ReadRequestAsync(CancellationToken cancellationToken)
+    internal async Task<RequestMessage?> ReadRequestAsync(CancellationToken cancellationToken)
     {
         string? line = await _reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         return line is null
@@ -47,19 +50,19 @@ public sealed class RequestResponsePipe(Stream stream) : IAsyncDisposable
             : JsonSerializer.Deserialize<RequestMessage>(line, JsonOptions);
     }
 
-    public Task SendResponseAsync<TResponse>(Guid requestId, TResponse response, CancellationToken cancellationToken)
+    internal Task SendResponseAsync<TResponse>(Guid requestId, TResponse response, CancellationToken cancellationToken)
     {
         return WriteAsync(
             new ResponseMessage(requestId, true, JsonSerializer.SerializeToElement(response, JsonOptions), null),
             cancellationToken);
     }
 
-    public Task SendErrorAsync(Guid requestId, string error, CancellationToken cancellationToken)
+    internal Task SendErrorAsync(Guid requestId, string error, CancellationToken cancellationToken)
     {
         return WriteAsync(new ResponseMessage(requestId, false, null, error), cancellationToken);
     }
 
-    public async ValueTask DisposeAsync()
+    internal async ValueTask DisposeAsync()
     {
         _writeGate.Dispose();
         try
@@ -77,8 +80,13 @@ public sealed class RequestResponsePipe(Stream stream) : IAsyncDisposable
         _reader.Dispose();
     }
 
+    ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        return DisposeAsync();
+    }
+
     // MARK: Helpers
-    // ========================================================================
+    // ============================================================================
 
     private async Task<ResponseMessage> ReadResponseAsync(CancellationToken cancellationToken)
     {

@@ -2,17 +2,17 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace VirtualMouse.Protocol;
+namespace VirtualMouse.Hosting;
 
 // MARK: Requests
 // ============================================================================
 
-public static class ServerApi
+internal static class ServerApi
 {
     private const string ConnectMethod = "connect";
     private const string AckMethod = "ack";
 
-    public static Task<ConnectResponse> ConnectAsync(
+    internal static Task<ConnectResponse> ConnectAsync(
         this RequestResponsePipe pipe,
         int processId,
         CancellationToken cancellationToken)
@@ -25,7 +25,7 @@ public static class ServerApi
             cancellationToken);
     }
 
-    public static Task<Ack> AckAsync(
+    internal static Task<Ack> AckAsync(
         this RequestResponsePipe pipe,
         CancellationToken cancellationToken)
     {
@@ -34,14 +34,14 @@ public static class ServerApi
         return pipe.SendAsync<Ack>(AckMethod, cancellationToken);
     }
 
-    public static bool IsConnect(RequestMessage request)
+    internal static bool IsConnect(RequestMessage request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
         return request.Method == ConnectMethod;
     }
 
-    public static bool IsAck(RequestMessage request)
+    internal static bool IsAck(RequestMessage request)
     {
         ArgumentNullException.ThrowIfNull(request);
 

@@ -4,19 +4,20 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using VirtualMouse.Client;
-using VirtualMouse.Protocol;
-using VirtualMouse.Server;
+using VirtualMouse.Hosting;
+using VirtualMouse.Settings;
 
 namespace Communication.Tests;
 
+/// <summary>Tests server/client connection behavior.</summary>
 [TestClass]
 public sealed class ServerClientTests
 {
+    /// <summary>Checks that connecting a client registers it with the server.</summary>
     [TestMethod]
     public async Task ClientConnectRegistersWithServer()
     {
-        ConnectionOptions options = CreateOptions();
+        HostingSettings options = CreateOptions();
         using CancellationTokenSource serverStop = new();
         VirtualMouseServer server = CreateServer(options);
         Task serverTask = server.RunAsync(serverStop.Token);
@@ -35,10 +36,11 @@ public sealed class ServerClientTests
         await StopServerAsync(serverStop, serverTask).ConfigureAwait(false);
     }
 
+    /// <summary>Checks that a waiting client reconnects after a server restart.</summary>
     [TestMethod]
     public async Task ClientReconnectsAfterServerRestart()
     {
-        ConnectionOptions options = CreateOptions();
+        HostingSettings options = CreateOptions();
         using CancellationTokenSource serverOneStop = new();
         VirtualMouseServer serverOne = CreateServer(options);
         Task serverOneTask = serverOne.RunAsync(serverOneStop.Token);
@@ -65,9 +67,9 @@ public sealed class ServerClientTests
         await StopServerAsync(serverTwoStop, serverTwoTask).ConfigureAwait(false);
     }
 
-    private static ConnectionOptions CreateOptions()
+    private static HostingSettings CreateOptions()
     {
-        return new ConnectionOptions
+        return new HostingSettings
         {
             PipeName = "VirtualMouse.Refactor.Tests." + Guid.NewGuid().ToString("N"),
             KeepAliveMilliseconds = 25,
@@ -75,12 +77,14 @@ public sealed class ServerClientTests
         };
     }
 
-    private static VirtualMouseClient CreateClient(ConnectionOptions options)
+    private static VirtualMouseClient CreateClient(HostingSettings options)
     {
-        return new VirtualMouseClient(Options.Create(options), NullLogger<VirtualMouseClient>.Instance);
+        return new VirtualMouseClient(
+            Options.Create(options),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
     }
 
-    private static VirtualMouseServer CreateServer(ConnectionOptions options)
+    private static VirtualMouseServer CreateServer(HostingSettings options)
     {
         return new VirtualMouseServer(Options.Create(options), NullLogger<VirtualMouseServer>.Instance);
     }

@@ -1,22 +1,43 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using VirtualMouse.Protocol;
 
-namespace VirtualMouse.Server;
+namespace VirtualMouse.Hosting;
 
-// MARK: Client Connection
-// ============================================================================
+internal sealed record ConnectedClient(Guid Id, int ProcessId, DateTimeOffset ConnectedAt);
+
+internal sealed class ConnectedClients
+{
+    private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
+
+    internal IReadOnlyCollection<ConnectedClient> Snapshot => [.. _clients.Values];
+
+    internal int Count => _clients.Count;
+
+    internal ConnectedClient Add(int processId)
+    {
+        ConnectedClient client = new(Guid.NewGuid(), processId, DateTimeOffset.UtcNow);
+        _clients[client.Id] = client;
+        return client;
+    }
+
+    internal void Remove(Guid clientId)
+    {
+        _ = _clients.TryRemove(clientId, out _);
+    }
+}
 
 internal sealed class ServerConnection(
     NamedPipeServerStream pipe,
     ConnectedClients clients,
     ILogger logger) : IAsyncDisposable
 {
-    public async Task RunAsync(CancellationToken cancellationToken)
+    internal async Task RunAsync(CancellationToken cancellationToken)
     {
         await using (pipe.ConfigureAwait(false))
         await using (RequestResponsePipe messages = new(pipe))
@@ -45,6 +66,16 @@ internal sealed class ServerConnection(
                 }
             }
         }
+    }
+
+    internal async ValueTask DisposeAsync()
+    {
+        await pipe.DisposeAsync().ConfigureAwait(false);
+    }
+
+    ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        return DisposeAsync();
     }
 
     private async Task<Guid?> ConnectClientAsync(
@@ -93,10 +124,5 @@ internal sealed class ServerConnection(
     private static bool IsDisconnect(Exception exception)
     {
         return exception is IOException or EndOfStreamException or ObjectDisposedException or OperationCanceledException;
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await pipe.DisposeAsync().ConfigureAwait(false);
     }
 }

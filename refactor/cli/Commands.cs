@@ -2,8 +2,7 @@ using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using VirtualMouse.Client;
-using VirtualMouse.Server;
+using VirtualMouse.Hosting;
 
 namespace Refactor.Cli;
 
