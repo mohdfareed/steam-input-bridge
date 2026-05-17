@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Inputs.Sdl;
 using Microsoft.Extensions.Logging;
 
 namespace Hosting;
@@ -212,7 +211,6 @@ internal sealed class ForwardingHostRuntime(
     HostedRouteController mouse,
     HostedRouteController xpad,
     int xpadDeviceIndex,
-    SdlGamepadInputMode xpadMode,
     bool xpadUsesPhysicalMotion,
     ForwardingHostState hostState,
     string? xpadDeviceName,
@@ -273,7 +271,6 @@ internal sealed class ForwardingHostRuntime(
             mouseStatus,
             xpadStatus,
             xpadDeviceIndex,
-            xpadMode,
             xpadUsesPhysicalMotion,
             hostState.EmulationEnabled,
             hostState.PhysicalMotionEnabled,

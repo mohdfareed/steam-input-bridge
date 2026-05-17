@@ -119,7 +119,6 @@ public sealed class ForwardingHostTests
         Assert.AreEqual("xpad", status.Xpad.RouteId);
         Assert.AreEqual(0, status.Xpad.EnabledClientCount);
         Assert.IsFalse(status.Xpad.IsConnected);
-        Assert.AreEqual(Inputs.Sdl.SdlGamepadInputMode.Physical, status.XpadMode);
         Assert.IsFalse(status.XpadUsesPhysicalMotion);
         Assert.IsTrue(status.EmulationEnabled);
         Assert.IsTrue(status.PhysicalMotionEnabled);
@@ -347,7 +346,6 @@ public sealed class ForwardingHostTests
             mouse,
             xpad,
             0,
-            Inputs.Sdl.SdlGamepadInputMode.Physical,
             false,
             hostState,
             "gamepad",

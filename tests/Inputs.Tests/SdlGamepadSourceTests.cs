@@ -1,3 +1,4 @@
+using System;
 using Inputs.Sdl;
 
 namespace Inputs.Tests;
@@ -14,62 +15,70 @@ public sealed class SdlGamepadSourceTests
         Assert.AreEqual((ushort)32767, SdlGamepadSource.ToTrigger(32767));
     }
 
-    /// <summary>Checks mixed mode motion selection prefers a matching physical device.</summary>
+    /// <summary>Checks primary motion is used when available.</summary>
     [TestMethod]
-    public void ResolveMotionDeviceIndexPrefersMatchingPhysicalDeviceName()
+    public void ResolveMotionDeviceIndexUsesPrimaryMotionWhenAvailable()
     {
-        SdlGamepadInfo primary = new(1, 2, "Steam Controller", 0x1234, 0x045e, 0x028e, null);
-        SdlGamepadInfo otherPhysical = new(0, 1, "DualSense", 0, 0x054c, 0x0df2, null);
-        SdlGamepadInfo matchingPhysical = new(2, 3, "steam controller", 0, 0x28de, 0x1304, null);
-
-        int index = SdlGamepadSource.ResolveMotionDeviceIndex(
-            [otherPhysical, primary, matchingPhysical],
-            primary,
-            new SdlGamepadOptions
-            {
-                Mode = SdlGamepadInputMode.Steam,
-                UsePhysicalMotion = true,
-            });
-
-        Assert.AreEqual(2, index);
-    }
-
-    /// <summary>Checks mixed mode motion selection falls back to the first physical device.</summary>
-    [TestMethod]
-    public void ResolveMotionDeviceIndexFallsBackToFirstPhysicalDevice()
-    {
-        SdlGamepadInfo primary = new(1, 2, "Steam Controller", 0x1234, 0x045e, 0x028e, null);
-        SdlGamepadInfo physical = new(0, 1, "DualSense", 0, 0x054c, 0x0df2, null);
-
-        int index = SdlGamepadSource.ResolveMotionDeviceIndex(
-            [physical, primary],
-            primary,
-            new SdlGamepadOptions
-            {
-                Mode = SdlGamepadInputMode.Steam,
-                UsePhysicalMotion = true,
-            });
-
-        Assert.AreEqual(0, index);
-    }
-
-    /// <summary>Checks explicit mixed mode motion index wins over automatic selection.</summary>
-    [TestMethod]
-    public void ResolveMotionDeviceIndexUsesExplicitIndex()
-    {
-        SdlGamepadInfo primary = new(1, 2, "Steam Controller", 0x1234, 0x045e, 0x028e, null);
+        SdlGamepadInfo primary = new(1, 2, "DualSense", 0, 0x054c, 0x0df2, null) { HasGyro = true };
 
         int index = SdlGamepadSource.ResolveMotionDeviceIndex(
             [primary],
             primary,
+            new SdlGamepadOptions());
+
+        Assert.AreEqual(1, index);
+    }
+
+    /// <summary>Checks missing motion source fails.</summary>
+    [TestMethod]
+    public void ResolveMotionDeviceIndexRejectsMissingMotionSource()
+    {
+        SdlGamepadInfo primary = new(1, 2, "Steam Controller", 0x1234, 0x045e, 0x028e, null);
+        SdlGamepadInfo physical = new(0, 1, "DualSense", 0, 0x054c, 0x0df2, null) { HasGyro = true };
+
+        InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            SdlGamepadSource.ResolveMotionDeviceIndex(
+                [physical, primary],
+                primary,
+                new SdlGamepadOptions()));
+
+        StringAssert.Contains(exception.Message, "No matching", StringComparison.Ordinal);
+    }
+
+    /// <summary>Checks explicit motion index wins when the device exists.</summary>
+    [TestMethod]
+    public void ResolveMotionDeviceIndexUsesExplicitIndex()
+    {
+        SdlGamepadInfo primary = new(1, 2, "Steam Controller", 0x1234, 0x045e, 0x028e, null);
+        SdlGamepadInfo motion = new(5, 3, "Motion Controller", 0, 0x045e, 0x028e, null) { HasGyro = true };
+
+        int index = SdlGamepadSource.ResolveMotionDeviceIndex(
+            [primary, motion],
+            primary,
             new SdlGamepadOptions
             {
-                Mode = SdlGamepadInputMode.Steam,
-                UsePhysicalMotion = true,
                 MotionDeviceIndex = 5,
             });
 
         Assert.AreEqual(5, index);
+    }
+
+    /// <summary>Checks missing explicit motion index fails.</summary>
+    [TestMethod]
+    public void ResolveMotionDeviceIndexRejectsMissingExplicitIndex()
+    {
+        SdlGamepadInfo primary = new(1, 2, "Steam Controller", 0x1234, 0x045e, 0x028e, null);
+
+        ArgumentOutOfRangeException exception = Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            SdlGamepadSource.ResolveMotionDeviceIndex(
+                [primary],
+                primary,
+                new SdlGamepadOptions
+                {
+                    MotionDeviceIndex = 5,
+                }));
+
+        Assert.AreEqual("deviceIndex", exception.ParamName);
     }
 
     /// <summary>Checks motion events come from the configured motion source.</summary>

@@ -54,6 +54,7 @@ internal static class TestCommands
         Command command = new("xpad", "Gamepad diagnostics and test tools.");
         command.Subcommands.Add(XpadCommands.CreateProbeCommand());
         command.Subcommands.Add(XpadCommands.CreateInputCommand());
+        command.Subcommands.Add(XpadCommands.CreateMotionSidecarCommand());
         command.Subcommands.Add(XpadCommands.CreatePressCommand(services));
         command.Subcommands.Add(BenchCommands.CreateBenchCommand(ForwardingBenchmarkInput.Sdl));
         return command;

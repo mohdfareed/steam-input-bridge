@@ -39,26 +39,18 @@ public sealed class CliOptionsTests
     {
         Command command = new("test");
         Option<int?> deviceIndexOption = CliOptions.CreateDeviceIndexOption("--device-index", "device");
-        Option<SdlGamepadInputMode?> modeOption = CliOptions.CreateSdlGamepadModeOption("--mode", "mode");
-        Option<bool> physicalMotionOption = CliOptions.CreateSdlPhysicalMotionOption("--physical-motion", "physical motion");
         Option<int?> motionDeviceIndexOption = CliOptions.CreateDeviceIndexOption("--motion-device-index", "motion");
         command.Options.Add(deviceIndexOption);
-        command.Options.Add(modeOption);
-        command.Options.Add(physicalMotionOption);
         command.Options.Add(motionDeviceIndexOption);
 
         ParseResult result = command.Parse(
-            "--device-index 2 --mode steam --physical-motion --motion-device-index 3");
+            "--device-index 2 --motion-device-index 3");
         SdlGamepadOptions options = CliOptions.CreateSdlGamepadOptions(
             result,
             deviceIndexOption,
-            modeOption,
-            physicalMotionOption,
             motionDeviceIndexOption);
 
         Assert.AreEqual(2, options.DeviceIndex);
-        Assert.AreEqual(SdlGamepadInputMode.Steam, options.Mode);
-        Assert.IsTrue(options.UsePhysicalMotion);
         Assert.AreEqual(3, options.MotionDeviceIndex);
     }
 }

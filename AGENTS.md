@@ -95,6 +95,11 @@ Do not set `LangVersion=latest`.
 - Keep the Steam Input control API to caller-facing actions: force a config, clear forcing, and open controller config. Do not expose URI builders, duplicate static/instance variants, detected app state, or activation lifetime state without a real workflow.
 - Keep `SteamGame` small for the current CLI: app id, name, entry kind, and one local path. Do not expose Steam shortcut icons, tags, launch options, or raw metadata until a real workflow needs them.
 - Keep VIIPER server probing/startup logic in `src/Outputs/Viiper`; CLI code may orchestrate auto-start but should not own the probing or process-start rules.
+- Keep durable responsibility, profile, configuration, and state ownership rules in `ARCHITECTURE.md`; update it when those decisions change.
+- For context-sensitive 1000 Hz input, prefer client-local hot-path forwarding over per-report manager IPC.
+- Keep manager responsibilities focused on configuration, profile resolution, leases, system policy, heartbeat, and cleanup.
+- Keep client responsibilities focused on contextual input reads, route-local gates, direct output writes when latency requires it, heartbeat, and normal lease release.
+- Separate durable configuration from runtime state. Profiles, games, controllers, and global settings are configuration; active leases, process ids, heartbeat, and created device ids are state.
 
 ## Current API Direction
 
@@ -138,6 +143,7 @@ Do not set `LangVersion=latest`.
 - In a `WM_INPUT` handler, read the current event from `lParam` with `GetRawInputData`, then use `GetRawInputBuffer` only to drain additional queued events.
 - Keep raw input filtering caller-driven; do not bake Steam-specific assumptions into `Inputs.RawInput`.
 - Put durable source/transport interop logic in `src`; CLI tools should orchestrate and display results, not own reusable forwarding rules.
+- Keep SDL gamepad input primitive: list devices, connect by SDL index, read input, and optionally use an explicit motion device index. Steam/physical source policy and automatic counterpart selection belong above `Inputs.Sdl`.
 
 ## Testing Rules
 
@@ -225,6 +231,7 @@ The separator line is always 79 characters wide.
 - Avoid self-referential wording like "minimal" in project-facing text.
 - Use explicit `using` directives.
 - Prefer a small number of coherent files over many tiny files when the types are tightly related.
+- Split logic-heavy code by responsibility; avoid large multi-responsibility files unless they are mostly repetitive pattern implementation.
 - Avoid single-model-per-file layouts for small related contracts, options, status records, log helpers, or leases.
 - Do not leave near-empty migration artifact files. Fold small constants and helpers into the file that owns the behavior.
 - For CLI code, prefer a few coherent files grouped by command family or shared concerns.

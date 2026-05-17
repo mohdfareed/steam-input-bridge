@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Linq;
 
 namespace Cli.Tests;
 
@@ -9,48 +8,6 @@ namespace Cli.Tests;
 [TestClass]
 public sealed class HostCommandsTests
 {
-    /// <summary>Checks CLI host command shape.</summary>
-    [TestMethod]
-    public void CreateHostCommandIncludesControlCommands()
-    {
-        string[] names = [.. HostCommands.CreateHostCommand().Subcommands.Select(command => command.Name)];
-
-        CollectionAssert.Contains(names, "run");
-        CollectionAssert.Contains(names, "status");
-        CollectionAssert.Contains(names, "stop");
-    }
-
-    /// <summary>Checks route options.</summary>
-    [TestMethod]
-    public void CreateHostCommandIncludesExpectedOptions()
-    {
-        System.CommandLine.Command host = HostCommands.CreateHostCommand();
-        System.CommandLine.Command run = host.Subcommands.Single(command => command.Name == "run");
-        System.CommandLine.Command status = host.Subcommands.Single(command => command.Name == "status");
-        System.CommandLine.Command stop = host.Subcommands.Single(command => command.Name == "stop");
-
-        CollectionAssert.Contains(run.Options.Select(option => option.Name).ToArray(), "--xpad-device-index");
-        CollectionAssert.Contains(run.Options.Select(option => option.Name).ToArray(), "--xpad-mode");
-        CollectionAssert.Contains(run.Options.Select(option => option.Name).ToArray(), "--xpad-physical-motion");
-        CollectionAssert.Contains(run.Options.Select(option => option.Name).ToArray(), "--xpad-motion-device-index");
-        Assert.HasCount(0, status.Options);
-        Assert.HasCount(0, stop.Options);
-    }
-
-    /// <summary>Checks host run xpad options.</summary>
-    [TestMethod]
-    public void CreateHostCommandRunIncludesSdlOptions()
-    {
-        System.CommandLine.Command host = HostCommands.CreateHostCommand();
-        System.CommandLine.Command run = host.Subcommands.Single(command => command.Name == "run");
-        string[] names = [.. run.Options.Select(option => option.Name)];
-
-        CollectionAssert.Contains(names, "--xpad-device-index");
-        CollectionAssert.Contains(names, "--xpad-mode");
-        CollectionAssert.Contains(names, "--xpad-physical-motion");
-        CollectionAssert.Contains(names, "--xpad-motion-device-index");
-    }
-
     /// <summary>Checks host run xpad selection parses.</summary>
     [TestMethod]
     public void HostRunAcceptsXpadDeviceIndex()
@@ -61,12 +18,12 @@ public sealed class HostCommandsTests
         Assert.HasCount(0, result.Errors);
     }
 
-    /// <summary>Checks host run xpad mode selection parses.</summary>
+    /// <summary>Checks host run xpad motion selection parses.</summary>
     [TestMethod]
-    public void HostRunAcceptsXpadMode()
+    public void HostRunAcceptsXpadMotionDeviceIndex()
     {
         Command host = HostCommands.CreateHostCommand();
-        ParseResult result = host.Parse("run --xpad-mode steam --xpad-physical-motion --xpad-motion-device-index 2");
+        ParseResult result = host.Parse("run --xpad-motion-device-index 2");
 
         Assert.HasCount(0, result.Errors);
     }

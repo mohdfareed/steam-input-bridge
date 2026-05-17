@@ -80,10 +80,7 @@ internal static partial class ForwardingBenchmarks
     {
         ForwardingBenchmarkMeasurement inputMeasurement = await BenchmarkSdlInputAsync(
             count,
-            new SdlGamepadOptions
-            {
-                Mode = SdlGamepadInputMode.Physical,
-            },
+            new SdlGamepadOptions(),
             progress,
             cancellationToken).ConfigureAwait(false);
         GamepadState state = new(

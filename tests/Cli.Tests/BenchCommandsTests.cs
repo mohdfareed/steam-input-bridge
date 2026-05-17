@@ -1,4 +1,4 @@
-using System.Linq;
+using System.CommandLine;
 using Cli.Tools.Benchmarks;
 
 namespace Cli.Tests;
@@ -7,24 +7,23 @@ namespace Cli.Tests;
 [TestClass]
 public sealed class BenchCommandsTests
 {
-    /// <summary>Checks benchmark command shape.</summary>
+    /// <summary>Checks benchmark command parses an explicit input/output pair.</summary>
     [TestMethod]
-    public void CreateBenchCommandHasInputAndOutputArguments()
+    public void BenchCommandAcceptsInputAndOutput()
     {
-        System.CommandLine.Command command = BenchCommands.CreateBenchCommand();
+        Command command = BenchCommands.CreateBenchCommand();
+        ParseResult result = command.Parse("raw viiper --count 10");
 
-        Assert.HasCount(0, command.Subcommands);
-        Assert.HasCount(2, command.Arguments);
-        CollectionAssert.Contains(command.Options.Select(option => option.Name).ToArray(), "--count");
+        Assert.HasCount(0, result.Errors);
     }
 
-    /// <summary>Checks fixed-input benchmark command shape.</summary>
+    /// <summary>Checks fixed-input benchmark command parses only output.</summary>
     [TestMethod]
-    public void CreateBenchCommandWithFixedInputHasOutputArgumentOnly()
+    public void BenchCommandWithFixedInputAcceptsOutput()
     {
-        System.CommandLine.Command command = BenchCommands.CreateBenchCommand(ForwardingBenchmarkInput.Raw);
+        Command command = BenchCommands.CreateBenchCommand(ForwardingBenchmarkInput.Raw);
+        ParseResult result = command.Parse("viiper --count 10");
 
-        Assert.HasCount(1, command.Arguments);
-        CollectionAssert.Contains(command.Options.Select(option => option.Name).ToArray(), "--count");
+        Assert.HasCount(0, result.Errors);
     }
 }

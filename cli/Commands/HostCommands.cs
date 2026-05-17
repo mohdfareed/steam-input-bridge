@@ -5,7 +5,6 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Hosting;
-using Inputs.Sdl;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -32,18 +31,10 @@ internal static class HostCommands
         Option<int?> deviceIndexOption = CliOptions.CreateDeviceIndexOption(
             "--xpad-device-index",
             "Zero-based SDL gamepad index for xpad activation. Default: 0.");
-        Option<SdlGamepadInputMode?> modeOption = CliOptions.CreateSdlGamepadModeOption(
-            "--xpad-mode",
-            "SDL input mode for xpad activation: physical or steam. Default: steam.");
-        Option<bool> physicalMotionOption = CliOptions.CreateSdlPhysicalMotionOption(
-            "--xpad-physical-motion",
-            "Use a physical SDL gamepad for xpad motion and rumble while xpad mode is steam.");
         Option<int?> motionDeviceIndexOption = CliOptions.CreateDeviceIndexOption(
             "--xpad-motion-device-index",
             "Zero-based SDL physical gamepad index for xpad motion and rumble.");
         command.Options.Add(deviceIndexOption);
-        command.Options.Add(modeOption);
-        command.Options.Add(physicalMotionOption);
         command.Options.Add(motionDeviceIndexOption);
 
         command.SetAction(async (parseResult, cancellationToken) =>
@@ -54,10 +45,7 @@ internal static class HostCommands
                 SdlGamepad = CliOptions.CreateSdlGamepadOptions(
                     parseResult,
                     deviceIndexOption,
-                    modeOption,
-                    physicalMotionOption,
-                    motionDeviceIndexOption,
-                    SdlGamepadInputMode.Steam),
+                    motionDeviceIndexOption),
                 Viiper = ViiperConnection.CreateViiperOptions(services, logger),
                 Logger = logger,
             };
@@ -83,7 +71,6 @@ internal static class HostCommands
             ForwardingHostStatus status = maybeStatus.Value;
             await Console.Out.WriteLineAsync(
                 $"host running=true xpadDeviceIndex={status.XpadDeviceIndex} " +
-                $"xpadMode={DisplayMode(status.XpadMode)} " +
                 $"xpadUsesPhysicalMotion={FormatBool(status.XpadUsesPhysicalMotion)} " +
                 $"emulationEnabled={FormatBool(status.EmulationEnabled)} " +
                 $"physicalMotionEnabled={FormatBool(status.PhysicalMotionEnabled)} " +
@@ -147,8 +134,6 @@ internal static class HostCommands
         {
             await Console.Out.WriteLineAsync(
                 $"host: starting xpadDeviceIndex={options.SdlGamepad.DeviceIndex} " +
-                $"xpadMode={DisplayMode(options.SdlGamepad.Mode)} " +
-                $"xpadUsesPhysicalMotion={FormatBool(options.SdlGamepad.UsePhysicalMotion)} " +
                 $"xpadMotionDeviceIndex={FormatNullableInt(options.SdlGamepad.MotionDeviceIndex)}. Ctrl+C to stop.")
                 .ConfigureAwait(false);
             ForwardingServer server = new(options);
@@ -194,16 +179,6 @@ internal static class HostCommands
     {
         return Console.Out.WriteLineAsync(
             $"route={status.RouteId} connected={(status.IsConnected ? "true" : "false")} enabledClients={status.EnabledClientCount}");
-    }
-
-    private static string DisplayMode(SdlGamepadInputMode mode)
-    {
-        return mode switch
-        {
-            SdlGamepadInputMode.Physical => "physical",
-            SdlGamepadInputMode.Steam => "steam",
-            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
-        };
     }
 
     private static string FormatBool(bool value)

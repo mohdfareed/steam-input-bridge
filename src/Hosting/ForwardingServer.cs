@@ -32,7 +32,6 @@ public readonly record struct ForwardingRouteStatus(
 /// <param name="Mouse">Mouse route status.</param>
 /// <param name="Xpad">Gamepad route status.</param>
 /// <param name="XpadDeviceIndex">Configured SDL gamepad index.</param>
-/// <param name="XpadMode">Configured SDL gamepad input mode.</param>
 /// <param name="XpadUsesPhysicalMotion">Whether xpad uses a physical SDL gamepad for motion and rumble.</param>
 /// <param name="EmulationEnabled">Whether emulation reports are currently forwarded.</param>
 /// <param name="PhysicalMotionEnabled">Whether physical motion data is currently forwarded.</param>
@@ -43,7 +42,6 @@ public readonly record struct ForwardingHostStatus(
     ForwardingRouteStatus Mouse,
     ForwardingRouteStatus Xpad,
     int XpadDeviceIndex,
-    SdlGamepadInputMode XpadMode,
     bool XpadUsesPhysicalMotion,
     bool EmulationEnabled,
     bool PhysicalMotionEnabled,
@@ -55,10 +53,7 @@ public readonly record struct ForwardingHostStatus(
 public sealed record ForwardingServerOptions
 {
     /// <summary>SDL gamepad options for xpad routes.</summary>
-    public SdlGamepadOptions SdlGamepad { get; init; } = new()
-    {
-        Mode = SdlGamepadInputMode.Steam,
-    };
+    public SdlGamepadOptions SdlGamepad { get; init; } = new();
 
     /// <summary>VIIPER connection options.</summary>
     public required ViiperOptions Viiper { get; init; }

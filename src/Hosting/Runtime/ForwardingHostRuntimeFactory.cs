@@ -14,7 +14,7 @@ internal static class ForwardingHostRuntimeFactory
     public static ForwardingHostRuntime Create(ForwardingServerOptions options)
     {
 #pragma warning disable CA2000
-        SdlDeviceSelection xpadDeviceSelection = ValidateSdlOptions(options.SdlGamepad);
+        SdlDeviceSelection xpadDeviceSelection = ResolveSdlOptions(options.SdlGamepad);
         ForwardingHostState hostState = new();
         HostedRouteController mouse = new(
             ForwardingRouteIds.Mouse,
@@ -23,7 +23,7 @@ internal static class ForwardingHostRuntimeFactory
             () => hostState.EmulationEnabled);
         HostedRouteController xpad = new(
             ForwardingRouteIds.Xpad,
-            ct => CreateXpadRouteAsync(options.Viiper, options.SdlGamepad, hostState, ct),
+            ct => CreateXpadRouteAsync(options.Viiper, xpadDeviceSelection.Options, hostState, ct),
             options.Logger,
             () => hostState.EmulationEnabled);
 
@@ -31,8 +31,7 @@ internal static class ForwardingHostRuntimeFactory
             mouse,
             xpad,
             options.SdlGamepad.DeviceIndex,
-            options.SdlGamepad.Mode,
-            options.SdlGamepad.UsePhysicalMotion,
+            xpadDeviceSelection.UsesPhysicalMotion,
             hostState,
             xpadDeviceSelection.DeviceName,
             xpadDeviceSelection.MotionDeviceIndex,
@@ -40,62 +39,18 @@ internal static class ForwardingHostRuntimeFactory
 #pragma warning restore CA2000
     }
 
-    private static SdlDeviceSelection ValidateSdlOptions(SdlGamepadOptions options)
+    private static SdlDeviceSelection ResolveSdlOptions(SdlGamepadOptions options)
     {
-        if (options.UsePhysicalMotion && options.Mode != SdlGamepadInputMode.Steam)
-        {
-            throw new InvalidOperationException("SDL physical motion requires xpad mode steam.");
-        }
-
         IReadOnlyList<SdlGamepadInfo> gamepads = SdlGamepadSource.GetGamepads();
-        int deviceIndex = options.DeviceIndex;
-        if (deviceIndex < 0 || deviceIndex >= gamepads.Count)
-        {
-            throw new InvalidOperationException($"SDL gamepad index {deviceIndex} is not available.");
-        }
-
-        SdlGamepadInfo gamepad = gamepads[deviceIndex];
-        ValidateSdlMode(gamepad, options.Mode);
-
-        if (!options.UsePhysicalMotion)
-        {
-            return new SdlDeviceSelection(gamepad.Name, null, null);
-        }
-
-        int motionDeviceIndex = SdlGamepadSource.ResolveMotionDeviceIndex(gamepads, gamepad, options);
-        if (motionDeviceIndex < 0 || motionDeviceIndex >= gamepads.Count)
-        {
-            throw new InvalidOperationException($"SDL motion gamepad index {motionDeviceIndex} is not available.");
-        }
-
-        SdlGamepadInfo motionGamepad = gamepads[motionDeviceIndex];
-        ValidatePhysicalSdlGamepad(motionGamepad);
-        return new SdlDeviceSelection(gamepad.Name, motionDeviceIndex, motionGamepad.Name);
-    }
-
-    private static void ValidateSdlMode(SdlGamepadInfo gamepad, SdlGamepadInputMode mode)
-    {
-        bool expectsSteamInput = mode switch
-        {
-            SdlGamepadInputMode.Physical => false,
-            SdlGamepadInputMode.Steam => true,
-            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
-        };
-
-        if (gamepad.IsSteamInput != expectsSteamInput)
-        {
-            throw new InvalidOperationException(
-                $"SDL gamepad index {gamepad.Index} does not match xpad mode {mode}.");
-        }
-    }
-
-    private static void ValidatePhysicalSdlGamepad(SdlGamepadInfo gamepad)
-    {
-        if (gamepad.IsSteamInput)
-        {
-            throw new InvalidOperationException(
-                $"SDL motion gamepad index {gamepad.Index} is not a physical SDL gamepad.");
-        }
+        SdlGamepadOptions resolvedOptions = SdlGamepadMotionSelector.ResolveOptions(gamepads, options);
+        SdlGamepadInfo gamepad = SdlGamepadMotionSelector.GetGamepad(gamepads, resolvedOptions.DeviceIndex);
+        SdlMotionDeviceSelection motion = SdlGamepadSource.ResolveMotionDevice(gamepads, gamepad, resolvedOptions);
+        return new SdlDeviceSelection(
+            resolvedOptions,
+            gamepad.Name,
+            motion.UsesSecondaryDevice,
+            motion.UsesSecondaryDevice ? motion.DeviceIndex : null,
+            motion.UsesSecondaryDevice ? motion.Device?.Name : null);
     }
 
     private static Task<IForwardingRoute> CreateMouseRouteAsync(
@@ -178,7 +133,9 @@ internal static class ForwardingHostRuntimeFactory
     }
 
     private readonly record struct SdlDeviceSelection(
+        SdlGamepadOptions Options,
         string? DeviceName,
+        bool UsesPhysicalMotion,
         int? MotionDeviceIndex,
         string? MotionDeviceName);
 }
