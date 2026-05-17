@@ -3,41 +3,9 @@ using SDL3;
 
 namespace Inputs.Sdl;
 
-public sealed partial class SdlGamepadSource
+internal static class SdlGamepadStateReader
 {
-    internal static GamepadState ReadState(nint gamepad)
-    {
-        return ReadState(
-            gamepad,
-            hasGyro: false,
-            hasAccelerometer: false,
-            [],
-            []);
-    }
-
-    internal static GamepadMotion CreateMotion(
-        bool hasGyro,
-        ReadOnlySpan<float> gyro,
-        bool hasAccelerometer,
-        ReadOnlySpan<float> accelerometer)
-    {
-        return new GamepadMotion(
-            hasGyro,
-            hasGyro ? gyro[0] : 0,
-            hasGyro ? gyro[1] : 0,
-            hasGyro ? gyro[2] : 0,
-            hasAccelerometer,
-            hasAccelerometer ? accelerometer[0] : 0,
-            hasAccelerometer ? accelerometer[1] : 0,
-            hasAccelerometer ? accelerometer[2] : 0);
-    }
-
-    internal static ushort ToTrigger(short value)
-    {
-        return value <= 0 ? (ushort)0 : (ushort)value;
-    }
-
-    private static GamepadState ReadState(
+    public static GamepadState ReadState(
         nint gamepad,
         bool hasGyro,
         bool hasAccelerometer,
@@ -72,6 +40,28 @@ public sealed partial class SdlGamepadSource
             CreateMotion(hasGyro, gyro, hasAccelerometer, accelerometer));
     }
 
+    private static GamepadMotion CreateMotion(
+        bool hasGyro,
+        ReadOnlySpan<float> gyro,
+        bool hasAccelerometer,
+        ReadOnlySpan<float> accelerometer)
+    {
+        return new GamepadMotion(
+            hasGyro,
+            hasGyro ? gyro[0] : 0,
+            hasGyro ? gyro[1] : 0,
+            hasGyro ? gyro[2] : 0,
+            hasAccelerometer,
+            hasAccelerometer ? accelerometer[0] : 0,
+            hasAccelerometer ? accelerometer[1] : 0,
+            hasAccelerometer ? accelerometer[2] : 0);
+    }
+
+    private static ushort ToTrigger(short value)
+    {
+        return value <= 0 ? (ushort)0 : (ushort)value;
+    }
+
     private static GamepadButtons Apply(
         GamepadButtons buttons,
         nint gamepad,
@@ -83,3 +73,4 @@ public sealed partial class SdlGamepadSource
             : buttons;
     }
 }
+

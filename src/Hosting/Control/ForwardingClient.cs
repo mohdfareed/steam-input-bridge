@@ -2,6 +2,7 @@ using System;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
+using Inputs.Sdl;
 using StreamJsonRpc;
 
 namespace Hosting;
@@ -59,16 +60,14 @@ public sealed class ForwardingClient
         }
     }
 
-    /// <summary>Connects to the host and enables forwarding for a route until the returned session is disposed.</summary>
-    public async Task<ForwardingClientSession> EnableAsync(
-        ForwardingRouteKind route,
-        CancellationToken cancellationToken = default)
+    /// <summary>Connects to the host and enables mouse forwarding until the returned session is disposed.</summary>
+    public async Task<ForwardingClientSession> EnableMouseAsync(CancellationToken cancellationToken = default)
     {
         ForwardingClientSession session = await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            await session.EnableAsync(route, cancellationToken).ConfigureAwait(false);
+            await session.EnableMouseAsync(cancellationToken).ConfigureAwait(false);
             return session;
         }
         catch
@@ -187,18 +186,18 @@ public sealed class ForwardingClientSession : IAsyncDisposable, IDisposable
         _proxy = proxy;
     }
 
-    /// <summary>Enables forwarding for a route on this session.</summary>
-    public Task EnableAsync(ForwardingRouteKind route, CancellationToken cancellationToken = default)
+    /// <summary>Enables mouse forwarding on this session.</summary>
+    public Task EnableMouseAsync(CancellationToken cancellationToken = default)
     {
         IForwardingHostControl proxy = GetProxy();
-        return proxy.EnableAsync(route).WaitAsync(cancellationToken);
+        return proxy.EnableMouseAsync().WaitAsync(cancellationToken);
     }
 
-    /// <summary>Disables forwarding for a route on this session without disconnecting.</summary>
-    public Task DisableAsync(ForwardingRouteKind route, CancellationToken cancellationToken = default)
+    /// <summary>Disables mouse forwarding on this session without disconnecting.</summary>
+    public Task DisableMouseAsync(CancellationToken cancellationToken = default)
     {
         IForwardingHostControl proxy = GetProxy();
-        return proxy.DisableAsync(route).WaitAsync(cancellationToken);
+        return proxy.DisableMouseAsync().WaitAsync(cancellationToken);
     }
 
     /// <summary>Sets whether emulation reports are forwarded without disconnecting this session.</summary>
@@ -227,6 +226,19 @@ public sealed class ForwardingClientSession : IAsyncDisposable, IDisposable
     {
         IForwardingHostControl proxy = GetProxy();
         return proxy.TogglePhysicalMotionEnabledAsync().WaitAsync(cancellationToken);
+    }
+
+    /// <summary>Attaches a Steam Input controller to a server-owned physical controller slot.</summary>
+    public async Task<GamepadReportClient> AttachSteamControllerAsync(
+        SdlControllerInfo controller,
+        CancellationToken cancellationToken = default)
+    {
+        IForwardingHostControl proxy = GetProxy();
+        GamepadReportSessionInfo session = await proxy
+            .AttachSteamControllerAsync(controller)
+            .WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return await GamepadReportClient.ConnectAsync(session, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

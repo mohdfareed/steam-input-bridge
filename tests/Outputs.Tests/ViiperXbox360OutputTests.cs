@@ -105,11 +105,14 @@ public sealed class ViiperXbox360OutputTests
     [TestMethod]
     public void IsOwnedDeviceNameReturnsTrueForOwnedDeviceName()
     {
-        const string Owned = @"\\?\HID#VID_045E&PID_028E#1";
+        const string Owned = @"\\?\HID#VIIPER&VID_045E&PID_028E#1";
         const string Foreign = @"\\?\HID#VID_0001&PID_028E#1";
+        const string PhysicalXbox360 = @"\\?\HID#VID_045E&PID_028E#1";
 
         Assert.IsTrue(ViiperXbox360Output.IsOwnedDeviceName(Owned));
         Assert.IsFalse(ViiperXbox360Output.IsOwnedDeviceName(Foreign));
+        Assert.IsFalse(ViiperXbox360Output.IsOwnedDeviceName(PhysicalXbox360));
+        Assert.IsTrue(ViiperXbox360Output.IsOwnedSdlDevice("Controller", Owned));
     }
 
     /// <summary>Checks single-owner behavior.</summary>

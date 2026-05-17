@@ -66,9 +66,16 @@ public sealed class ViiperXbox360Output : IXbox360Output, IXbox360FeedbackSource
         return ViiperOutputConnector.ConnectAsync(
             options,
             DeviceDefinition,
-            "Another VIIPER Xbox 360 output session is already active.",
             session => new ViiperXbox360Output(session),
             cancellationToken);
+    }
+
+    /// <summary>Removes stale VIIPER Xbox 360 devices created by this app.</summary>
+    public static Task ReclaimOwnedDevicesAsync(
+        ViiperOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        return ViiperOutputConnector.ReclaimOwnedDevicesAsync(options, DeviceDefinition, cancellationToken);
     }
 
     // MARK: Output
@@ -146,7 +153,12 @@ public sealed class ViiperXbox360Output : IXbox360Output, IXbox360FeedbackSource
 
     internal static bool IsOwnedDeviceName(string? deviceName)
     {
-        return DeviceDefinition.IsOwnedDeviceName(deviceName);
+        return DeviceDefinition.IsOwnedViiperDeviceName(deviceName);
+    }
+
+    internal static bool IsOwnedSdlDevice(string name, string? path)
+    {
+        return IsOwnedDeviceName(name) || IsOwnedDeviceName(path);
     }
 
     internal static string FormatUsbId(ushort value)

@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.CommandLine;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Hosting;
+using Inputs;
+using Inputs.Sdl;
+using Outputs.Viiper;
 
 internal static class ClientCommands
 {
@@ -27,32 +31,47 @@ internal static class ClientCommands
 
     private static Command CreateRunCommand()
     {
-        Command command = new("run", "Open a client session and optionally enable a route until cancelled.");
-        Option<ForwardingRouteKind?> routeOption = CliOptions.CreateRouteOption();
-        command.Options.Add(routeOption);
+        Command command = new("run", "Open a client session until cancelled.");
+        Option<bool> mouseOption = new("--mouse")
+        {
+            Description = "Enable mouse forwarding for this client session.",
+        };
+        Option<bool> pauseOption = CliOptions.CreatePauseOption();
+        command.Options.Add(mouseOption);
+        command.Options.Add(pauseOption);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            ForwardingRouteKind? route = parseResult.GetValue(routeOption);
-            ForwardingClientSession? session = await TryConnectAsync(route, cancellationToken).ConfigureAwait(false);
-            if (session is null)
+            bool mouse = parseResult.GetValue(mouseOption);
+            try
             {
-                return;
-            }
+                ForwardingClientSession? session = await TryConnectAsync(mouse, cancellationToken).ConfigureAwait(false);
+                if (session is null)
+                {
+                    return;
+                }
 
-            await using (session.ConfigureAwait(false))
+                await using (session.ConfigureAwait(false))
+                {
+                    try
+                    {
+                        await Console.Out.WriteLineAsync($"mouse={FormatBool(mouse)}.").ConfigureAwait(false);
+                        await RunGamepadLoopAsync(session, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                try
-                {
-                    string status = route.HasValue
-                        ? $"route={ForwardingServer.GetRouteId(route.Value)} enabled=true"
-                        : "route=none enabled=false";
-                    await Console.Out.WriteLineAsync($"{status}. Ctrl+C to release.").ConfigureAwait(false);
-                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                }
+                await Console.Error.WriteLineAsync($"client: {exception.Message}").ConfigureAwait(false);
+                Environment.ExitCode = 1;
+            }
+            finally
+            {
+                await PauseIfRequestedAsync(parseResult.GetValue(pauseOption), CancellationToken.None)
+                    .ConfigureAwait(false);
             }
         });
 
@@ -95,24 +114,145 @@ internal static class ClientCommands
         return command;
     }
 
+    private static async Task<GamepadClientAttachment[]> AttachSteamControllersAsync(
+        ForwardingClientSession session,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<SdlGamepadSource> controllers = SdlControllerCatalog.OpenSteamControllers();
+        List<GamepadClientAttachment> attachments = [];
+
+        try
+        {
+            foreach (SdlGamepadSource controller in controllers)
+            {
+                if (ViiperXbox360Output.IsOwnedSdlDevice(
+                    controller.Controller.Name,
+                    controller.Controller.Path))
+                {
+                    await controller.DisposeAsync().ConfigureAwait(false);
+                    continue;
+                }
+
+                SdlGamepadSource? source = controller;
+                try
+                {
+                    GamepadReportClient reportClient = await session
+                        .AttachSteamControllerAsync(source.Controller, cancellationToken)
+                        .ConfigureAwait(false);
+                    attachments.Add(new GamepadClientAttachment(source, reportClient));
+                    source = null;
+                    await Console.Out.WriteLineAsync($"gamepad attached: {DisplayController(controller.Controller)}")
+                        .ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    await Console.Error.WriteLineAsync(
+                            $"gamepad skipped: {DisplayController(controller.Controller)} ({exception.Message})")
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (source is not null)
+                    {
+                        await source.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+            }
+
+            return [.. attachments];
+        }
+        catch
+        {
+            foreach (GamepadClientAttachment attachment in attachments)
+            {
+                await attachment.DisposeAsync().ConfigureAwait(false);
+            }
+
+            throw;
+        }
+    }
+
+    private static async Task RunGamepadLoopAsync(
+        ForwardingClientSession session,
+        CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            GamepadClientAttachment[] gamepads = [];
+            try
+            {
+                gamepads = await AttachSteamControllersAsync(session, cancellationToken).ConfigureAwait(false);
+                await Console.Out.WriteLineAsync($"gamepads={gamepads.Length}. Ctrl+C to release.")
+                    .ConfigureAwait(false);
+
+                if (gamepads.Length == 0)
+                {
+                    await DelayReconnectAsync(cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                RunGamepads(gamepads, cancellationToken);
+            }
+            catch (SdlGamepadDisconnectedException exception)
+            {
+                await Console.Error.WriteLineAsync($"client gamepad: {exception.Message}; reconnecting.")
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                foreach (GamepadClientAttachment gamepad in gamepads)
+                {
+                    await gamepad.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+
+            await DelayReconnectAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static void RunGamepads(
+        IReadOnlyList<GamepadClientAttachment> gamepads,
+        CancellationToken cancellationToken)
+    {
+        SdlGamepadSource[] sources = new SdlGamepadSource[gamepads.Count];
+        for (int i = 0; i < gamepads.Count; i++)
+        {
+            sources[i] = gamepads[i].Source;
+        }
+
+        SdlControllerInputLoop.Run(sources, SendGamepad, cancellationToken);
+
+        void SendGamepad(SdlGamepadSource source, GamepadInput input)
+        {
+            for (int i = 0; i < gamepads.Count; i++)
+            {
+                if (ReferenceEquals(gamepads[i].Source, source))
+                {
+                    gamepads[i].Reports.Send(input);
+                    return;
+                }
+            }
+        }
+    }
+
     // MARK: Helpers
     // ========================================================================
 
     internal static async Task<ForwardingClientSession?> TryConnectAsync(
-        ForwardingRouteKind? route,
+        bool enableMouse,
         CancellationToken cancellationToken)
     {
         ForwardingClient client = new();
         try
         {
-            return route.HasValue
-                ? await client.EnableAsync(route.Value, cancellationToken).ConfigureAwait(false)
+            return enableMouse
+                ? await client.EnableMouseAsync(cancellationToken).ConfigureAwait(false)
                 : await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
-            string message = route.HasValue
-                ? $"client route={ForwardingServer.GetRouteId(route.Value)}: host not running"
+            string message = enableMouse
+                ? "client mouse: host not running"
                 : "client: host not running";
             await Console.Error.WriteLineAsync(message).ConfigureAwait(false);
             Environment.ExitCode = 1;
@@ -237,9 +377,43 @@ internal static class ClientCommands
         return value ? "true" : "false";
     }
 
+    private static string DisplayController(SdlControllerInfo controller)
+    {
+        return controller.Source == SdlControllerSource.Steam
+            ? $"{controller.Name} (steam)"
+            : controller.Name;
+    }
+
+    private static async Task PauseIfRequestedAsync(bool pause, CancellationToken cancellationToken)
+    {
+        if (!pause)
+        {
+            return;
+        }
+
+        await Console.Out.WriteLineAsync("press Enter to exit").ConfigureAwait(false);
+        _ = await Console.In.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Task DelayReconnectAsync(CancellationToken cancellationToken)
+    {
+        return Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+    }
+
     private enum HostToggleKind
     {
         Emulation,
         PhysicalMotion,
+    }
+
+    private readonly record struct GamepadClientAttachment(
+        SdlGamepadSource Source,
+        GamepadReportClient Reports) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            Reports.Dispose();
+            await Source.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

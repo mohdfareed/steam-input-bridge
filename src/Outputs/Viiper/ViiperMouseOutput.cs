@@ -64,7 +64,7 @@ public sealed class ViiperMouseOutput : IMouseOutput, IDisposable, IAsyncDisposa
         ViiperOptions options,
         CancellationToken cancellationToken = default)
     {
-        return ViiperOutputConnector.ConnectAsync(
+        return ViiperOutputConnector.ConnectExclusiveAsync(
             options,
             DeviceDefinition,
             "Another VIIPER mouse output session is already active.",

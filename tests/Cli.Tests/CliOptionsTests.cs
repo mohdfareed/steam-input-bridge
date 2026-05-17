@@ -1,5 +1,4 @@
 using System.CommandLine;
-using Inputs.Sdl;
 
 namespace Cli.Tests;
 
@@ -33,24 +32,4 @@ public sealed class CliOptionsTests
         Assert.AreNotEqual(0, result.Errors.Count);
     }
 
-    /// <summary>Checks SDL option projection.</summary>
-    [TestMethod]
-    public void CreateSdlGamepadOptionsReadsValues()
-    {
-        Command command = new("test");
-        Option<int?> deviceIndexOption = CliOptions.CreateDeviceIndexOption("--device-index", "device");
-        Option<int?> motionDeviceIndexOption = CliOptions.CreateDeviceIndexOption("--motion-device-index", "motion");
-        command.Options.Add(deviceIndexOption);
-        command.Options.Add(motionDeviceIndexOption);
-
-        ParseResult result = command.Parse(
-            "--device-index 2 --motion-device-index 3");
-        SdlGamepadOptions options = CliOptions.CreateSdlGamepadOptions(
-            result,
-            deviceIndexOption,
-            motionDeviceIndexOption);
-
-        Assert.AreEqual(2, options.DeviceIndex);
-        Assert.AreEqual(3, options.MotionDeviceIndex);
-    }
 }

@@ -1,7 +1,4 @@
 using System.CommandLine;
-using Hosting;
-using Inputs.Sdl;
-
 internal static class CliOptions
 {
     internal static Option<int?> CreateCountOption(int defaultCount)
@@ -33,25 +30,11 @@ internal static class CliOptions
         };
     }
 
-    internal static Option<int?> CreateDeviceIndexOption(string name, string description)
+    internal static Option<string?> CreateGamepadOption(string name, string description)
     {
-        return CreateNonNegativeIntOption(name, description);
-    }
-
-    internal static Option<ForwardingRouteKind?> CreateRouteOption()
-    {
-        return new Option<ForwardingRouteKind?>("--route")
+        return new Option<string?>(name)
         {
-            Description = "Route to enable for this client session. Omit to connect without enabling forwarding.",
-        };
-    }
-
-    internal static Option<ForwardingRouteKind> CreateRequiredRouteOption()
-    {
-        return new Option<ForwardingRouteKind>("--route")
-        {
-            Description = "Route to control.",
-            Required = true,
+            Description = description,
         };
     }
 
@@ -85,20 +68,6 @@ internal static class CliOptions
             }
         });
         return argument;
-    }
-
-    internal static SdlGamepadOptions CreateSdlGamepadOptions(
-        ParseResult parseResult,
-        Option<int?> deviceIndexOption,
-        Option<int?>? motionDeviceIndexOption = null)
-    {
-        return new SdlGamepadOptions
-        {
-            DeviceIndex = parseResult.GetValue(deviceIndexOption) ?? 0,
-            MotionDeviceIndex = motionDeviceIndexOption is null
-                ? null
-                : parseResult.GetValue(motionDeviceIndexOption),
-        };
     }
 
     private static Option<int?> CreatePositiveIntOption(string name, string description)

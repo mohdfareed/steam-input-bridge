@@ -28,24 +28,12 @@ internal static class HostCommands
     private static Command CreateRunCommand(IServiceProvider? services)
     {
         Command command = new("run", "Run the local forwarding host.");
-        Option<int?> deviceIndexOption = CliOptions.CreateDeviceIndexOption(
-            "--xpad-device-index",
-            "Zero-based SDL gamepad index for xpad activation. Default: 0.");
-        Option<int?> motionDeviceIndexOption = CliOptions.CreateDeviceIndexOption(
-            "--xpad-motion-device-index",
-            "Zero-based SDL physical gamepad index for xpad motion and rumble.");
-        command.Options.Add(deviceIndexOption);
-        command.Options.Add(motionDeviceIndexOption);
 
-        command.SetAction(async (parseResult, cancellationToken) =>
+        command.SetAction(async (_, cancellationToken) =>
         {
             ILogger logger = CreateLogger(services);
             ForwardingServerOptions options = new()
             {
-                SdlGamepad = CliOptions.CreateSdlGamepadOptions(
-                    parseResult,
-                    deviceIndexOption,
-                    motionDeviceIndexOption),
                 Viiper = ViiperConnection.CreateViiperOptions(services, logger),
                 Logger = logger,
             };
@@ -70,16 +58,11 @@ internal static class HostCommands
 
             ForwardingHostStatus status = maybeStatus.Value;
             await Console.Out.WriteLineAsync(
-                $"host running=true xpadDeviceIndex={status.XpadDeviceIndex} " +
-                $"xpadUsesPhysicalMotion={FormatBool(status.XpadUsesPhysicalMotion)} " +
-                $"emulationEnabled={FormatBool(status.EmulationEnabled)} " +
-                $"physicalMotionEnabled={FormatBool(status.PhysicalMotionEnabled)} " +
-                $"xpadDeviceName=\"{status.XpadDeviceName ?? string.Empty}\" " +
-                $"xpadMotionDeviceIndex={FormatNullableInt(status.XpadMotionDeviceIndex)} " +
-                $"xpadMotionDeviceName=\"{status.XpadMotionDeviceName ?? string.Empty}\"")
+                $"host running=true emulationEnabled={FormatBool(status.EmulationEnabled)} " +
+                $"physicalMotionEnabled={FormatBool(status.PhysicalMotionEnabled)}")
                 .ConfigureAwait(false);
             await PrintRouteStatusAsync(status.Mouse).ConfigureAwait(false);
-            await PrintRouteStatusAsync(status.Xpad).ConfigureAwait(false);
+            await PrintGamepadStatusesAsync(status.Gamepads).ConfigureAwait(false);
         });
 
         return command;
@@ -133,8 +116,7 @@ internal static class HostCommands
         try
         {
             await Console.Out.WriteLineAsync(
-                $"host: starting xpadDeviceIndex={options.SdlGamepad.DeviceIndex} " +
-                $"xpadMotionDeviceIndex={FormatNullableInt(options.SdlGamepad.MotionDeviceIndex)}. Ctrl+C to stop.")
+                "host: starting. Ctrl+C to stop.")
                 .ConfigureAwait(false);
             ForwardingServer server = new(options);
             await using (server.ConfigureAwait(false))
@@ -181,13 +163,32 @@ internal static class HostCommands
             $"route={status.RouteId} connected={(status.IsConnected ? "true" : "false")} enabledClients={status.EnabledClientCount}");
     }
 
+    private static async Task PrintGamepadStatusesAsync(
+        System.Collections.Generic.IReadOnlyList<GamepadControllerSlotStatus> statuses)
+    {
+        foreach (GamepadControllerSlotStatus status in statuses)
+        {
+            await Console.Out.WriteLineAsync(
+                $"gamepad physical=\"{status.PhysicalControllerName}\" " +
+                $"id={status.PhysicalControllerId.Value} " +
+                $"clients={status.AttachedClients} " +
+                $"inputConnected={FormatBool(status.InputConnected)} " +
+                $"outputConnected={FormatBool(status.OutputConnected)} " +
+                $"output={FormatOutput(status.OutputBusId, status.OutputDeviceId)}")
+                .ConfigureAwait(false);
+        }
+    }
+
     private static string FormatBool(bool value)
     {
         return value ? "true" : "false";
     }
 
-    private static string FormatNullableInt(int? value)
+    private static string FormatOutput(uint? busId, string? deviceId)
     {
-        return value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "auto";
+        return busId.HasValue && !string.IsNullOrWhiteSpace(deviceId)
+            ? $"{busId.Value}/{deviceId}"
+            : "none";
     }
+
 }

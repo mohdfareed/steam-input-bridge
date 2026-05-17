@@ -9,10 +9,10 @@ namespace Hosting;
 /// <summary>Filters one mouse input report.</summary>
 /// <param name="input">Mouse input.</param>
 /// <returns><see langword="true" /> to forward the report.</returns>
-public delegate bool MouseInputFilter(in MouseInput input);
+internal delegate bool MouseInputFilter(in MouseInput input);
 
 /// <summary>Forwards mouse input to mouse output.</summary>
-public static class MouseForwardingExtensions
+internal static class MouseForwardingExtensions
 {
     /// <summary>Forwards input reports to a mouse output.</summary>
     public static void RunTo(

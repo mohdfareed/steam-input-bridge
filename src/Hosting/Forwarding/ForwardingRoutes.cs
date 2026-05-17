@@ -9,11 +9,9 @@ namespace Hosting;
 internal static class ForwardingRouteIds
 {
     public const string Mouse = "mouse";
-    public const string Xpad = "xpad";
 }
 
-/// <summary>Route owned by a local forwarding host.</summary>
-public interface IForwardingRoute : IAsyncDisposable
+internal interface IForwardingRoute : IAsyncDisposable
 {
     /// <summary>Gets the route id.</summary>
     string RouteId { get; }
@@ -27,8 +25,7 @@ public interface IForwardingRoute : IAsyncDisposable
     void Run(Func<bool> shouldForward, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Mouse input to mouse output route.</summary>
-public sealed class MouseForwardingRoute(
+internal sealed class MouseForwardingRoute(
     IMouseInputSource input,
     IMouseOutput output,
     string routeId = ForwardingRouteIds.Mouse) : IForwardingRoute
@@ -51,46 +48,6 @@ public sealed class MouseForwardingRoute(
         _input.RunTo(_output, ShouldForward, cancellationToken);
 
         bool ShouldForward(in MouseInput input)
-        {
-            _ = input;
-            return shouldForward();
-        }
-    }
-
-    /// <inheritdoc />
-    public async ValueTask DisposeAsync()
-    {
-        await _input.DisposeAsync().ConfigureAwait(false);
-        await _output.DisposeAsync().ConfigureAwait(false);
-    }
-}
-
-/// <summary>Gamepad input to Xbox 360 output route.</summary>
-public sealed class Xbox360ForwardingRoute(
-    IGamepadInputSource input,
-    IXbox360Output output,
-    string routeId = ForwardingRouteIds.Xpad,
-    Func<bool>? shouldForwardMotion = null) : IForwardingRoute
-{
-    private readonly IGamepadInputSource _input = input ?? throw new ArgumentNullException(nameof(input));
-    private readonly IXbox360Output _output = output ?? throw new ArgumentNullException(nameof(output));
-    private readonly Func<bool>? _shouldForwardMotion = shouldForwardMotion;
-
-    /// <inheritdoc />
-    public string RouteId { get; } = string.IsNullOrWhiteSpace(routeId)
-        ? throw new ArgumentException("Route id is required.", nameof(routeId))
-        : routeId;
-
-    /// <inheritdoc />
-    public bool IsConnected => _input.IsConnected && _output.IsConnected;
-
-    /// <inheritdoc />
-    public void Run(Func<bool> shouldForward, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(shouldForward);
-        _input.RunTo(_output, ShouldForward, _shouldForwardMotion, cancellationToken);
-
-        bool ShouldForward(in GamepadInput input)
         {
             _ = input;
             return shouldForward();

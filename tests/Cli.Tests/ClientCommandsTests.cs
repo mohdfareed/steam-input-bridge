@@ -15,21 +15,12 @@ public sealed class ClientCommandsTests
         Assert.HasCount(0, result.Errors);
     }
 
-    /// <summary>Checks client run accepts a route session.</summary>
+    /// <summary>Checks client run accepts a mouse session.</summary>
     [TestMethod]
-    public void ClientRunAcceptsRouteSession()
+    public void ClientRunAcceptsMouseSession()
     {
-        ParseResult result = ClientCommands.CreateClientCommand().Parse("run --route mouse");
+        ParseResult result = ClientCommands.CreateClientCommand().Parse("run --mouse");
 
         Assert.HasCount(0, result.Errors);
-    }
-
-    /// <summary>Checks client run rejects unknown routes.</summary>
-    [TestMethod]
-    public void ClientRunRejectsUnknownRoute()
-    {
-        ParseResult result = ClientCommands.CreateClientCommand().Parse("run --route nope");
-
-        Assert.AreNotEqual(0, result.Errors.Count);
     }
 }

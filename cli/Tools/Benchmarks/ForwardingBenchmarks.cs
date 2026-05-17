@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Inputs;
-using Inputs.Sdl;
 
 namespace Cli.Tools.Benchmarks;
 
@@ -80,7 +79,6 @@ internal static partial class ForwardingBenchmarks
     {
         ForwardingBenchmarkMeasurement inputMeasurement = await BenchmarkSdlInputAsync(
             count,
-            new SdlGamepadOptions(),
             progress,
             cancellationToken).ConfigureAwait(false);
         GamepadState state = new(

@@ -22,6 +22,12 @@ internal readonly record struct ViiperOutputDeviceDefinition(
         return deviceName?.Contains(OwnedDeviceNameFragment, StringComparison.OrdinalIgnoreCase) == true;
     }
 
+    public bool IsOwnedViiperDeviceName(string? deviceName)
+    {
+        return IsOwnedDeviceName(deviceName) &&
+            deviceName?.Contains("VIIPER", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
     public static string FormatUsbId(ushort value)
     {
         return $"0x{value:x4}";

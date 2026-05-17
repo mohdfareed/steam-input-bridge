@@ -5,8 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Hosting;
 
-/// <summary>Coordinates the single local host instance.</summary>
-public sealed class HostSingleInstance : IDisposable
+internal sealed class HostSingleInstance : IDisposable
 {
     private Semaphore? _semaphore;
 
@@ -15,8 +14,6 @@ public sealed class HostSingleInstance : IDisposable
         _semaphore = semaphore;
     }
 
-    /// <summary>Tries to acquire the single host instance lock.</summary>
-    /// <param name="name">Ownership name.</param>
     public static HostSingleInstance? TryAcquire(string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -35,7 +32,6 @@ public sealed class HostSingleInstance : IDisposable
         }
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         Semaphore? semaphore = Interlocked.Exchange(ref _semaphore, null);
@@ -64,8 +60,7 @@ public sealed class HostSingleInstance : IDisposable
     }
 }
 
-/// <summary>Owns local route forwarding state.</summary>
-public sealed class ForwardingHost(
+internal sealed class ForwardingHost(
     IForwardingRoute route,
     ILogger? logger = null,
     Func<bool>? shouldForward = null) : IAsyncDisposable
@@ -73,19 +68,14 @@ public sealed class ForwardingHost(
     private readonly IForwardingRoute _route = route ?? throw new ArgumentNullException(nameof(route));
     private int _enabledLeaseCount;
 
-    /// <summary>Gets the hosted route id.</summary>
     public string RouteId => _route.RouteId;
 
-    /// <summary>Gets whether forwarding is enabled.</summary>
     public bool IsEnabled => Volatile.Read(ref _enabledLeaseCount) > 0;
 
-    /// <summary>Gets whether route input and output are connected.</summary>
     public bool IsConnected => _route.IsConnected;
 
-    /// <summary>Gets the number of live enabled clients.</summary>
     public int EnabledLeaseCount => Volatile.Read(ref _enabledLeaseCount);
 
-    /// <summary>Enables forwarding until the returned lease is disposed.</summary>
     public IDisposable Enable()
     {
         _ = Interlocked.Increment(ref _enabledLeaseCount);
@@ -94,7 +84,6 @@ public sealed class ForwardingHost(
         return new ForwardingHostEnableState(ReleaseEnable);
     }
 
-    /// <summary>Runs forwarding until cancelled.</summary>
     public void Run(CancellationToken cancellationToken = default)
     {
         ForwardingHostLog.Starting(logger, RouteId);
@@ -109,7 +98,6 @@ public sealed class ForwardingHost(
         }
     }
 
-    /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
         return _route.DisposeAsync();

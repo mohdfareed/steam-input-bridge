@@ -1,23 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Inputs.Sdl;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Outputs.Viiper;
 
 namespace Hosting;
-
-/// <summary>Local host route kind.</summary>
-public enum ForwardingRouteKind
-{
-    /// <summary>Raw Input mouse to VIIPER mouse.</summary>
-    Mouse,
-
-    /// <summary>SDL gamepad to VIIPER Xbox 360.</summary>
-    Xpad,
-}
 
 /// <summary>Per-route status reported by the local forwarding server.</summary>
 /// <param name="RouteId">Hosted route id.</param>
@@ -30,31 +20,18 @@ public readonly record struct ForwardingRouteStatus(
 
 /// <summary>Host status reported by the local forwarding server.</summary>
 /// <param name="Mouse">Mouse route status.</param>
-/// <param name="Xpad">Gamepad route status.</param>
-/// <param name="XpadDeviceIndex">Configured SDL gamepad index.</param>
-/// <param name="XpadUsesPhysicalMotion">Whether xpad uses a physical SDL gamepad for motion and rumble.</param>
+/// <param name="Gamepads">Server-owned gamepad controller slots.</param>
 /// <param name="EmulationEnabled">Whether emulation reports are currently forwarded.</param>
 /// <param name="PhysicalMotionEnabled">Whether physical motion data is currently forwarded.</param>
-/// <param name="XpadDeviceName">Configured SDL gamepad name when known.</param>
-/// <param name="XpadMotionDeviceIndex">Configured SDL physical motion gamepad index.</param>
-/// <param name="XpadMotionDeviceName">Configured SDL physical motion gamepad name.</param>
 public readonly record struct ForwardingHostStatus(
     ForwardingRouteStatus Mouse,
-    ForwardingRouteStatus Xpad,
-    int XpadDeviceIndex,
-    bool XpadUsesPhysicalMotion,
+    IReadOnlyList<GamepadControllerSlotStatus> Gamepads,
     bool EmulationEnabled,
-    bool PhysicalMotionEnabled,
-    string? XpadDeviceName,
-    int? XpadMotionDeviceIndex,
-    string? XpadMotionDeviceName);
+    bool PhysicalMotionEnabled);
 
 /// <summary>Local forwarding server options.</summary>
 public sealed record ForwardingServerOptions
 {
-    /// <summary>SDL gamepad options for xpad routes.</summary>
-    public SdlGamepadOptions SdlGamepad { get; init; } = new();
-
     /// <summary>VIIPER connection options.</summary>
     public required ViiperOptions Viiper { get; init; }
 
@@ -79,17 +56,6 @@ public sealed class ForwardingServer(ForwardingServerOptions options) : IHostedS
     public ForwardingServer(IOptions<ForwardingServerOptions> options)
         : this((options ?? throw new ArgumentNullException(nameof(options))).Value)
     {
-    }
-
-    /// <summary>Gets the route id for a route kind.</summary>
-    public static string GetRouteId(ForwardingRouteKind route)
-    {
-        return route switch
-        {
-            ForwardingRouteKind.Mouse => ForwardingRouteIds.Mouse,
-            ForwardingRouteKind.Xpad => ForwardingRouteIds.Xpad,
-            _ => throw new ArgumentOutOfRangeException(nameof(route)),
-        };
     }
 
     /// <summary>Starts the server in the background.</summary>
@@ -152,8 +118,6 @@ public sealed class ForwardingServer(ForwardingServerOptions options) : IHostedS
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(options.Viiper);
-        ArgumentNullException.ThrowIfNull(options.SdlGamepad);
-
         using HostSingleInstance instance = HostSingleInstance.TryAcquire(OwnershipName) ??
             throw new InvalidOperationException("Another forwarding host is already running.");
 

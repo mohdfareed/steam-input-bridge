@@ -30,7 +30,7 @@ internal sealed class ViiperOutputSession : IDisposable, IAsyncDisposable
         ViiperDevice device,
         uint busId,
         string deviceId,
-        ViiperOutputOwnership ownership,
+        ViiperOutputOwnership? ownership,
         Action<uint, string>? removed = null,
         Action<uint, string>? disconnected = null)
     {
@@ -38,7 +38,7 @@ internal sealed class ViiperOutputSession : IDisposable, IAsyncDisposable
 
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _device = device ?? throw new ArgumentNullException(nameof(device));
-        _ownership = ownership ?? throw new ArgumentNullException(nameof(ownership));
+        _ownership = ownership;
         _removed = removed;
         _disconnected = disconnected;
         _isConnected = 1;
@@ -98,20 +98,67 @@ internal sealed class ViiperOutputSession : IDisposable, IAsyncDisposable
 
         try
         {
-            await device.DisposeAsync().ConfigureAwait(false);
-
             if (_client is not null && BusId.HasValue && !string.IsNullOrWhiteSpace(DeviceId))
             {
-                _ = await _client
-                    .BusDeviceRemoveAsync(BusId.Value, DeviceId, CancellationToken.None)
-                    .ConfigureAwait(false);
-                _removed?.Invoke(BusId.Value, DeviceId);
+                try
+                {
+                    _ = await _client
+                        .BusDeviceRemoveAsync(BusId.Value, DeviceId, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    _removed?.Invoke(BusId.Value, DeviceId);
+                }
+                catch (IOException)
+                {
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                finally
+                {
+                    await RemoveBusAsync(BusId.Value).ConfigureAwait(false);
+                }
             }
+
+            await DisposeDeviceStreamAsync(device).ConfigureAwait(false);
         }
         finally
         {
             _client?.Dispose();
             _ownership?.Dispose();
+        }
+    }
+
+    private async Task RemoveBusAsync(uint busId)
+    {
+        if (_client is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _ = await _client.BusRemoveAsync(busId, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private static async Task DisposeDeviceStreamAsync(ViiperDevice device)
+    {
+        try
+        {
+            await device.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
         }
     }
 

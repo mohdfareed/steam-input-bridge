@@ -8,22 +8,12 @@ namespace Cli.Tests;
 [TestClass]
 public sealed class HostCommandsTests
 {
-    /// <summary>Checks host run xpad selection parses.</summary>
+    /// <summary>Checks host run parses without gamepad selection.</summary>
     [TestMethod]
-    public void HostRunAcceptsXpadDeviceIndex()
+    public void HostRunAcceptsNoOptions()
     {
         Command host = HostCommands.CreateHostCommand();
-        ParseResult result = host.Parse("run --xpad-device-index 1");
-
-        Assert.HasCount(0, result.Errors);
-    }
-
-    /// <summary>Checks host run xpad motion selection parses.</summary>
-    [TestMethod]
-    public void HostRunAcceptsXpadMotionDeviceIndex()
-    {
-        Command host = HostCommands.CreateHostCommand();
-        ParseResult result = host.Parse("run --xpad-motion-device-index 2");
+        ParseResult result = host.Parse("run");
 
         Assert.HasCount(0, result.Errors);
     }

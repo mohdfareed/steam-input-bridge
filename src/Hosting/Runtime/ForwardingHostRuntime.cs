@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Inputs.Sdl;
 using Microsoft.Extensions.Logging;
 
 namespace Hosting;
@@ -209,29 +211,29 @@ internal sealed class HostedRouteController(
 
 internal sealed class ForwardingHostRuntime(
     HostedRouteController mouse,
-    HostedRouteController xpad,
-    int xpadDeviceIndex,
-    bool xpadUsesPhysicalMotion,
-    ForwardingHostState hostState,
-    string? xpadDeviceName,
-    int? xpadMotionDeviceIndex,
-    string? xpadMotionDeviceName) : IAsyncDisposable
+    GamepadControllerRegistry gamepads,
+    ForwardingHostState hostState) : IAsyncDisposable
 {
     public Task<ForwardingHostStatus> GetStatusAsync()
     {
         return GetStatusCoreAsync();
     }
 
-    public Task<IDisposable> EnableAsync(ForwardingRouteKind route, CancellationToken cancellationToken)
+    public Task<IDisposable> EnableMouseAsync(CancellationToken cancellationToken)
     {
-#pragma warning disable CA2000
-        return route switch
-        {
-            ForwardingRouteKind.Mouse => mouse.EnableAsync(cancellationToken),
-            ForwardingRouteKind.Xpad => xpad.EnableAsync(cancellationToken),
-            _ => throw new ArgumentOutOfRangeException(nameof(route)),
-        };
-#pragma warning restore CA2000
+        return mouse.EnableAsync(cancellationToken);
+    }
+
+    public Task<GamepadReportSessionInfo> AttachSteamControllerAsync(
+        SdlControllerInfo controller,
+        CancellationToken cancellationToken)
+    {
+        return gamepads.AttachSteamControllerAsync(controller, cancellationToken);
+    }
+
+    public Task DetachSteamControllerAsync(Guid sessionId)
+    {
+        return gamepads.DetachAsync(sessionId);
     }
 
     public Task SetEmulationEnabledAsync(bool enabled)
@@ -259,23 +261,19 @@ internal sealed class ForwardingHostRuntime(
     public async ValueTask DisposeAsync()
     {
         await mouse.DisposeAsync().ConfigureAwait(false);
-        await xpad.DisposeAsync().ConfigureAwait(false);
+        await gamepads.DisposeAsync().ConfigureAwait(false);
     }
 
     private async Task<ForwardingHostStatus> GetStatusCoreAsync()
     {
         ForwardingRouteStatus mouseStatus = await mouse.GetStatusAsync().ConfigureAwait(false);
-        ForwardingRouteStatus xpadStatus = await xpad.GetStatusAsync().ConfigureAwait(false);
+        IReadOnlyList<GamepadControllerSlotStatus> gamepadStatuses =
+            await gamepads.GetStatusAsync().ConfigureAwait(false);
 
         return new ForwardingHostStatus(
             mouseStatus,
-            xpadStatus,
-            xpadDeviceIndex,
-            xpadUsesPhysicalMotion,
+            gamepadStatuses,
             hostState.EmulationEnabled,
-            hostState.PhysicalMotionEnabled,
-            xpadDeviceName,
-            xpadMotionDeviceIndex,
-            xpadMotionDeviceName);
+            hostState.PhysicalMotionEnabled);
     }
 }

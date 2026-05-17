@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Inputs.Sdl;
+using Outputs.Viiper;
 
 namespace Hosting.Tests;
 
@@ -45,38 +47,6 @@ public sealed class ForwardingHostTests
         Assert.AreEqual(report, output.Reports[0]);
     }
 
-    /// <summary>Checks disabled xpad forwarding.</summary>
-    [TestMethod]
-    public async Task DisabledXpadHostDropsInput()
-    {
-        GamepadState state = new(GamepadButtons.South, 0, 0, 0, 0, 0, 0, default);
-        TestGamepadInputSource input = new(state);
-        TestXbox360Output output = new();
-        await using ForwardingHost host = new(new Xbox360ForwardingRoute(input, output));
-
-        host.Run();
-
-        Assert.HasCount(0, output.Reports);
-    }
-
-    /// <summary>Checks enabled xpad forwarding.</summary>
-    [TestMethod]
-    public async Task EnabledXpadHostForwardsInput()
-    {
-        GamepadState state = new(GamepadButtons.South, 0, 0, 0, 0, 0, 0, default);
-        TestGamepadInputSource input = new(state);
-        TestXbox360Output output = new();
-        await using ForwardingHost host = new(new Xbox360ForwardingRoute(input, output));
-
-        using (host.Enable())
-        {
-            host.Run();
-        }
-
-        Assert.HasCount(1, output.Reports);
-        Assert.AreEqual(Xbox360Buttons.A, output.Reports[0].Buttons);
-    }
-
     /// <summary>Checks that state changes affect later reports.</summary>
     [TestMethod]
     public async Task DisabledStateStopsLaterReports()
@@ -116,10 +86,7 @@ public sealed class ForwardingHostTests
         Assert.AreEqual("mouse", status.Mouse.RouteId);
         Assert.AreEqual(0, status.Mouse.EnabledClientCount);
         Assert.IsFalse(status.Mouse.IsConnected);
-        Assert.AreEqual("xpad", status.Xpad.RouteId);
-        Assert.AreEqual(0, status.Xpad.EnabledClientCount);
-        Assert.IsFalse(status.Xpad.IsConnected);
-        Assert.IsFalse(status.XpadUsesPhysicalMotion);
+        Assert.HasCount(0, status.Gamepads);
         Assert.IsTrue(status.EmulationEnabled);
         Assert.IsTrue(status.PhysicalMotionEnabled);
     }
@@ -153,7 +120,7 @@ public sealed class ForwardingHostTests
         await using ForwardingHostRuntime runtime = CreateRuntime();
         using ForwardingHostControlSession session = new(runtime, requestStop: null, logger: null);
 
-        await session.EnableAsync(ForwardingRouteKind.Mouse).ConfigureAwait(false);
+        await session.EnableMouseAsync().ConfigureAwait(false);
 
         ForwardingHostStatus enabled = await session.GetStatusAsync().ConfigureAwait(false);
         Assert.AreEqual(1, enabled.Mouse.EnabledClientCount);
@@ -168,23 +135,17 @@ public sealed class ForwardingHostTests
 
     /// <summary>Checks control session route disabling without disconnecting.</summary>
     [TestMethod]
-    public async Task ControlSessionDisableReleasesRouteWithoutDisconnecting()
+    public async Task ControlSessionDisableReleasesMouseWithoutDisconnecting()
     {
         await using ForwardingHostRuntime runtime = CreateRuntime();
         using ForwardingHostControlSession session = new(runtime, requestStop: null, logger: null);
 
-        await session.EnableAsync(ForwardingRouteKind.Mouse).ConfigureAwait(false);
-        await session.DisableAsync(ForwardingRouteKind.Mouse).ConfigureAwait(false);
+        await session.EnableMouseAsync().ConfigureAwait(false);
+        await session.DisableMouseAsync().ConfigureAwait(false);
 
         ForwardingHostStatus disabled = await session.GetStatusAsync().ConfigureAwait(false);
         Assert.AreEqual(0, disabled.Mouse.EnabledClientCount);
         Assert.IsFalse(disabled.Mouse.IsConnected);
-
-        await session.EnableAsync(ForwardingRouteKind.Xpad).ConfigureAwait(false);
-
-        ForwardingHostStatus reused = await session.GetStatusAsync().ConfigureAwait(false);
-        Assert.AreEqual(1, reused.Xpad.EnabledClientCount);
-        Assert.IsTrue(reused.Xpad.IsConnected);
     }
 
     /// <summary>Checks global host state can change without route lease ownership.</summary>
@@ -211,6 +172,18 @@ public sealed class ForwardingHostTests
         Assert.IsTrue(enabled.PhysicalMotionEnabled);
     }
 
+    /// <summary>Checks that gamepad host attachment rejects direct physical controllers.</summary>
+    [TestMethod]
+    public async Task AttachSteamControllerRejectsPhysicalController()
+    {
+        await using ForwardingHostRuntime runtime = CreateRuntime();
+        SdlControllerInfo controller = CreateController(SdlControllerSource.Physical);
+
+        _ = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+                () => runtime.AttachSteamControllerAsync(controller, CancellationToken.None))
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Checks control session stop callback.</summary>
     [TestMethod]
     public async Task ControlSessionStopRequestsServerStop()
@@ -222,21 +195,6 @@ public sealed class ForwardingHostTests
         await session.StopAsync().ConfigureAwait(false);
 
         Assert.IsTrue(stopped);
-    }
-
-    /// <summary>Checks route-specific ownership and pipe names.</summary>
-    [TestMethod]
-    public void HostRuntimeNamesAreStable()
-    {
-        string mouseRouteId = ForwardingServer.GetRouteId(ForwardingRouteKind.Mouse);
-        string xpadRouteId = ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad);
-        string pipeName = ForwardingServer.PipeName;
-        string ownershipName = ForwardingServer.OwnershipName;
-
-        Assert.AreEqual("mouse", mouseRouteId);
-        Assert.AreEqual("xpad", xpadRouteId);
-        Assert.AreEqual("Hosting", pipeName);
-        Assert.AreEqual(@"Local\Hosting", ownershipName);
     }
 
     /// <summary>Checks status through the local pipe control server.</summary>
@@ -263,7 +221,7 @@ public sealed class ForwardingHostTests
         }
     }
 
-    /// <summary>Checks route disabling through a connected local client session.</summary>
+    /// <summary>Checks mouse disabling through a connected local client session.</summary>
     [TestMethod]
     public async Task ControlClientSessionCanDisableAndReuseConnection()
     {
@@ -275,15 +233,12 @@ public sealed class ForwardingHostTests
         ForwardingClient client = new(pipeName, TimeSpan.FromSeconds(2));
 
         await using ForwardingClientSession session = await client.ConnectAsync().ConfigureAwait(false);
-        await session.EnableAsync(ForwardingRouteKind.Mouse).ConfigureAwait(false);
-        await session.DisableAsync(ForwardingRouteKind.Mouse).ConfigureAwait(false);
-        await session.EnableAsync(ForwardingRouteKind.Xpad).ConfigureAwait(false);
+        await session.EnableMouseAsync().ConfigureAwait(false);
+        await session.DisableMouseAsync().ConfigureAwait(false);
 
         ForwardingHostStatus status = await client.GetStatusAsync().ConfigureAwait(false);
         Assert.AreEqual(0, status.Mouse.EnabledClientCount);
         Assert.IsFalse(status.Mouse.IsConnected);
-        Assert.AreEqual(1, status.Xpad.EnabledClientCount);
-        Assert.IsTrue(status.Xpad.IsConnected);
 
         await cancellation.CancelAsync().ConfigureAwait(false);
         try
@@ -334,23 +289,25 @@ public sealed class ForwardingHostTests
                 new TestMouseOutput())),
             logger: null,
             () => hostState.EmulationEnabled);
-        HostedRouteController xpad = new(
-            ForwardingRouteIds.Xpad,
-            _ => Task.FromResult<IForwardingRoute>(new Xbox360ForwardingRoute(
-                new TestGamepadInputSource(new GamepadState(GamepadButtons.South, 0, 0, 0, 0, 0, 0, default)),
-                new TestXbox360Output(),
-                shouldForwardMotion: () => hostState.PhysicalMotionEnabled)),
-            logger: null,
-            () => hostState.EmulationEnabled);
-        return new ForwardingHostRuntime(
-            mouse,
-            xpad,
-            0,
-            false,
-            hostState,
-            "gamepad",
-            null,
-            null);
+        GamepadControllerRegistry gamepads = new(new ViiperOptions(), hostState, logger: null);
+        return new ForwardingHostRuntime(mouse, gamepads, hostState);
+    }
+
+    private static SdlControllerInfo CreateController(SdlControllerSource source)
+    {
+        SdlControllerInfo controller = new(
+            new SdlControllerId(
+                source == SdlControllerSource.Steam ? "steam:0000000000000001" : "path:controller-path"),
+            InstanceId: 1,
+            Name: "Controller",
+            source,
+            source == SdlControllerSource.Steam ? 1UL : 0UL,
+            VendorId: 0x045e,
+            ProductId: 0x028e,
+            Path: "controller-path",
+            HasGyro: true,
+            HasAccelerometer: true);
+        return controller;
     }
 
     private static ForwardingHost CreateHost()
@@ -389,43 +346,13 @@ public sealed class ForwardingHostTests
 
         public List<MouseReport> Reports { get; } = [];
 
+        public bool FilterInput(string? deviceName)
+        {
+            _ = deviceName;
+            return true;
+        }
+
         public ValueTask SendAsync(MouseReport report, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Reports.Add(report);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class TestGamepadInputSource(GamepadState state) : IGamepadInputSource
-    {
-        public bool IsConnected => true;
-
-        public void Run(GamepadInputHandler handler, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            GamepadInput input = new(state, "gamepad");
-            handler(in input);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            return ValueTask.CompletedTask;
-        }
-    }
-
-    private sealed class TestXbox360Output : IXbox360Output
-    {
-        public bool IsConnected => true;
-
-        public List<Xbox360Report> Reports { get; } = [];
-
-        public ValueTask SendAsync(Xbox360Report report, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Reports.Add(report);

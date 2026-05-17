@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
+using Inputs.Sdl;
 using Microsoft.Extensions.Logging;
 using PolyType;
 using StreamJsonRpc;
@@ -102,9 +103,9 @@ internal partial interface IForwardingHostControl
 {
     Task<ForwardingHostStatus> GetStatusAsync();
 
-    Task EnableAsync(ForwardingRouteKind route);
+    Task EnableMouseAsync();
 
-    Task DisableAsync(ForwardingRouteKind route);
+    Task DisableMouseAsync();
 
     Task SetEmulationEnabledAsync(bool enabled);
 
@@ -114,6 +115,8 @@ internal partial interface IForwardingHostControl
 
     Task<bool> TogglePhysicalMotionEnabledAsync();
 
+    Task<GamepadReportSessionInfo> AttachSteamControllerAsync(SdlControllerInfo controller);
+
     Task StopAsync();
 }
 
@@ -122,7 +125,8 @@ internal sealed class ForwardingHostControlSession(
     Action? requestStop,
     ILogger? logger) : IForwardingHostControl, IDisposable
 {
-    private readonly Dictionary<ForwardingRouteKind, IDisposable> _leases = [];
+    private IDisposable? _mouseLease;
+    private readonly List<Guid> _gamepadSessions = [];
 
     public Task<ForwardingHostStatus> GetStatusAsync()
     {
@@ -130,23 +134,22 @@ internal sealed class ForwardingHostControlSession(
         return runtime.GetStatusAsync();
     }
 
-    public async Task EnableAsync(ForwardingRouteKind route)
+    public async Task EnableMouseAsync()
     {
-        ForwardingHostControlLog.ReceivedCommand(logger, nameof(EnableAsync));
-        if (_leases.ContainsKey(route))
+        ForwardingHostControlLog.ReceivedCommand(logger, nameof(EnableMouseAsync));
+        if (_mouseLease is not null)
         {
             return;
         }
 
-        IDisposable lease = await runtime.EnableAsync(route, CancellationToken.None).ConfigureAwait(false);
-        _leases.Add(route, lease);
-        ForwardingHostControlLog.LeaseOpened(logger, ForwardingServer.GetRouteId(route));
+        _mouseLease = await runtime.EnableMouseAsync(CancellationToken.None).ConfigureAwait(false);
+        ForwardingHostControlLog.LeaseOpened(logger, ForwardingRouteIds.Mouse);
     }
 
-    public Task DisableAsync(ForwardingRouteKind route)
+    public Task DisableMouseAsync()
     {
-        ForwardingHostControlLog.ReceivedCommand(logger, nameof(DisableAsync));
-        ReleaseLease(route);
+        ForwardingHostControlLog.ReceivedCommand(logger, nameof(DisableMouseAsync));
+        ReleaseMouseLease();
         return Task.CompletedTask;
     }
 
@@ -174,6 +177,16 @@ internal sealed class ForwardingHostControlSession(
         return runtime.TogglePhysicalMotionEnabledAsync();
     }
 
+    public async Task<GamepadReportSessionInfo> AttachSteamControllerAsync(SdlControllerInfo controller)
+    {
+        ForwardingHostControlLog.ReceivedCommand(logger, nameof(AttachSteamControllerAsync));
+        GamepadReportSessionInfo session = await runtime
+            .AttachSteamControllerAsync(controller, CancellationToken.None)
+            .ConfigureAwait(false);
+        _gamepadSessions.Add(session.SessionId);
+        return session;
+    }
+
     public Task StopAsync()
     {
         ForwardingHostControlLog.ReceivedCommand(logger, nameof(StopAsync));
@@ -183,26 +196,23 @@ internal sealed class ForwardingHostControlSession(
 
     public void Dispose()
     {
-        foreach ((ForwardingRouteKind route, IDisposable lease) in _leases)
+        ReleaseMouseLease();
+        foreach (Guid sessionId in _gamepadSessions)
         {
-            ReleaseLease(route, lease);
+            runtime.DetachSteamControllerAsync(sessionId).GetAwaiter().GetResult();
         }
 
-        _leases.Clear();
+        _gamepadSessions.Clear();
     }
 
-    private void ReleaseLease(ForwardingRouteKind route)
+    private void ReleaseMouseLease()
     {
-        if (_leases.Remove(route, out IDisposable? lease))
+        IDisposable? lease = Interlocked.Exchange(ref _mouseLease, null);
+        if (lease is not null)
         {
-            ReleaseLease(route, lease);
+            lease.Dispose();
+            ForwardingHostControlLog.LeaseClosed(logger, ForwardingRouteIds.Mouse);
         }
-    }
-
-    private void ReleaseLease(ForwardingRouteKind route, IDisposable lease)
-    {
-        lease.Dispose();
-        ForwardingHostControlLog.LeaseClosed(logger, ForwardingServer.GetRouteId(route));
     }
 }
 

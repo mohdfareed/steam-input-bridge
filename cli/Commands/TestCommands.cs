@@ -33,7 +33,7 @@ internal static class TestCommands
         command.SetAction(async (_, _) =>
         {
             await Console.Out.WriteLineAsync(
-                $"pipe={ForwardingServer.PipeName} ownership={ForwardingServer.OwnershipName} routes={ForwardingServer.GetRouteId(ForwardingRouteKind.Mouse)},{ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad)}")
+                $"pipe={ForwardingServer.PipeName} ownership={ForwardingServer.OwnershipName} mouseRoute=mouse")
                 .ConfigureAwait(false);
         });
 
@@ -54,7 +54,6 @@ internal static class TestCommands
         Command command = new("xpad", "Gamepad diagnostics and test tools.");
         command.Subcommands.Add(XpadCommands.CreateProbeCommand());
         command.Subcommands.Add(XpadCommands.CreateInputCommand());
-        command.Subcommands.Add(XpadCommands.CreateMotionSidecarCommand());
         command.Subcommands.Add(XpadCommands.CreatePressCommand(services));
         command.Subcommands.Add(BenchCommands.CreateBenchCommand(ForwardingBenchmarkInput.Sdl));
         return command;

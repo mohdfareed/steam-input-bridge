@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\Hosting\Hosting.csproj" />
     <ProjectReference Include="..\..\src\Inputs\Inputs.csproj" />
     <ProjectReference Include="..\..\src\Outputs\Outputs.csproj" />
+    <ProjectReference Include="..\..\src\Outputs\Viiper\Outputs.Viiper.csproj" />
   </ItemGroup>
 
   <ItemGroup>

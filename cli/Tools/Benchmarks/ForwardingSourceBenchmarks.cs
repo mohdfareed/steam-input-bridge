@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
@@ -73,14 +75,19 @@ internal static partial class ForwardingBenchmarks
     /// <summary>Measures SDL update/read to callback.</summary>
     internal static async Task<ForwardingBenchmarkMeasurement> BenchmarkSdlInputAsync(
         int count,
-        SdlGamepadOptions options,
         IProgress<ForwardingBenchmarkProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ThrowIfInvalidCount(count);
 
+        IReadOnlyList<SdlControllerInfo> controllers = SdlControllerCatalog.GetControllers();
+        if (controllers.Count == 0)
+        {
+            throw new InvalidOperationException("No SDL gamepads found.");
+        }
+
         using SdlGamepadSource input = await SdlGamepadSource
-            .ConnectAsync(options, cancellationToken)
+            .ConnectAsync(controllers[0], cancellationToken)
             .ConfigureAwait(false);
         using CancellationTokenSource runCancellation = CancellationTokenSource
             .CreateLinkedTokenSource(cancellationToken);
@@ -89,6 +96,7 @@ internal static partial class ForwardingBenchmarks
         int warmupCount = 0;
         int sampleCount = 0;
         long totalElapsed = 0;
+        long previousTimestamp = Stopwatch.GetTimestamp();
         Task progressTask = ReportProgressAsync(
             () => Volatile.Read(ref warmupCount),
             () => Volatile.Read(ref sampleCount),
@@ -98,7 +106,7 @@ internal static partial class ForwardingBenchmarks
 
         try
         {
-            input.Run(HandleInput, HandleTiming, runCancellation.Token);
+            input.Run(HandleInput, runCancellation.Token);
             cancellationToken.ThrowIfCancellationRequested();
         }
         finally
@@ -111,15 +119,12 @@ internal static partial class ForwardingBenchmarks
             ? throw new InvalidOperationException("SDL benchmark stopped before collecting enough reports.")
             : new ForwardingBenchmarkMeasurement(count, totalElapsed, samples, -1);
 
-        static void HandleInput(in GamepadInput input)
+        void HandleInput(in GamepadInput input)
         {
             _ = input;
-        }
-
-        void HandleTiming(long startedTimestamp, long emittedTimestamp)
-        {
+            long emittedTimestamp = Stopwatch.GetTimestamp();
             CollectSample(
-                startedTimestamp,
+                previousTimestamp,
                 emittedTimestamp,
                 count,
                 samples,
@@ -127,6 +132,7 @@ internal static partial class ForwardingBenchmarks
                 ref sampleCount,
                 ref totalElapsed,
                 runCancellation);
+            previousTimestamp = emittedTimestamp;
         }
     }
 

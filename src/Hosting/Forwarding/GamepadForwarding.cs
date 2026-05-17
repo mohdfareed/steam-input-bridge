@@ -7,86 +7,9 @@ using Outputs;
 
 namespace Hosting;
 
-/// <summary>Filters one gamepad input report.</summary>
-/// <param name="input">Gamepad input.</param>
-/// <returns><see langword="true" /> to forward the report.</returns>
-public delegate bool GamepadInputFilter(in GamepadInput input);
-
-/// <summary>Forwards canonical gamepad input to output devices.</summary>
-public static class GamepadForwardingExtensions
+/// <summary>Maps canonical gamepad input to output devices.</summary>
+internal static class GamepadForwardingExtensions
 {
-    /// <summary>Forwards gamepad state to an Xbox 360 output.</summary>
-    public static void RunTo(
-        this IGamepadInputSource input,
-        IXbox360Output output,
-        CancellationToken cancellationToken = default)
-    {
-        input.RunTo(output, filter: null, cancellationToken);
-    }
-
-    /// <summary>Forwards filtered gamepad state to an Xbox 360 output.</summary>
-    public static void RunTo(
-        this IGamepadInputSource input,
-        IXbox360Output output,
-        GamepadInputFilter? filter,
-        CancellationToken cancellationToken = default)
-    {
-        input.RunTo(output, filter, shouldForwardMotion: null, cancellationToken);
-    }
-
-    /// <summary>Forwards filtered gamepad state to an Xbox 360 output.</summary>
-    public static void RunTo(
-        this IGamepadInputSource input,
-        IXbox360Output output,
-        GamepadInputFilter? filter,
-        Func<bool>? shouldForwardMotion,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(input);
-        ArgumentNullException.ThrowIfNull(output);
-
-        using IDisposable? rumbleSubscription = ListenRumble(input, output);
-        bool hasPreviousReport = false;
-        Xbox360Report previousReport = default;
-        try
-        {
-            input.Run(HandleInput, cancellationToken);
-        }
-        finally
-        {
-            StopRumble(input);
-        }
-
-        void HandleInput(in GamepadInput source)
-        {
-            if (filter is not null && !filter(in source))
-            {
-                return;
-            }
-
-            GamepadState state = FilterMotion(source.State, shouldForwardMotion?.Invoke() ?? true);
-            Xbox360Report report = ToXbox360Report(state);
-            if (hasPreviousReport && report == previousReport)
-            {
-                return;
-            }
-
-            SendSynchronously(output, report, cancellationToken);
-            previousReport = report;
-            hasPreviousReport = true;
-        }
-    }
-
-    internal static GamepadState FilterMotion(GamepadState state, bool motionEnabled)
-    {
-        return motionEnabled
-            ? state
-            : state with
-            {
-                Motion = default,
-            };
-    }
-
     internal static Xbox360Report ToXbox360Report(GamepadState state)
     {
         Xbox360Buttons buttons = Xbox360Buttons.None;
@@ -123,26 +46,6 @@ public static class GamepadForwardingExtensions
             ScaleRumble(rumble.RightMotor));
     }
 
-    private static IDisposable? ListenRumble(IGamepadInputSource input, IXbox360Output output)
-    {
-        return input is not IGamepadRumbleSink rumbleSink ||
-            output is not IXbox360FeedbackSource feedbackSource
-            ? null
-            : feedbackSource.ListenRumble(rumble =>
-        {
-            _ = rumbleSink.TryRumble(ToGamepadRumble(rumble));
-            return ValueTask.CompletedTask;
-        });
-    }
-
-    private static void StopRumble(IGamepadInputSource input)
-    {
-        if (input is IGamepadRumbleSink rumbleSink)
-        {
-            _ = rumbleSink.TryRumble(GamepadRumble.Empty);
-        }
-    }
-
     private static Xbox360Buttons Apply(
         Xbox360Buttons output,
         GamepadButtons input,
@@ -167,7 +70,7 @@ public static class GamepadForwardingExtensions
         return (ushort)(value * 257);
     }
 
-    private static void SendSynchronously(
+    internal static void SendSynchronously(
         IXbox360Output output,
         Xbox360Report report,
         CancellationToken cancellationToken)
