@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using VirtualMouse.Settings.Profiles;
 
-namespace Communication.Tests;
+namespace VirtualMouse.Tests;
 
 /// <summary>Tests profile resolution defaults.</summary>
 [TestClass]
@@ -63,5 +63,37 @@ public sealed class ProfileResolverTests
         Assert.AreEqual("C:\\Games\\Game\\launcher.exe", resolved.Executable);
         Assert.AreEqual("C:\\Games\\Game", resolved.WorkingDirectory);
         CollectionAssert.AreEqual(GameReceiverProcess, resolved.ReceiverProcesses.ToArray());
+    }
+
+    /// <summary>Checks that omitted outputs resolve to no output.</summary>
+    [TestMethod]
+    public void ResolveDefaultsOutputsToNone()
+    {
+        GameProfile profile = new()
+        {
+            Executable = "C:\\Games\\Game\\game.exe",
+        };
+
+        ResolvedGameProfile resolved = ProfileResolver.Resolve("default", profile);
+
+        Assert.AreEqual(ControllerOutput.None, resolved.ControllerOutput);
+        Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);
+    }
+
+    /// <summary>Checks that JSON null outputs resolve to no output.</summary>
+    [TestMethod]
+    public void ResolveNullOutputsToNone()
+    {
+        GameProfile profile = new()
+        {
+            Executable = "C:\\Games\\Game\\game.exe",
+            ControllerOutput = null,
+            MouseOutput = null,
+        };
+
+        ResolvedGameProfile resolved = ProfileResolver.Resolve("default", profile);
+
+        Assert.AreEqual(ControllerOutput.None, resolved.ControllerOutput);
+        Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);
     }
 }

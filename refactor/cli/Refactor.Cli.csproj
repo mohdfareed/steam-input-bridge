@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\src\Hosting\Hosting.csproj" />
+    <ProjectReference Include="..\src\Runtime\Runtime.csproj" />
     <ProjectReference Include="..\src\Settings\Settings.csproj" />
   </ItemGroup>
 

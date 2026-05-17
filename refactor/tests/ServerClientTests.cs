@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 using VirtualMouse.Hosting;
 using VirtualMouse.Settings;
 
-namespace Communication.Tests;
+namespace VirtualMouse.Tests;
 
 /// <summary>Tests server/client connection behavior.</summary>
 [TestClass]

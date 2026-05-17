@@ -44,8 +44,8 @@ public static class ProfileResolver
             profile.Arguments ?? string.Empty,
             workingDirectory,
             ResolveReceiverProcesses(profile, executable),
-            profile.ControllerOutput,
-            profile.MouseOutput);
+            profile.ControllerOutput ?? ControllerOutput.None,
+            profile.MouseOutput ?? MouseOutput.None);
     }
 
     private static string ResolveTitle(string profileId, GameProfile profile)

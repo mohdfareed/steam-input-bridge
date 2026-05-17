@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using VirtualMouse.Runtime;
 using VirtualMouse.Settings;
 using VirtualMouse.Settings.Profiles;
 
@@ -21,6 +22,7 @@ public static class ServerServices
     /// <summary>Adds the local server.</summary>
     public static IServiceCollection AddApplicationServer(this IServiceCollection services)
     {
+        _ = services.AddSingleton<ActiveClientRegistry>();
         _ = services.AddSingleton<VirtualMouseServer>();
         return services;
     }
@@ -30,7 +32,12 @@ public static class ServerServices
 // ============================================================================
 
 /// <summary>Current server status.</summary>
-public sealed record ServerStatus(int ConnectedClientCount);
+public sealed record ServerStatus(int ConnectedClientCount)
+{
+    /// <summary>Current active-client runtime status.</summary>
+    public ActiveClientRegistryStatus Runtime { get; init; } =
+        new(null, [], []);
+}
 
 // The app-facing server owns connected clients and accepts client pipes.
 /// <summary>Long-lived local server for client connections.</summary>
@@ -38,10 +45,12 @@ public sealed class VirtualMouseServer(
     IOptions<HostingSettings> options,
     ILogger<VirtualMouseServer> logger,
     SettingsFile? settingsFile = null,
-    ProfilesService? profiles = null)
+    ProfilesService? profiles = null,
+    ActiveClientRegistry? runtime = null)
 {
     private readonly ConnectedClients _clients = new();
     private readonly ConcurrentDictionary<ServerConnection, byte> _connections = [];
+    private readonly ActiveClientRegistry _runtime = runtime ?? new ActiveClientRegistry();
 
     internal IReadOnlyCollection<ConnectedClient> Clients => _clients.Snapshot;
 
@@ -139,6 +148,7 @@ public sealed class VirtualMouseServer(
     internal void DisconnectClient(Guid clientId)
     {
         _clients.Remove(clientId);
+        _runtime.RemoveClient(clientId);
         logger.LogInformation(
             "Client disconnected: {ClientId} (clients={ClientCount})",
             clientId,
@@ -147,7 +157,57 @@ public sealed class VirtualMouseServer(
 
     internal Task<ServerStatus> GetStatusAsync()
     {
-        return Task.FromResult(new ServerStatus(_clients.Count));
+        return Task.FromResult(new ServerStatus(_clients.Count)
+        {
+            Runtime = _runtime.GetStatus(),
+        });
+    }
+
+    internal Task<ClientRunLaunch> StartRunAsync(Guid clientId, string profileId)
+    {
+        if (profiles is null)
+        {
+            throw new InvalidOperationException("Profile settings are not available.");
+        }
+
+        GameProfile profile = profiles.GetProfile(profileId) ??
+            throw new InvalidOperationException($"Profile \"{profileId}\" was not found.");
+        ResolvedGameProfile resolved = ProfileResolver.Resolve(profileId, profile);
+        ConnectedClient client = _clients.Get(clientId);
+        _runtime.RegisterClient(
+            clientId,
+            client.ProcessId,
+            resolved.Id,
+            resolved.ReceiverProcesses);
+
+        return Task.FromResult(new ClientRunLaunch(
+            resolved.Id,
+            resolved.Title,
+            resolved.Executable,
+            resolved.Arguments,
+            resolved.WorkingDirectory,
+            resolved.ReceiverProcesses,
+            resolved.ControllerOutput,
+            resolved.MouseOutput));
+    }
+
+    internal Task UpdateRunProcessesAsync(
+        Guid clientId,
+        IReadOnlyList<ObservedGameProcess> processes)
+    {
+        _runtime.UpdateClientProcesses(clientId, processes);
+        return Task.CompletedTask;
+    }
+
+    internal Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync(Guid clientId)
+    {
+        return Task.FromResult(_runtime.GetOwnedProcesses(clientId));
+    }
+
+    internal Task EndRunAsync(Guid clientId)
+    {
+        _runtime.RemoveClient(clientId);
+        return Task.CompletedTask;
     }
 
     internal void ConnectionClosed(Exception exception)

@@ -48,6 +48,7 @@ Project for local input forwarding transports.
 
 ## TODO
 
+- [ ] Rename project
 - [ ] DS4 output contract and DS4-specific mapping.
 - [ ] SDL-VIIPER touchpad, and other controller capability models.
   - [ ] rumble, trigger rumble, light-bar RGB, flash timing

@@ -3,7 +3,7 @@ using System.IO;
 using Microsoft.Extensions.Logging;
 using VirtualMouse.Settings;
 
-namespace Communication.Tests;
+namespace VirtualMouse.Tests;
 
 /// <summary>Tests application file logging registration.</summary>
 [TestClass]

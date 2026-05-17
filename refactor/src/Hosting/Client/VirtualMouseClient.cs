@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using VirtualMouse.Runtime;
 using VirtualMouse.Settings;
 
 namespace VirtualMouse.Hosting;
@@ -18,6 +20,7 @@ public static class ClientServices
     public static IServiceCollection AddApplicationClient(this IServiceCollection services)
     {
         _ = services.AddTransient<VirtualMouseClient>();
+        _ = services.AddTransient<GameClient>();
         return services;
     }
 }
@@ -101,6 +104,45 @@ public sealed class VirtualMouseClient : IAsyncDisposable
     {
         ThrowIfDisposed();
         return _connection.Server.GetStatusAsync().WaitAsync(cancellationToken);
+    }
+
+    /// <summary>Starts a profile-backed client run.</summary>
+    public Task<ClientRunLaunch> StartRunAsync(
+        string profileId,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _connection.Server
+            .StartRunAsync(profileId)
+            .WaitAsync(cancellationToken);
+    }
+
+    /// <summary>Updates receiver processes observed by this client.</summary>
+    public Task UpdateRunProcessesAsync(
+        IReadOnlyList<ObservedGameProcess> processes,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _connection.Server
+            .UpdateRunProcessesAsync(processes)
+            .WaitAsync(cancellationToken);
+    }
+
+    /// <summary>Gets receiver processes currently owned by this client.</summary>
+    public Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync(
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _connection.Server
+            .GetOwnedReceiverProcessesAsync()
+            .WaitAsync(cancellationToken);
+    }
+
+    /// <summary>Ends this client's run.</summary>
+    public Task EndRunAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _connection.Server.EndRunAsync().WaitAsync(cancellationToken);
     }
 
     /// <summary>Disconnects from the server.</summary>

@@ -5,8 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using VirtualMouse.Settings;
+using VirtualMouse.Settings.Profiles;
 
-namespace Communication.Tests;
+namespace VirtualMouse.Tests;
 
 /// <summary>Tests minimal application settings validation.</summary>
 [TestClass]
@@ -61,6 +62,35 @@ public sealed class SettingsValidationTests
         }
     }
 
+    /// <summary>Checks that JSON null profile outputs mean no output.</summary>
+    [TestMethod]
+    public void NullProfileOutputsResolveToNone()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "VirtualMouse.Refactor.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithNullOutputs());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
+            GameProfile profile = settings.Current.Games["nulls"];
+            ResolvedGameProfile resolved = ProfileResolver.Resolve("nulls", profile);
+
+            Assert.IsNull(profile.ControllerOutput);
+            Assert.IsNull(profile.MouseOutput);
+            Assert.AreEqual(ControllerOutput.None, resolved.ControllerOutput);
+            Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);
+            Assert.AreEqual("C:\\Games\\Nulls", resolved.WorkingDirectory);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static ServiceProvider CreateServices(string settingsPath)
     {
         IConfigurationRoot configuration = new ConfigurationBuilder()
@@ -105,6 +135,23 @@ public sealed class SettingsValidationTests
             "Games": {
               "defaults": {
                 "Executable": "C:\\Games\\Default\\game.exe"
+              }
+            }
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithNullOutputs()
+    {
+        return """
+        {
+          "VirtualMouse": {
+            "Games": {
+              "nulls": {
+                "Executable": "C:\\Games\\Nulls\\game.exe",
+                "ControllerOutput": null,
+                "MouseOutput": null
               }
             }
           }

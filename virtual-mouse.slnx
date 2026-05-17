@@ -30,6 +30,7 @@
   <Folder Name="/cli/">
     <Project Path="cli/Cli.csproj" />
   </Folder>
+  <Folder Name="/refactor/" />
 
   <Folder Name="/refactor/cli/">
     <Project Path="refactor/cli/Refactor.Cli.csproj" />
@@ -37,11 +38,12 @@
 
   <Folder Name="/refactor/src/">
     <Project Path="refactor/src/Hosting/Hosting.csproj" />
+    <Project Path="refactor/src/Runtime/Runtime.csproj" />
     <Project Path="refactor/src/Settings/Settings.csproj" />
   </Folder>
 
   <Folder Name="/refactor/tests/">
-    <Project Path="refactor/tests/Communication.Tests/Communication.Tests.csproj" />
+    <Project Path="refactor/tests/VirtualMouse.Tests.csproj" />
   </Folder>
 
 </Solution>

@@ -46,11 +46,11 @@ public sealed class GameProfile
     /// <summary>Optional working directory.</summary>
     public string? WorkingDirectory { get; set; }
 
-    /// <summary>Virtual controller output.</summary>
-    public ControllerOutput ControllerOutput { get; set; } = ControllerOutput.Xbox360;
+    /// <summary>Optional virtual controller output.</summary>
+    public ControllerOutput? ControllerOutput { get; set; }
 
-    /// <summary>Mouse output.</summary>
-    public MouseOutput MouseOutput { get; set; } = MouseOutput.Viiper;
+    /// <summary>Optional mouse output.</summary>
+    public MouseOutput? MouseOutput { get; set; }
 
     /// <summary>Processes that identify the receiver game.</summary>
     public Collection<string> ReceiverProcesses { get; } = [];

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VirtualMouse.Settings;
 using VirtualMouse.Settings.Profiles;
 
-namespace Communication.Tests;
+namespace VirtualMouse.Tests;
 
 /// <summary>Tests profile settings loading and reload behavior.</summary>
 [TestClass]

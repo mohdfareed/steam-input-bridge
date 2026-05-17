@@ -6,6 +6,7 @@ using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 using StreamJsonRpc;
+using VirtualMouse.Runtime;
 
 namespace VirtualMouse.Hosting;
 
@@ -29,6 +30,13 @@ internal sealed class ConnectedClients
     internal void Remove(Guid clientId)
     {
         _ = _clients.TryRemove(clientId, out _);
+    }
+
+    internal ConnectedClient Get(Guid clientId)
+    {
+        return _clients.TryGetValue(clientId, out ConnectedClient? client)
+            ? client
+            : throw new InvalidOperationException($"Client {clientId} is not connected.");
     }
 }
 
@@ -104,6 +112,26 @@ internal sealed class ServerConnectionTarget(VirtualMouseServer server) : IVirtu
         return server.GetStatusAsync();
     }
 
+    public Task<ClientRunLaunch> StartRunAsync(string profileId)
+    {
+        return server.StartRunAsync(GetClientId(), profileId);
+    }
+
+    public Task UpdateRunProcessesAsync(IReadOnlyList<ObservedGameProcess> processes)
+    {
+        return server.UpdateRunProcessesAsync(GetClientId(), processes);
+    }
+
+    public Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync()
+    {
+        return server.GetOwnedReceiverProcessesAsync(GetClientId());
+    }
+
+    public Task EndRunAsync()
+    {
+        return server.EndRunAsync(GetClientId());
+    }
+
     public void Dispose()
     {
         if (_clientId is Guid clientId)
@@ -111,5 +139,10 @@ internal sealed class ServerConnectionTarget(VirtualMouseServer server) : IVirtu
             server.DisconnectClient(clientId);
             _clientId = null;
         }
+    }
+
+    private Guid GetClientId()
+    {
+        return _clientId ?? throw new InvalidOperationException("Client is not connected.");
     }
 }
