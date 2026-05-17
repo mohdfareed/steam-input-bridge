@@ -53,7 +53,7 @@ internal sealed class SteamGameCatalog(string steamPath)
         return [.. libraries.Values];
     }
 
-    private IReadOnlyList<SteamGame> ReadSteamApps()
+    private List<SteamGame> ReadSteamApps()
     {
         List<SteamGame> games = [];
         foreach (string libraryPath in ReadLibraryFolders())
@@ -74,10 +74,10 @@ internal sealed class SteamGameCatalog(string steamPath)
             }
         }
 
-        return Sort(games);
+        return games;
     }
 
-    private IReadOnlyList<SteamGame> ReadNonSteamShortcuts(uint steamUserId)
+    private List<SteamGame> ReadNonSteamShortcuts(uint steamUserId)
     {
         string shortcutsPath = GetShortcutsPath(_steamPath, steamUserId);
         if (!File.Exists(shortcutsPath))
@@ -97,7 +97,7 @@ internal sealed class SteamGameCatalog(string steamPath)
             }
         }
 
-        return Sort(games);
+        return games;
     }
 
     private static IReadOnlyList<SteamGame> Sort(IEnumerable<SteamGame> games)

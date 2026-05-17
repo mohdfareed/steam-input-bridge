@@ -2,8 +2,21 @@ using System;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Outputs.Viiper;
+
+internal sealed class CliViiperSettings
+{
+    public const string SectionName = "Viiper";
+
+    public string? Host { get; set; }
+
+    public int? Port { get; set; }
+
+    public string? Password { get; set; }
+}
 
 internal static class ViiperConnection
 {
@@ -17,11 +30,12 @@ internal static class ViiperConnection
 
     internal static async Task<int> ExecuteMouseAsync(
         Func<ViiperMouseOutput, CancellationToken, Task<int>> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IServiceProvider? services = null)
     {
         return await ExecuteWithCancellationAsync(async ct =>
         {
-            ViiperOptions viiperOptions = CreateViiperOptions();
+            ViiperOptions viiperOptions = CreateViiperOptions(services);
             await ViiperServer.EnsureRunningAsync(viiperOptions, ct).ConfigureAwait(false);
             ViiperMouseOutput mouse = await ViiperMouseOutput
                 .ConnectAsync(viiperOptions, ct)
@@ -41,11 +55,12 @@ internal static class ViiperConnection
 
     internal static async Task<int> ExecuteXbox360Async(
         Func<ViiperXbox360Output, CancellationToken, Task<int>> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IServiceProvider? services = null)
     {
         return await ExecuteWithCancellationAsync(async ct =>
         {
-            ViiperOptions viiperOptions = CreateViiperOptions();
+            ViiperOptions viiperOptions = CreateViiperOptions(services);
             await ViiperServer.EnsureRunningAsync(viiperOptions, ct).ConfigureAwait(false);
             ViiperXbox360Output gamepad = await ViiperXbox360Output
                 .ConnectAsync(viiperOptions, ct)
@@ -65,9 +80,10 @@ internal static class ViiperConnection
 
     internal static Task<int> ExecuteAsync(
         Func<ViiperMouseOutput, CancellationToken, Task<int>> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IServiceProvider? services = null)
     {
-        return ExecuteMouseAsync(action, cancellationToken);
+        return ExecuteMouseAsync(action, cancellationToken, services);
     }
 
     private static async Task<int> ExecuteWithCancellationAsync(
@@ -117,13 +133,26 @@ internal static class ViiperConnection
     // MARK: Helpers
     // ========================================================================
 
-    internal static ViiperOptions CreateViiperOptions(ILogger? logger = null)
+    internal static ViiperOptions CreateViiperOptions(
+        IServiceProvider? services = null,
+        ILogger? logger = null)
     {
+        CliViiperSettings settings = services?
+            .GetService<IOptions<CliViiperSettings>>()?
+            .Value ?? new CliViiperSettings();
+
+        int port = settings.Port switch
+        {
+            null => DefaultPort,
+            < 1 or > 65_535 => throw new InvalidOperationException("Viiper:Port must be between 1 and 65535."),
+            int value => value,
+        };
+
         return new ViiperOptions
         {
-            Host = DefaultHost,
-            Port = DefaultPort,
-            Password = DefaultPassword,
+            Host = string.IsNullOrWhiteSpace(settings.Host) ? DefaultHost : settings.Host,
+            Port = port,
+            Password = settings.Password ?? DefaultPassword,
             Logger = logger,
         };
     }

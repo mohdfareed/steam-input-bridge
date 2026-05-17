@@ -1,9 +1,8 @@
 using System;
-using System.IO;
 using System.IO.Pipes;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using StreamJsonRpc;
 
 namespace Hosting;
 
@@ -31,7 +30,6 @@ public sealed record ForwardingClientOptions
 /// <summary>Controls a local forwarding server.</summary>
 public sealed class ForwardingClient
 {
-    private static readonly Encoding PipeEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds(2);
     private readonly string _pipeName;
     private readonly TimeSpan? _connectTimeout;
@@ -65,23 +63,9 @@ public sealed class ForwardingClient
         try
         {
             await ConnectAsync(pipe, cancellationToken).ConfigureAwait(false);
-            StreamWriter writer = new(pipe, PipeEncoding, leaveOpen: true)
-            {
-                NewLine = "\n",
-                AutoFlush = true,
-            };
-            StreamReader reader = new(pipe, PipeEncoding, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-
-            await writer.WriteLineAsync("ENABLE".AsMemory(), cancellationToken).ConfigureAwait(false);
-            await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-            string response = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) ??
-                throw new IOException("Host closed the control pipe without a response.");
-
-            return response.StartsWith("ERR ", StringComparison.Ordinal)
-                ? throw new InvalidOperationException(response[4..])
-                : response == "OK enabled"
-                ? new ForwardingEnableLease(pipe, reader, writer)
-                : throw new IOException("Host returned an invalid enable response.");
+            IForwardingHostControl proxy = JsonRpc.Attach<IForwardingHostControl>(pipe);
+            await proxy.EnableAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+            return new ForwardingEnableLease(pipe, proxy);
         }
         catch
         {
@@ -94,32 +78,14 @@ public sealed class ForwardingClient
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<ForwardingStatus> GetStatusAsync(CancellationToken cancellationToken = default)
     {
-        string response = await SendCommandAsync("STATUS", cancellationToken).ConfigureAwait(false);
-        return ForwardingHostControlProtocol.ParseStatus(response);
-    }
-
-    private async Task<string> SendCommandAsync(string command, CancellationToken cancellationToken)
-    {
         ArgumentException.ThrowIfNullOrWhiteSpace(_pipeName);
 
         using NamedPipeClientStream pipe = CreatePipe();
 
         await ConnectAsync(pipe, cancellationToken).ConfigureAwait(false);
-        using StreamWriter writer = new(pipe, PipeEncoding, leaveOpen: true)
-        {
-            NewLine = "\n",
-            AutoFlush = true,
-        };
-        using StreamReader reader = new(pipe, PipeEncoding, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-
-        await writer.WriteLineAsync(command.AsMemory(), cancellationToken).ConfigureAwait(false);
-        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-        string response = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) ??
-            throw new IOException("Host closed the control pipe without a response.");
-
-        return response.StartsWith("ERR ", StringComparison.Ordinal)
-            ? throw new InvalidOperationException(response[4..])
-            : response;
+        IForwardingHostControl proxy = JsonRpc.Attach<IForwardingHostControl>(pipe);
+        using IDisposable proxyHandle = (IDisposable)proxy;
+        return await proxy.GetStatusAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private NamedPipeClientStream CreatePipe()
@@ -153,27 +119,22 @@ public sealed class ForwardingClient
 public sealed class ForwardingEnableLease : IAsyncDisposable, IDisposable
 {
     private NamedPipeClientStream? _pipe;
-    private StreamReader? _reader;
-    private StreamWriter? _writer;
+    private IDisposable? _proxy;
 
     internal ForwardingEnableLease(
         NamedPipeClientStream pipe,
-        StreamReader reader,
-        StreamWriter writer)
+        IForwardingHostControl proxy)
     {
         _pipe = pipe;
-        _reader = reader;
-        _writer = writer;
+        _proxy = (IDisposable)proxy;
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
         NamedPipeClientStream? pipe = Interlocked.Exchange(ref _pipe, null);
-        StreamReader? reader = Interlocked.Exchange(ref _reader, null);
-        StreamWriter? writer = Interlocked.Exchange(ref _writer, null);
-        reader?.Dispose();
-        writer?.Dispose();
+        IDisposable? proxy = Interlocked.Exchange(ref _proxy, null);
+        proxy?.Dispose();
         pipe?.Dispose();
     }
 
@@ -181,13 +142,8 @@ public sealed class ForwardingEnableLease : IAsyncDisposable, IDisposable
     public async ValueTask DisposeAsync()
     {
         NamedPipeClientStream? pipe = Interlocked.Exchange(ref _pipe, null);
-        StreamReader? reader = Interlocked.Exchange(ref _reader, null);
-        StreamWriter? writer = Interlocked.Exchange(ref _writer, null);
-        reader?.Dispose();
-        if (writer is not null)
-        {
-            await writer.DisposeAsync().ConfigureAwait(false);
-        }
+        IDisposable? proxy = Interlocked.Exchange(ref _proxy, null);
+        proxy?.Dispose();
 
         if (pipe is not null)
         {

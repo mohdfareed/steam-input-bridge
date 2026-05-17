@@ -104,17 +104,20 @@ public sealed class ForwardingHostTests
         Assert.HasCount(1, output.Reports);
     }
 
-    /// <summary>Checks protocol commands.</summary>
+    /// <summary>Checks control session status.</summary>
     [TestMethod]
-    public async Task ProtocolUpdatesHostState()
+    public async Task ControlSessionReportsHostState()
     {
         await using ForwardingHost host = CreateHost();
+        using ForwardingHostControlSession session = new(host, logger: null);
 
         Assert.IsFalse(host.IsEnabled);
-        Assert.AreEqual(
-            "STATUS route=mouse enabled=false connected=true enabledClients=0",
-            ForwardingHostControlProtocol.Execute(host, "STATUS"));
-        Assert.AreEqual("ERR unknown command", ForwardingHostControlProtocol.Execute(host, "unknown"));
+        ForwardingStatus status = await session.GetStatusAsync().ConfigureAwait(false);
+
+        Assert.AreEqual("mouse", status.RouteId);
+        Assert.IsFalse(status.IsEnabled);
+        Assert.IsTrue(status.IsConnected);
+        Assert.AreEqual(0, status.EnabledClientCount);
     }
 
     /// <summary>Checks lease-counted enable state.</summary>
@@ -139,29 +142,44 @@ public sealed class ForwardingHostTests
         Assert.AreEqual(0, host.EnabledLeaseCount);
     }
 
-    /// <summary>Checks status parsing.</summary>
+    /// <summary>Checks control session enable lease disposal.</summary>
     [TestMethod]
-    public void ParseStatusReturnsValues()
+    public async Task ControlSessionEnableLeaseReleasesOnDispose()
     {
-        ForwardingStatus status = ForwardingHostControlProtocol.ParseStatus(
-            "STATUS route=xpad enabled=true connected=false enabledClients=2");
+        await using ForwardingHost host = CreateHost();
+        using ForwardingHostControlSession session = new(host, logger: null);
 
-        Assert.AreEqual("xpad", status.RouteId);
-        Assert.IsTrue(status.IsEnabled);
-        Assert.IsFalse(status.IsConnected);
-        Assert.AreEqual(2, status.EnabledClientCount);
+        await session.EnableAsync().ConfigureAwait(false);
+
+        Assert.IsTrue(host.IsEnabled);
+        Assert.AreEqual(1, host.EnabledLeaseCount);
+
+        session.Dispose();
+
+        Assert.IsFalse(host.IsEnabled);
+        Assert.AreEqual(0, host.EnabledLeaseCount);
     }
 
     /// <summary>Checks route-specific ownership and pipe names.</summary>
     [TestMethod]
     public void RouteSpecificRuntimeNamesAreDistinct()
     {
+        Assert.AreEqual("mouse", ForwardingServer.GetRouteId(ForwardingRouteKind.Mouse));
+        Assert.AreEqual("xpad", ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad));
         Assert.AreNotEqual(
             ForwardingServer.GetPipeName(ForwardingRouteKind.Mouse),
             ForwardingServer.GetPipeName(ForwardingRouteKind.Xpad));
         Assert.AreNotEqual(
             ForwardingServer.GetOwnershipName(ForwardingRouteKind.Mouse),
             ForwardingServer.GetOwnershipName(ForwardingRouteKind.Xpad));
+        StringAssert.EndsWith(
+            ForwardingServer.GetPipeName(ForwardingRouteKind.Xpad),
+            ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad),
+            StringComparison.Ordinal);
+        StringAssert.EndsWith(
+            ForwardingServer.GetOwnershipName(ForwardingRouteKind.Xpad),
+            ForwardingServer.GetRouteId(ForwardingRouteKind.Xpad),
+            StringComparison.Ordinal);
     }
 
     /// <summary>Checks status through the local pipe control server.</summary>

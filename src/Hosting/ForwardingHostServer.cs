@@ -1,11 +1,11 @@
 using System;
-using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using PolyType;
+using StreamJsonRpc;
 
 namespace Hosting;
 
@@ -15,26 +15,6 @@ internal sealed class ForwardingHostServer(
     string pipeName,
     ILogger? logger = null)
 {
-    private static readonly Encoding PipeEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-
-    /// <summary>Default local pipe name.</summary>
-    public const string DefaultPipeName = "Hosting";
-
-    /// <summary>Creates a server using the default pipe name.</summary>
-    /// <param name="host">Forwarding host.</param>
-    public ForwardingHostServer(ForwardingHost host)
-        : this(host, DefaultPipeName, logger: null)
-    {
-    }
-
-    /// <summary>Creates a server using the default pipe name.</summary>
-    /// <param name="host">Forwarding host.</param>
-    /// <param name="logger">Logger for lifecycle events.</param>
-    public ForwardingHostServer(ForwardingHost host, ILogger? logger)
-        : this(host, DefaultPipeName, logger)
-    {
-    }
-
     /// <summary>Runs the control server until cancelled.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task RunAsync(CancellationToken cancellationToken = default)
@@ -97,109 +77,71 @@ internal sealed class ForwardingHostServer(
 
     private async Task HandleConnectionAsync(Stream stream, CancellationToken cancellationToken)
     {
-        using StreamReader reader = new(stream, PipeEncoding, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-        using StreamWriter writer = new(stream, PipeEncoding, leaveOpen: true)
+        using CancellationTokenRegistration registration = cancellationToken.Register(static target =>
         {
-            NewLine = "\n",
-            AutoFlush = true,
-        };
+            ((Stream)target!).Dispose();
+        }, stream);
 
-        string? command = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-        ForwardingHostControlLog.ReceivedCommand(logger, command ?? "(empty)");
+        ForwardingHostControlSession target = new(host, logger);
+        using JsonRpc rpc = JsonRpc.Attach(stream, target);
 
-        if (IsEnableCommand(command))
+        try
         {
-            await HoldEnableLeaseAsync(stream, writer, cancellationToken).ConfigureAwait(false);
-            return;
+            await rpc.Completion.ConfigureAwait(false);
         }
-
-        string response = Execute(command);
-        await writer.WriteLineAsync(response.AsMemory(), cancellationToken).ConfigureAwait(false);
-        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private string Execute(string? command)
-    {
-        return ForwardingHostControlProtocol.Execute(host, command);
-    }
-
-    private async Task HoldEnableLeaseAsync(
-        Stream stream,
-        StreamWriter writer,
-        CancellationToken cancellationToken)
-    {
-        using IDisposable lease = host.Enable();
-        await writer.WriteLineAsync("OK enabled".AsMemory(), cancellationToken).ConfigureAwait(false);
-        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-        ForwardingHostControlLog.LeaseOpened(logger, host.RouteId);
-
-        byte[] buffer = new byte[1];
-        while (await stream.ReadAsync(buffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false) > 0)
+        finally
         {
+            target.Dispose();
         }
-
-        ForwardingHostControlLog.LeaseClosed(logger, host.RouteId);
-    }
-
-    private static bool IsEnableCommand(string? command)
-    {
-        return string.Equals(command?.Trim(), "ENABLE", StringComparison.OrdinalIgnoreCase);
     }
 }
 
-internal static class ForwardingHostControlProtocol
+[JsonRpcContract]
+[GenerateShape(IncludeMethods = MethodShapeFlags.PublicInstance)]
+internal partial interface IForwardingHostControl
 {
-    public static string Execute(ForwardingHost host, string? command)
+    Task<ForwardingStatus> GetStatusAsync();
+
+    Task EnableAsync();
+}
+
+internal sealed class ForwardingHostControlSession(
+    ForwardingHost host,
+    ILogger? logger) : IForwardingHostControl, IDisposable
+{
+    private IDisposable? _lease;
+
+    public Task<ForwardingStatus> GetStatusAsync()
     {
-        return command?.Trim().ToUpperInvariant() switch
-        {
-            "STATUS" => FormatStatus(host),
-            null or "" => "ERR empty command",
-            _ => "ERR unknown command",
-        };
+        ForwardingHostControlLog.ReceivedCommand(logger, nameof(GetStatusAsync));
+        return Task.FromResult(new ForwardingStatus(
+            host.RouteId,
+            host.IsEnabled,
+            host.IsConnected,
+            host.EnabledLeaseCount));
     }
 
-    public static ForwardingStatus ParseStatus(string response)
+    public Task EnableAsync()
     {
-        const string Prefix = "STATUS route=";
-        const string EnabledSeparator = " enabled=";
-        const string ConnectedSeparator = " connected=";
-        const string CountSeparator = " enabledClients=";
-
-        if (!response.StartsWith(Prefix, StringComparison.Ordinal))
+        ForwardingHostControlLog.ReceivedCommand(logger, nameof(EnableAsync));
+        if (_lease is null)
         {
-            throw new FormatException("Host returned an invalid status response.");
+            _lease = host.Enable();
+            ForwardingHostControlLog.LeaseOpened(logger, host.RouteId);
         }
 
-        int enabledIndex = response.IndexOf(EnabledSeparator, StringComparison.Ordinal);
-        int connectedIndex = response.IndexOf(ConnectedSeparator, StringComparison.Ordinal);
-        int countIndex = response.IndexOf(CountSeparator, StringComparison.Ordinal);
-        ThrowIfInvalidSeparator(enabledIndex);
-        ThrowIfInvalidSeparator(connectedIndex);
-        ThrowIfInvalidSeparator(countIndex);
-
-        return new ForwardingStatus(
-            response[Prefix.Length..enabledIndex],
-            bool.Parse(response[(enabledIndex + EnabledSeparator.Length)..connectedIndex]),
-            bool.Parse(response[(connectedIndex + ConnectedSeparator.Length)..countIndex]),
-            int.Parse(response[(countIndex + CountSeparator.Length)..], CultureInfo.InvariantCulture));
+        return Task.CompletedTask;
     }
 
-    private static void ThrowIfInvalidSeparator(int index)
+    public void Dispose()
     {
-        if (index >= 0)
+        IDisposable? lease = _lease;
+        _lease = null;
+        if (lease is not null)
         {
-            return;
+            lease.Dispose();
+            ForwardingHostControlLog.LeaseClosed(logger, host.RouteId);
         }
-
-        throw new FormatException("Host returned an invalid status response.");
-    }
-
-    private static string FormatStatus(ForwardingHost host)
-    {
-        string enabled = host.IsEnabled ? "true" : "false";
-        string connected = host.IsConnected ? "true" : "false";
-        return $"STATUS route={host.RouteId} enabled={enabled} connected={connected} enabledClients={host.EnabledLeaseCount}";
     }
 }
 

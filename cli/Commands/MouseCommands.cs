@@ -13,56 +13,51 @@ internal static class MouseCommands
     // ========================================================================
 
     [SupportedOSPlatform("windows")]
-    internal static Command CreateMouseCommand()
+    internal static Command CreateMouseCommand(IServiceProvider? services = null)
     {
         Command command = new("mouse", "Forward Raw Input mouse reports.");
-        command.Subcommands.Add(CreateRunCommand());
-        command.Subcommands.Add(CreateForwardCommand());
-        command.Subcommands.Add(CreateNullifyCommand());
+        command.Subcommands.Add(CreateRunCommand(services));
+        command.Subcommands.Add(CreateForwardCommand(services));
+        command.Subcommands.Add(CreateNullifyCommand(services));
         return command;
     }
 
     [SupportedOSPlatform("windows")]
-    internal static Command CreateLegacyNullifyCommand()
-    {
-        return CreateBridgeCommand(
-            "nullify",
-            "Send opposite Steam mouse movement to the output mouse.",
-            MouseNullifier.RunRawInputToAsync);
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static Command CreateRunCommand()
+    private static Command CreateRunCommand(IServiceProvider? services)
     {
         return CreateBridgeCommand(
             "run",
             "Start forwarding mouse input.",
-            MouseForwarding.RunRawInputToAsync);
+            MouseForwarding.RunRawInputToAsync,
+            services);
     }
 
     [SupportedOSPlatform("windows")]
-    private static Command CreateForwardCommand()
+    private static Command CreateForwardCommand(IServiceProvider? services)
     {
         return CreateBridgeCommand(
             "forward",
             "Forward Raw Input mouse reports to the output mouse.",
-            MouseForwarding.RunRawInputToAsync);
+            MouseForwarding.RunRawInputToAsync,
+            services);
     }
 
     [SupportedOSPlatform("windows")]
-    private static Command CreateNullifyCommand()
+    private static Command CreateNullifyCommand(IServiceProvider? services)
     {
         return CreateBridgeCommand(
             "nullify",
             "Send opposite Steam mouse movement to the output mouse.",
-            MouseNullifier.RunRawInputToAsync);
+            MouseNullifier.RunRawInputToAsync,
+            services);
     }
 
     [SupportedOSPlatform("windows")]
     private static Command CreateBridgeCommand(
         string name,
         string description,
-        Func<IMouseOutput, CancellationToken, Task> runAsync)
+        Func<IMouseOutput, CancellationToken, Task> runAsync,
+        IServiceProvider? services)
     {
         Command command = new(name, description);
         command.SetAction(async (parseResult, cancellationToken) =>
@@ -77,7 +72,8 @@ internal static class MouseCommands
                     await runAsync(mouse, ct).ConfigureAwait(false);
                     return 0;
                 },
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                services).ConfigureAwait(false);
         });
 
         return command;

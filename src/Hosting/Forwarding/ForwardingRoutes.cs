@@ -6,6 +6,12 @@ using Outputs;
 
 namespace Hosting;
 
+internal static class ForwardingRouteIds
+{
+    public const string Mouse = "mouse";
+    public const string Xpad = "xpad";
+}
+
 /// <summary>Route owned by a local forwarding host.</summary>
 public interface IForwardingRoute : IAsyncDisposable
 {
@@ -25,11 +31,8 @@ public interface IForwardingRoute : IAsyncDisposable
 public sealed class MouseForwardingRoute(
     IMouseInputSource input,
     IMouseOutput output,
-    string routeId = MouseForwardingRoute.DefaultRouteId) : IForwardingRoute
+    string routeId = ForwardingRouteIds.Mouse) : IForwardingRoute
 {
-    /// <summary>Default mouse route id.</summary>
-    public const string DefaultRouteId = "mouse";
-
     private readonly IMouseInputSource _input = input ?? throw new ArgumentNullException(nameof(input));
     private readonly IMouseOutput _output = output ?? throw new ArgumentNullException(nameof(output));
 
@@ -66,11 +69,8 @@ public sealed class MouseForwardingRoute(
 public sealed class Xbox360ForwardingRoute(
     IGamepadInputSource input,
     IXbox360Output output,
-    string routeId = Xbox360ForwardingRoute.DefaultRouteId) : IForwardingRoute
+    string routeId = ForwardingRouteIds.Xpad) : IForwardingRoute
 {
-    /// <summary>Default Xbox 360 route id.</summary>
-    public const string DefaultRouteId = "xpad";
-
     private readonly IGamepadInputSource _input = input ?? throw new ArgumentNullException(nameof(input));
     private readonly IXbox360Output _output = output ?? throw new ArgumentNullException(nameof(output));
 

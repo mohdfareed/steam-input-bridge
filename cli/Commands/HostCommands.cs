@@ -5,7 +5,9 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 internal static class HostCommands
 {
@@ -13,17 +15,17 @@ internal static class HostCommands
     // ========================================================================
 
     [SupportedOSPlatform("windows")]
-    internal static Command CreateHostCommand()
+    internal static Command CreateHostCommand(IServiceProvider? services = null)
     {
         Command command = new("host", "Control the local forwarding host.");
-        command.Subcommands.Add(CreateRunCommand());
+        command.Subcommands.Add(CreateRunCommand(services));
         command.Subcommands.Add(CreateEnableCommand());
         command.Subcommands.Add(CreateStatusCommand());
         return command;
     }
 
     [SupportedOSPlatform("windows")]
-    private static Command CreateRunCommand()
+    private static Command CreateRunCommand(IServiceProvider? services)
     {
         Command command = new("run", "Run the local forwarding host.");
         Option<ForwardingRouteKind?> routeOption = CliOptions.CreateRouteOption();
@@ -37,13 +39,13 @@ internal static class HostCommands
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            ILogger logger = new ConsoleLogger("host");
+            ILogger logger = CreateLogger(services);
             ForwardingRouteKind route = parseResult.GetValue(routeOption) ?? ForwardingRouteKind.Mouse;
             ForwardingServerOptions options = new()
             {
                 Route = route,
                 SdlGamepad = CliOptions.CreateSdlGamepadOptions(parseResult, deviceIndexOption, pollMsOption),
-                Viiper = ViiperConnection.CreateViiperOptions(logger),
+                Viiper = ViiperConnection.CreateViiperOptions(services, logger),
                 Logger = logger,
             };
 
@@ -73,7 +75,7 @@ internal static class HostCommands
                 try
                 {
                     await Console.Out.WriteLineAsync(
-                        $"route={DisplayRoute(route)} enabled=true. Ctrl+C to release.")
+                        $"route={ForwardingServer.GetRouteId(route)} enabled=true. Ctrl+C to release.")
                         .ConfigureAwait(false);
                     await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
                 }
@@ -133,7 +135,7 @@ internal static class HostCommands
         try
         {
             await Console.Out.WriteLineAsync(
-                $"host: starting route={DisplayRoute(options.Route)}. Ctrl+C to stop.")
+                $"host: starting {DescribeRoute(options)}. Ctrl+C to stop.")
                 .ConfigureAwait(false);
             ForwardingServer server = new(options);
             await using (server.ConfigureAwait(false))
@@ -158,7 +160,9 @@ internal static class HostCommands
         }
         catch (TimeoutException)
         {
-            await Console.Error.WriteLineAsync($"host route={DisplayRoute(route)}: not running").ConfigureAwait(false);
+            await Console.Error.WriteLineAsync(
+                $"host route={ForwardingServer.GetRouteId(route)}: not running")
+                .ConfigureAwait(false);
             Environment.ExitCode = 1;
             return null;
         }
@@ -181,7 +185,9 @@ internal static class HostCommands
         }
         catch (TimeoutException)
         {
-            await Console.Out.WriteLineAsync($"route={DisplayRoute(route)} running=false").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync(
+                $"route={ForwardingServer.GetRouteId(route)} running=false")
+                .ConfigureAwait(false);
             return null;
         }
         catch (IOException exception)
@@ -197,13 +203,16 @@ internal static class HostCommands
         return new ForwardingClient(route);
     }
 
-    private static string DisplayRoute(ForwardingRouteKind route)
+    private static ILogger CreateLogger(IServiceProvider? services)
     {
-        return route switch
-        {
-            ForwardingRouteKind.Mouse => "mouse",
-            ForwardingRouteKind.Xpad => "xpad",
-            _ => throw new ArgumentOutOfRangeException(nameof(route)),
-        };
+        ILoggerFactory factory = services?.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance;
+        return factory.CreateLogger("host");
+    }
+
+    private static string DescribeRoute(ForwardingServerOptions options)
+    {
+        return options.Route == ForwardingRouteKind.Xpad
+            ? $"route={ForwardingServer.GetRouteId(options.Route)} deviceIndex={options.SdlGamepad.DeviceIndex}"
+            : $"route={ForwardingServer.GetRouteId(options.Route)}";
     }
 }

@@ -15,12 +15,9 @@ public sealed class HostSingleInstance : IDisposable
         _semaphore = semaphore;
     }
 
-    /// <summary>Default host ownership name.</summary>
-    public const string DefaultMutexName = @"Local\Hosting";
-
     /// <summary>Tries to acquire the single host instance lock.</summary>
     /// <param name="name">Ownership name.</param>
-    public static HostSingleInstance? TryAcquire(string name = DefaultMutexName)
+    public static HostSingleInstance? TryAcquire(string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         Semaphore semaphore = new(initialCount: 1, maximumCount: 1, name);

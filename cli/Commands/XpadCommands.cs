@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.CommandLine;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Cli.Tools;
@@ -14,12 +15,12 @@ internal static class XpadCommands
     // MARK: Commands
     // ========================================================================
 
-    internal static Command CreateXpadCommand()
+    internal static Command CreateXpadCommand(IServiceProvider? services = null)
     {
         Command command = new("xpad", "Forward SDL gamepad input to VIIPER Xbox 360 output.");
         command.Subcommands.Add(CreateProbeCommand());
         command.Subcommands.Add(CreateInputCommand());
-        command.Subcommands.Add(CreateTestCommand());
+        command.Subcommands.Add(CreateTestCommand(services));
         command.Subcommands.Add(CreateRunCommand("run", "Start forwarding xpad input."));
         command.Subcommands.Add(CreateRunCommand("forward", "Forward SDL gamepad input to VIIPER Xbox 360 output."));
         return command;
@@ -62,18 +63,14 @@ internal static class XpadCommands
                 parseResult,
                 deviceIndexOption,
                 pollMsOption);
-            using SdlGamepadSource input = await SdlGamepadSource
-                .ConnectAsync(options, cancellationToken)
-                .ConfigureAwait(false);
 
-            await Console.Out.WriteLineAsync($"xpad input: {input.DeviceName}. Ctrl+C to stop.").ConfigureAwait(false);
-            input.Run(HandleInput, cancellationToken);
+            await RunInputAsync(options, cancellationToken).ConfigureAwait(false);
         });
 
         return command;
     }
 
-    private static Command CreateTestCommand()
+    private static Command CreateTestCommand(IServiceProvider? services)
     {
         Command command = new("test", "Send a short Xbox 360 test report through VIIPER.");
         Option<int?> durationMsOption = CliOptions.CreateDurationMsOption(250);
@@ -92,7 +89,8 @@ internal static class XpadCommands
                     await Console.Out.WriteLineAsync("xpad test: sent A press.").ConfigureAwait(false);
                     return 0;
                 },
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                services).ConfigureAwait(false);
         });
 
         return command;
@@ -132,6 +130,41 @@ internal static class XpadCommands
     // MARK: Helpers
     // ========================================================================
 
+    private static async Task RunInputAsync(
+        SdlGamepadOptions options,
+        CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource runCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        void OnCancel(object? sender, ConsoleCancelEventArgs eventArgs)
+        {
+            eventArgs.Cancel = true;
+            runCancellation.Cancel();
+        }
+
+        Console.CancelKeyPress += OnCancel;
+
+        try
+        {
+            using SdlGamepadSource input = await SdlGamepadSource
+                .ConnectAsync(options, runCancellation.Token)
+                .ConfigureAwait(false);
+            XpadInputPrinter printer = new();
+
+            await Console.Out.WriteLineAsync(
+                $"xpad input: index={options.DeviceIndex} instance={input.InstanceId} name=\"{input.DeviceName}\". Ctrl+C to stop.")
+                .ConfigureAwait(false);
+            input.Run(printer.HandleInput, runCancellation.Token);
+        }
+        catch (OperationCanceledException) when (runCancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            Console.CancelKeyPress -= OnCancel;
+        }
+    }
+
     private static async Task PrintGamepadsAsync(IReadOnlyList<SdlGamepadInfo> gamepads)
     {
         if (gamepads.Count == 0)
@@ -149,14 +182,27 @@ internal static class XpadCommands
         }
     }
 
-    private static void HandleInput(in GamepadInput input)
+    private sealed class XpadInputPrinter
     {
-        GamepadState state = input.State;
-        Console.WriteLine(
-            $"device=\"{input.DeviceName}\" " +
-            $"buttons={DisplayButtons(state.Buttons)} " +
-            $"lx={state.LeftX} ly={state.LeftY} rx={state.RightX} ry={state.RightY} " +
-            $"lt={state.LeftTrigger} rt={state.RightTrigger}");
-    }
+        private static readonly long MinPrintIntervalTicks = Stopwatch.Frequency / 10;
+        private long lastPrintTimestamp;
 
+        public void HandleInput(in GamepadInput input)
+        {
+            long timestamp = Stopwatch.GetTimestamp();
+            if (lastPrintTimestamp != 0 && timestamp - lastPrintTimestamp < MinPrintIntervalTicks)
+            {
+                return;
+            }
+
+            lastPrintTimestamp = timestamp;
+
+            GamepadState state = input.State;
+            Console.WriteLine(
+                $"device=\"{input.DeviceName}\" " +
+                $"buttons={DisplayButtons(state.Buttons)} " +
+                $"lx={state.LeftX} ly={state.LeftY} rx={state.RightX} ry={state.RightY} " +
+                $"lt={state.LeftTrigger} rt={state.RightTrigger}");
+        }
+    }
 }

@@ -1,3 +1,4 @@
+using System.CommandLine;
 using System.Linq;
 
 namespace Cli.Tests;
@@ -43,6 +44,16 @@ public sealed class HostCommandsTests
 
         CollectionAssert.Contains(names, "--device-index");
         CollectionAssert.Contains(names, "--poll-ms");
+    }
+
+    /// <summary>Checks xpad host run selection parses.</summary>
+    [TestMethod]
+    public void HostRunAcceptsXpadDeviceIndex()
+    {
+        Command host = HostCommands.CreateHostCommand();
+        ParseResult result = host.Parse("run --route xpad --device-index 1");
+
+        Assert.HasCount(0, result.Errors);
     }
 }
 

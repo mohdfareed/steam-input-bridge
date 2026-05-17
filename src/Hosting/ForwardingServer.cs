@@ -6,6 +6,7 @@ using Inputs.RawInput;
 using Inputs.Sdl;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Outputs.Viiper;
 
 namespace Hosting;
@@ -36,31 +37,56 @@ public sealed record ForwardingServerOptions
     public ILogger? Logger { get; init; }
 }
 
+internal readonly record struct ForwardingRouteRuntime(
+    string RouteId,
+    string PipeName,
+    string OwnershipName);
+
 /// <summary>Runs a local forwarding server.</summary>
 public sealed class ForwardingServer(ForwardingServerOptions options) : IHostedService, IAsyncDisposable
 {
+    private static readonly ForwardingRouteRuntime MouseRoute = new(
+        ForwardingRouteIds.Mouse,
+        "Hosting",
+        @"Local\Hosting");
+    private static readonly ForwardingRouteRuntime XpadRoute = new(
+        ForwardingRouteIds.Xpad,
+        "Hosting.xpad",
+        @"Local\Hosting.xpad");
     private readonly ForwardingServerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
     private CancellationTokenSource? _runCancellation;
     private Task? _runTask;
 
+    /// <summary>Creates a server from configured options.</summary>
+    public ForwardingServer(IOptions<ForwardingServerOptions> options)
+        : this((options ?? throw new ArgumentNullException(nameof(options))).Value)
+    {
+    }
+
+    /// <summary>Gets the route id for a route kind.</summary>
+    public static string GetRouteId(ForwardingRouteKind route)
+    {
+        return GetRouteRuntime(route).RouteId;
+    }
+
     /// <summary>Gets the control pipe name for a route.</summary>
     public static string GetPipeName(ForwardingRouteKind route)
     {
-        return route switch
-        {
-            ForwardingRouteKind.Mouse => ForwardingHostServer.DefaultPipeName,
-            ForwardingRouteKind.Xpad => "Hosting.xpad",
-            _ => throw new ArgumentOutOfRangeException(nameof(route)),
-        };
+        return GetRouteRuntime(route).PipeName;
     }
 
     /// <summary>Gets the single-instance ownership name for a route.</summary>
     public static string GetOwnershipName(ForwardingRouteKind route)
     {
+        return GetRouteRuntime(route).OwnershipName;
+    }
+
+    private static ForwardingRouteRuntime GetRouteRuntime(ForwardingRouteKind route)
+    {
         return route switch
         {
-            ForwardingRouteKind.Mouse => HostSingleInstance.DefaultMutexName,
-            ForwardingRouteKind.Xpad => @"Local\Hosting.Xpad",
+            ForwardingRouteKind.Mouse => MouseRoute,
+            ForwardingRouteKind.Xpad => XpadRoute,
             _ => throw new ArgumentOutOfRangeException(nameof(route)),
         };
     }

@@ -48,6 +48,7 @@ Do not set `LangVersion=latest`.
 
 - Keep the API small.
 - Build only the MVP for this repository.
+- Prefer maintained first-party or popular libraries over hand-rolled infrastructure when they reduce repo complexity. Drop a dependency when it adds build, IDE, or project-structure friction that outweighs its value.
 - Prefer direct pass-through over abstraction layers.
 - Organize new non-mouse work around input sources, output devices, and hosting/orchestration.
 - Group input projects under `src/Inputs` and output projects under `src/Outputs`, including their side-specific contracts.
@@ -79,10 +80,13 @@ Do not set `LangVersion=latest`.
 - Keep host IPC control-only. Do not forward per-report mouse traffic over IPC unless explicitly revisited.
 - Expose Hosting through normal app-facing `ForwardingServer` and `ForwardingClient` APIs. Keep named-pipe control details behind those types.
 - `ForwardingServer` should remain usable as a Microsoft `IHostedService` so CLI, tray, and WPF app hosts can compose it through Generic Host patterns.
-- Host routes are explicit. Mouse uses the default host control pipe; xpad uses a route-specific host control pipe and ownership name.
+- Host routes are explicit peers. Do not describe mouse route names as defaults when they are really route-specific names.
 - Host single-instance ownership must be safe across async continuations; do not use a thread-affine lock that has to be released on the acquiring thread.
+- Use `StreamJsonRpc` for host control IPC instead of maintaining a custom text protocol.
+- Compose app-facing hosts with Microsoft Generic Host, configuration, options, and logging primitives instead of custom equivalents.
 - Put durable Steam Input configuration forcing code in `src` as reusable library code; CLI tools should only expose or orchestrate it.
 - Keep Steam file parsing in `src/SteamInput`; read local Steam files defensively and cover parsers with tests using fake Steam directories.
+- Use `ValveKeyValue` for Steam VDF parsing instead of maintaining a custom parser.
 - Expose Steam game discovery through static `SteamInputClient.ListGames`; keep library-folder, manifest, shortcut-path, install discovery, and parser helpers internal.
 - Keep the Steam Input control API to caller-facing actions: force a config, clear forcing, and open controller config. Do not expose URI builders, duplicate static/instance variants, detected app state, or activation lifetime state without a real workflow.
 - Keep `SteamGame` small for the current CLI: app id, name, entry kind, and one local path. Do not expose Steam shortcut icons, tags, launch options, or raw metadata until a real workflow needs them.
@@ -122,6 +126,7 @@ Do not set `LangVersion=latest`.
 - Treat Raw Input as the only virtual mouse input implementation until explicitly revisited.
 - In the host model, Raw Input runs inside the local host process.
 - Follow Microsoft's documented Raw Input model first.
+- Keep Raw Input Win32 interop as one coherent manual boundary. Do not use CsWin32 or generator input files for this project.
 - Prefer the performance-oriented documented path over simplifying code by adding per-report allocations or extra native calls.
 - In a `WM_INPUT` handler, read the current event from `lParam` with `GetRawInputData`, then use `GetRawInputBuffer` only to drain additional queued events.
 - Keep raw input filtering caller-driven; do not bake Steam-specific assumptions into `Inputs.RawInput`.
@@ -138,6 +143,7 @@ Do not set `LangVersion=latest`.
 - Keep daily forwarding commands under explicit device groups: `mouse run` for Raw Input mouse forwarding and `xpad run` for SDL gamepad to VIIPER Xbox 360 forwarding.
 - Keep mouse nullifier behavior in CLI tools; direct mouse forwarding is the backend/product path.
 - Keep synthetic xpad test input, such as one-shot Xbox button presses, in CLI tools. Backend gamepad code should focus on real SDL-to-output forwarding.
+- Do not add legacy or compatibility CLI aliases before the project has had a release. Keep only the current intended command shape.
 - Keep Steam Input controls under `steam` commands such as `list`, `force`, `clear`, and `open-config`; do not reuse `steam` as a mouse-forwarding command.
 - CLI output should be concise, aligned, and value-first; avoid prose verdicts and unexplained benchmark jargon.
 - Keep CLI `bench` as one command with input and output arguments, such as `bench raw viiper` or `bench sdl viiper`. It may print multiple measured repository boundaries for that pair, but do not reintroduce separate raw/bridge/all or xpad bench command trees.
@@ -210,6 +216,7 @@ The separator line is always 79 characters wide.
 - Use explicit `using` directives.
 - Prefer a small number of coherent files over many tiny files when the types are tightly related.
 - Avoid single-model-per-file layouts for small related contracts, options, status records, log helpers, or leases.
+- Do not leave near-empty migration artifact files. Fold small constants and helpers into the file that owns the behavior.
 - For CLI code, prefer a few coherent files grouped by command family or shared concerns.
 - Do not collapse the CLI into one large file, and do not split it into many tiny files with barely any logic.
 - Do not place source files under dot-prefixed folders in SDK-style projects; the default compile glob will skip them.
