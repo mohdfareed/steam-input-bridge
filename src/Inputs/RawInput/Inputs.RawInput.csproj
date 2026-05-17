@@ -5,7 +5,6 @@
     <PackageId>Inputs.RawInput</PackageId>
     <Description>Windows Raw Input mouse source.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <!-- Required by Windows Raw Input. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 

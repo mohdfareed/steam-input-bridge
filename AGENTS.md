@@ -166,6 +166,7 @@ Do not set `LangVersion=latest`.
 - `scripts/build.ps1`: build the solution
 - `scripts/test.ps1`: run tests
 - `scripts/cli.ps1`: run the CLI harness
+- Prefer `scripts/build.ps1` over `scripts/build.ps1 -SkipFormat` for normal verification so formatting runs by default. Use `-SkipFormat` only when there is a specific reason to avoid formatting churn while iterating.
 
 ## Documentation Style
 

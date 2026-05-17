@@ -6,16 +6,6 @@ namespace Inputs.RawInput;
 [SupportedOSPlatform("windows")]
 public sealed partial class RawInputMouseSource
 {
-    private const int RawInputSink = 0x00000100;
-    private const int Input = 0x10000003;
-    private const int UsagePageGenericDesktop = 0x01;
-    private const int UsageMouse = 0x02;
-    private const int WmClose = 0x0010;
-    private const int WmDestroy = 0x0002;
-    private const int WmInput = 0x00FF;
-    private const int RawInputMouse = 0;
-    private const int DeviceName = 0x20000007;
-
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate nint WindowProc(nint hwnd, uint message, nint wParam, nint lParam);
 

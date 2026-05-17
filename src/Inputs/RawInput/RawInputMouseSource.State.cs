@@ -10,6 +10,9 @@ namespace Inputs.RawInput;
 [SupportedOSPlatform("windows")]
 public sealed partial class RawInputMouseSource
 {
+    private const int Input = 0x10000003;
+    private const int RawInputMouse = 0;
+
     // MARK: State
     // ========================================================================
 
@@ -55,16 +58,18 @@ public sealed partial class RawInputMouseSource
             }
 
             RawMouse mouse = rawInput.Mouse;
+            ushort buttonFlags = mouse.ButtonFlags;
+            ushort buttonData = mouse.ButtonData;
             int deltaX = mouse.LastX;
             int deltaY = mouse.LastY;
-            int wheelDelta = GetWheelDelta(mouse.ButtonFlags, mouse.ButtonData);
-            bool hasButtonEvent = HasMouseButtonEvent(mouse.ButtonFlags);
+            int wheelDelta = GetWheelDelta(buttonFlags, buttonData);
+            bool hasButtonEvent = HasMouseButtonEvent(buttonFlags);
             if (deltaX == 0 && deltaY == 0 && !hasButtonEvent && wheelDelta == 0)
             {
                 return;
             }
 
-            MouseReport report = CreateReport(mouse.ButtonFlags, deltaX, deltaY, wheelDelta);
+            MouseReport report = CreateReport(buttonFlags, deltaX, deltaY, wheelDelta);
             MouseInput input = new(report, GetCachedDeviceName(rawInput.Header.Device));
             timingHandler?.Invoke(startedTimestamp, Stopwatch.GetTimestamp());
             handler(in input);
@@ -78,7 +83,7 @@ public sealed partial class RawInputMouseSource
             count = NativeMethods.GetRawInputBuffer(
                 inputBuffer,
                 ref size,
-                (uint)Marshal.SizeOf<RawInputHeader>());
+                RawInputHeaderSize);
 
             if (count == uint.MaxValue)
             {
@@ -86,7 +91,7 @@ public sealed partial class RawInputMouseSource
                 _ = NativeMethods.GetRawInputBuffer(
                     nint.Zero,
                     ref requiredSize,
-                    (uint)Marshal.SizeOf<RawInputHeader>());
+                    RawInputHeaderSize);
 
                 if (requiredSize == 0 || requiredSize <= inputBufferSize)
                 {
@@ -99,7 +104,7 @@ public sealed partial class RawInputMouseSource
                 count = NativeMethods.GetRawInputBuffer(
                     inputBuffer,
                     ref size,
-                    (uint)Marshal.SizeOf<RawInputHeader>());
+                    RawInputHeaderSize);
             }
 
             if (count == uint.MaxValue)
@@ -121,7 +126,7 @@ public sealed partial class RawInputMouseSource
                 Input,
                 inputBuffer,
                 ref size,
-                (uint)Marshal.SizeOf<RawInputHeader>());
+                RawInputHeaderSize);
 
             if (read == uint.MaxValue)
             {
@@ -131,7 +136,7 @@ public sealed partial class RawInputMouseSource
                     Input,
                     nint.Zero,
                     ref requiredSize,
-                    (uint)Marshal.SizeOf<RawInputHeader>());
+                    RawInputHeaderSize);
 
                 if (requiredSize == 0)
                 {
@@ -146,10 +151,10 @@ public sealed partial class RawInputMouseSource
                     Input,
                     inputBuffer,
                     ref size,
-                    (uint)Marshal.SizeOf<RawInputHeader>());
+                    RawInputHeaderSize);
             }
 
-            if (read == uint.MaxValue || read < RawInputBufferInitialSize)
+            if (read == uint.MaxValue || read < (uint)RawInputBufferInitialSize)
             {
                 rawInput = default;
                 return false;

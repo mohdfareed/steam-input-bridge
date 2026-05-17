@@ -6,8 +6,13 @@ namespace Inputs.RawInput;
 [SupportedOSPlatform("windows")]
 public sealed partial class RawInputMouseSource
 {
+    private const int DeviceName = 0x20000007;
+    private const ushort RI_MOUSE_WHEEL = 0x0400;
+    private const int WheelDelta = 120;
+
     private static readonly int RawInputBufferInitialSize = Marshal.SizeOf<RawInput>();
     private static readonly uint RawInputBufferInitialCapacity = (uint)(RawInputBufferInitialSize * 64);
+    private static readonly uint RawInputHeaderSize = (uint)Marshal.SizeOf<RawInputHeader>();
 
     // MARK: Input
     // ========================================================================
@@ -28,7 +33,7 @@ public sealed partial class RawInputMouseSource
     {
         return (flags & RI_MOUSE_WHEEL) == 0
             ? 0
-            : unchecked((short)buttonData) / WHEEL_DELTA;
+            : unchecked((short)buttonData) / WheelDelta;
     }
 
     private static string GetDeviceName(nint device)
@@ -72,7 +77,4 @@ public sealed partial class RawInputMouseSource
                 ? buttons & ~button
                 : buttons;
     }
-
-    private const ushort RI_MOUSE_WHEEL = 0x0400;
-    private const int WHEEL_DELTA = 120;
 }

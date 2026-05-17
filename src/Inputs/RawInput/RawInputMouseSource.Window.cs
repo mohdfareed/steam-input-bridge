@@ -8,6 +8,19 @@ namespace Inputs.RawInput;
 [SupportedOSPlatform("windows")]
 public sealed partial class RawInputMouseSource
 {
+    private const int ClassAlreadyRegisteredError = 1410;
+    private const int RawInputSink = 0x00000100;
+    private const int UsagePageGenericDesktop = 0x01;
+    private const int UsageMouse = 0x02;
+    private const int WmClose = 0x0010;
+    private const int WmDestroy = 0x0002;
+    private const int WmInput = 0x00FF;
+
+    private static readonly nint MessageOnlyWindow = new(-3);
+    private const string WindowClassName = "Inputs.RawInput";
+    private const string WindowName = "Raw Input mouse source";
+
+
     // MARK: Window
     // ========================================================================
 
@@ -23,9 +36,9 @@ public sealed partial class RawInputMouseSource
             {
             }
 
-            return wParam == nint.Zero
-                ? NativeMethods.DefWindowProc(hwnd, message, wParam, lParam)
-                : nint.Zero;
+            return wParam != nint.Zero
+                ? nint.Zero
+                : NativeMethods.DefWindowProc(hwnd, message, wParam, lParam);
         }
 
         if (message == WmClose)
@@ -71,7 +84,7 @@ public sealed partial class RawInputMouseSource
         nint windowHandle = NativeMethods.CreateWindowEx(
             0,
             WindowClassName,
-            "Raw Input mouse source",
+            WindowName,
             0,
             0,
             0,
@@ -83,11 +96,9 @@ public sealed partial class RawInputMouseSource
             nint.Zero);
 
         int error = Marshal.GetLastWin32Error();
-        return windowHandle switch
-        {
-            0 => throw new Win32Exception(error, "Could not create Raw Input mouse window."),
-            _ => windowHandle,
-        };
+        return windowHandle != nint.Zero
+            ? windowHandle
+            : throw new Win32Exception(error, "Could not create Raw Input mouse window.");
     }
 
     private static void RegisterRawInput(nint windowHandle)
@@ -124,7 +135,4 @@ public sealed partial class RawInputMouseSource
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not process raw mouse input.");
         }
     }
-
-    private const string WindowClassName = "Inputs.RawInput";
-    private const int ClassAlreadyRegisteredError = 1410;
 }

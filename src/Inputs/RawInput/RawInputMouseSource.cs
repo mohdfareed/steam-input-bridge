@@ -9,7 +9,6 @@ namespace Inputs.RawInput;
 [SupportedOSPlatform("windows")]
 public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
 {
-    private static readonly nint MessageOnlyWindow = new(-3);
     private static readonly WindowProc WindowProcDelegate = HandleWindowMessage;
     private static RunState? CurrentState;
     private int _isConnected = 1;
@@ -75,7 +74,7 @@ public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
         finally
         {
             _ = Interlocked.CompareExchange(ref CurrentState, null, state);
-            if (windowHandle is not 0)
+            if (windowHandle != nint.Zero)
             {
                 _ = NativeMethods.DestroyWindow(windowHandle);
             }
