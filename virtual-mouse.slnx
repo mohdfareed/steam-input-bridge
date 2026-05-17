@@ -31,4 +31,11 @@
     <Project Path="cli/Cli.csproj" />
   </Folder>
 
+  <Folder Name="/refactor/">
+    <Project Path="refactor/cli/Refactor.Cli.csproj" />
+    <Project Path="refactor/src/Client/Client.csproj" />
+    <Project Path="refactor/src/Server/Server.csproj" />
+    <Project Path="refactor/src/Protocol/Protocol.csproj" />
+  </Folder>
+
 </Solution>
