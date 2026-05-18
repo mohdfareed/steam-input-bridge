@@ -41,6 +41,7 @@
     <Project Path="refactor/src/Hosting/Hosting.csproj" />
     <Project Path="refactor/src/Inputs/RawInput/Inputs.RawInput.csproj" />
     <Project Path="refactor/src/Inputs/Sdl/Inputs.Sdl.csproj" />
+    <Project Path="refactor/src/Outputs/Teensy/Outputs.Teensy.csproj" />
     <Project Path="refactor/src/Outputs/Viiper/Outputs.Viiper.csproj" />
     <Project Path="refactor/src/Runtime/Runtime.csproj" />
     <Project Path="refactor/src/Settings/Settings.csproj" />

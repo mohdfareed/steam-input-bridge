@@ -168,6 +168,7 @@ internal sealed class ServerSessions(
         {
             ProfileMouseOutput.None => ForwardingMouseOutput.None,
             ProfileMouseOutput.Viiper => ForwardingMouseOutput.Viiper,
+            ProfileMouseOutput.Teensy => ForwardingMouseOutput.Teensy,
             _ => throw new ArgumentOutOfRangeException(nameof(output), output, "Unknown mouse output."),
         };
     }

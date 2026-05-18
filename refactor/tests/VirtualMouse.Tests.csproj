@@ -20,6 +20,7 @@
     <ProjectReference Include="..\src\Forwarding\Forwarding.csproj" />
     <ProjectReference Include="..\src\Inputs\Sdl\Inputs.Sdl.csproj" />
     <ProjectReference Include="..\src\Runtime\Runtime.csproj" />
+    <ProjectReference Include="..\src\Outputs\Teensy\Outputs.Teensy.csproj" />
     <ProjectReference Include="..\src\Outputs\Viiper\Outputs.Viiper.csproj" />
     <ProjectReference Include="..\src\Settings\Settings.csproj" />
     <ProjectReference Include="..\src\Steam\Steam.csproj" />

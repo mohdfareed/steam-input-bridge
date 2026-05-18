@@ -49,6 +49,7 @@ public sealed class ViiperOutputFactory(ViiperOptions options) : IControllerOutp
                 .GetAwaiter()
                 .GetResult(),
             MouseOutput.None => throw new NotSupportedException("None is not a VIIPER mouse output."),
+            MouseOutput.Teensy => throw new NotSupportedException("Teensy output is handled by the Teensy adapter."),
             _ => throw new NotSupportedException($"VIIPER does not support {output} mouse output."),
         };
     }

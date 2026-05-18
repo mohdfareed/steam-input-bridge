@@ -4,69 +4,14 @@ using System.Collections.Generic;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VirtualMouse.Forwarding;
-using VirtualMouse.Outputs.Viiper;
 using VirtualMouse.Runtime;
 using VirtualMouse.Settings;
 using VirtualMouse.Settings.Profiles;
 
 namespace VirtualMouse.Hosting;
-
-/// <summary>Current server status.</summary>
-public sealed record ServerStatus(int ConnectedClientCount)
-{
-    /// <summary>Current active-client runtime status.</summary>
-    public ActiveClientRegistryStatus Runtime { get; init; } =
-        new(0, null, [], []);
-
-    /// <summary>Current controller forwarding status.</summary>
-    public ControllerBrokerStatus Forwarding { get; init; } =
-        new(null, ControllerOutputEnabled: true, PhysicalMotionEnabled: true, []);
-
-    /// <summary>Current mouse forwarding status.</summary>
-    public MouseBrokerStatus MouseForwarding { get; init; } =
-        new(null, MouseOutputEnabled: true, OutputConnected: false, VirtualMouse.Forwarding.MouseOutput.None);
-
-    /// <summary>Server-owned input pump status.</summary>
-    public ServerInputStatus Inputs { get; init; } =
-        new(
-            new PhysicalControllerPumpStatus(false, 0, [], null),
-            new MouseInputPumpStatus(false, false, null));
-
-    /// <summary>Connected controller stream pipe status.</summary>
-    public IReadOnlyList<ControllerPipeStatus> ControllerPipes { get; init; } = [];
-}
-
-/// <summary>Server-owned input source status.</summary>
-public sealed record ServerInputStatus(
-    PhysicalControllerPumpStatus PhysicalControllers,
-    MouseInputPumpStatus Mouse);
-
-/// <summary>Physical SDL controller pump status.</summary>
-public sealed record PhysicalControllerPumpStatus(
-    bool Running,
-    int ControllerCount,
-    IReadOnlyList<string> ControllerIds,
-    string? LastError);
-
-/// <summary>Raw Input mouse pump status.</summary>
-public sealed record MouseInputPumpStatus(bool Running, bool SourceConnected, string? LastError);
-
-/// <summary>Controller pipe status for one connected client.</summary>
-public sealed record ControllerPipeStatus(
-    Guid ClientId,
-    string PipeName,
-    bool Connected,
-    IReadOnlyList<ClientControllerStatus> Controllers);
-
-/// <summary>Registered controller stream status.</summary>
-public sealed record ClientControllerStatus(
-    ushort ControllerIndex,
-    string PhysicalControllerId,
-    ControllerFeatures Features);
 
 // The app-facing server owns server lifetime and accepts client pipes.
 /// <summary>Long-lived local server for client connections.</summary>
@@ -135,39 +80,6 @@ public sealed class VirtualMouseServer : IAsyncDisposable
 
     // MARK: API
     // ========================================================================
-
-    /// <summary>Adds the local server.</summary>
-    public static IServiceCollection AddServices(IServiceCollection services)
-    {
-        _ = services.AddSingleton<ActiveClientRegistry>();
-        _ = services.AddSingleton(static services =>
-        {
-            GeneralSettings settings = services.GetRequiredService<IOptions<GeneralSettings>>().Value;
-            ILoggerFactory loggerFactory = services.GetRequiredService<ILoggerFactory>();
-            return new ViiperOutputFactory(new ViiperOptions
-            {
-                Host = settings.ViiperHost,
-                Port = settings.ViiperPort,
-                Logger = loggerFactory.CreateLogger<ViiperOutputFactory>(),
-            });
-        });
-        _ = services.AddSingleton<IControllerOutputFactory>(
-            static services => services.GetRequiredService<ViiperOutputFactory>());
-        _ = services.AddSingleton<IMouseOutputFactory>(
-            static services => services.GetRequiredService<ViiperOutputFactory>());
-        _ = services.AddSingleton<ControllerBroker>();
-        _ = services.AddSingleton<MouseBroker>();
-        _ = services.AddSingleton(static services => new VirtualMouseServer(
-            services.GetRequiredService<IOptions<HostingSettings>>(),
-            services.GetRequiredService<ILogger<VirtualMouseServer>>(),
-            services.GetService<SettingsFile>(),
-            services.GetService<ProfilesService>(),
-            services.GetRequiredService<ActiveClientRegistry>(),
-            activeClients: null,
-            services.GetRequiredService<ControllerBroker>(),
-            services.GetRequiredService<MouseBroker>()));
-        return services;
-    }
 
     /// <summary>Runs the server until cancellation.</summary>
     public async Task RunAsync(CancellationToken cancellationToken)

@@ -15,6 +15,11 @@
 - Keep active-client and receiver-process ownership in the separate `Runtime`
   project. Do not fold it into Hosting.
 - Keep client, server, request/response protocol, and named-pipe lifecycle management in `Hosting`.
+- Organize internal server code by server responsibility:
+  `Inputs` for server-owned input pumps, `Outputs` for server output
+  composition/fallbacks, `Pipes` for named-pipe sessions and per-client pipe
+  loops, `Runtime` for active-client orchestration, `Sessions` for connected
+  client/profile state, and `Status` for server status models.
 - Organize Hosting around product concepts, not implementation leftovers:
   `Server` for the long-lived process and server-side orchestration, `Client`
   for the Steam-launched/profile client lifecycle, and `Transport` or `Shared`
@@ -111,6 +116,9 @@
 - Keep refactor input/output adapters in `refactor/src/Inputs` and
   `refactor/src/Outputs`. Do not reference legacy adapter projects from
   refactor projects.
+- Keep Teensy wired as an output adapter placeholder until the transport is
+  designed. It may expose selectable output options, but send operations should
+  fail explicitly with `NotImplementedException`.
 - Keep adapter-specific loopback policy out of `Inputs/Sdl`. SDL discovery may
   accept a caller filter, but Hosting owns the app-specific decision to ignore
   VIIPER-created virtual controllers.

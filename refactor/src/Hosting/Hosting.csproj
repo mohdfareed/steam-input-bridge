@@ -11,6 +11,7 @@
     <ProjectReference Include="..\Forwarding\Forwarding.csproj" />
     <ProjectReference Include="..\Inputs\RawInput\Inputs.RawInput.csproj" />
     <ProjectReference Include="..\Inputs\Sdl\Inputs.Sdl.csproj" />
+    <ProjectReference Include="..\Outputs\Teensy\Outputs.Teensy.csproj" />
     <ProjectReference Include="..\Outputs\Viiper\Outputs.Viiper.csproj" />
     <ProjectReference Include="..\Runtime\Runtime.csproj" />
     <ProjectReference Include="..\Settings\Settings.csproj" />

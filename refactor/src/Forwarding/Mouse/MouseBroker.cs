@@ -200,6 +200,9 @@ public enum MouseOutput
 
     /// <summary>VIIPER virtual mouse output.</summary>
     Viiper,
+
+    /// <summary>Teensy hardware mouse output.</summary>
+    Teensy,
 }
 
 /// <summary>Creates game-facing mouse outputs.</summary>
