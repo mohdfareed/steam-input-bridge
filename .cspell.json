@@ -4,6 +4,7 @@
     "appsettings",
     "controllerconfig",
     "forceinputappid",
+    "forwardable",
     "gamepads",
     "installdir",
     "keepalive",

@@ -5,21 +5,53 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using VirtualMouse.Forwarding;
 using VirtualMouse.Inputs.Sdl;
+using VirtualMouse.Outputs.Viiper;
 
 namespace VirtualMouse.Hosting;
+
+internal static class SdlControllerFilters
+{
+    public static bool IsForwardable(SdlControllerInfo controller)
+    {
+        return !ViiperLoopbackDevices.IsController(controller.VendorId, controller.ProductId);
+    }
+}
 
 internal sealed class PhysicalControllerPump(
     ControllerBroker broker,
     ILogger logger) : IAsyncDisposable
 {
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
+
     private readonly CancellationTokenSource _stop = new();
+    private readonly Lock _gate = new();
     private IReadOnlyList<SdlGamepadSource> _sources = [];
     private Task? _task;
+    private string? _lastError;
+    private bool _running;
     private bool _disposed;
 
     public void Start(CancellationToken cancellationToken)
     {
-        _task = Task.Run(() => RunLinked(cancellationToken), CancellationToken.None);
+        _task = Task.Run(() => RunLinkedAsync(cancellationToken), CancellationToken.None);
+    }
+
+    public PhysicalControllerPumpStatus GetStatus()
+    {
+        lock (_gate)
+        {
+            List<string> controllerIds = [];
+            foreach (SdlGamepadSource source in _sources)
+            {
+                controllerIds.Add(SdlControllerCatalog.GetPhysicalControllerId(source.Controller));
+            }
+
+            return new PhysicalControllerPumpStatus(
+                _running,
+                _sources.Count,
+                controllerIds,
+                _lastError);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -42,41 +74,56 @@ internal sealed class PhysicalControllerPump(
             }
         }
 
-        foreach (SdlGamepadSource source in _sources)
-        {
-            await source.DisposeAsync().ConfigureAwait(false);
-        }
+        await DisposeSourcesAsync().ConfigureAwait(false);
 
         _stop.Dispose();
     }
 
-    private void Run(CancellationToken cancellationToken)
+    private async Task RunAsync(CancellationToken cancellationToken)
     {
-        try
+        while (!cancellationToken.IsCancellationRequested)
         {
-            _sources = SdlControllerCatalog.OpenPhysicalControllers();
-        }
-        catch (InvalidOperationException exception)
-        {
-            logger.LogWarning("Physical SDL controller pump disabled: {Message}", exception.Message);
-            return;
-        }
+            await DisposeSourcesAsync().ConfigureAwait(false);
+            try
+            {
+                IReadOnlyList<SdlGamepadSource> sources =
+                    SdlControllerCatalog.OpenPhysicalControllers(SdlControllerFilters.IsForwardable);
+                lock (_gate)
+                {
+                    _sources = sources;
+                    _running = sources.Count != 0;
+                    _lastError = null;
+                }
 
-        if (_sources.Count == 0)
-        {
-            logger.LogInformation("No physical SDL controllers found.");
-            return;
-        }
+                if (sources.Count == 0)
+                {
+                    await Task.Delay(RetryDelay, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
 
-        logger.LogInformation("Physical SDL controller pump started: controllers={Count}", _sources.Count);
-        SdlGamepadEventLoop.Run(_sources, UpdatePhysicalController, cancellationToken);
+                logger.LogInformation("Physical SDL controller pump started: controllers={Count}", sources.Count);
+                SdlGamepadEventLoop.Run(sources, UpdatePhysicalController, cancellationToken);
+            }
+            catch (Exception exception) when (
+                exception is SdlGamepadDisconnectedException or InvalidOperationException)
+            {
+                lock (_gate)
+                {
+                    _running = false;
+                    _lastError = exception.Message;
+                }
+
+                logger.LogInformation("Physical SDL controller pump restarting: {Message}", exception.Message);
+                await Task.Delay(RetryDelay, cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
-    private void RunLinked(CancellationToken cancellationToken)
+    private async Task RunLinkedAsync(CancellationToken cancellationToken)
     {
         using CancellationTokenSource linked =
             CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, cancellationToken);
-        Run(linked.Token);
+        await RunAsync(linked.Token).ConfigureAwait(false);
     }
 
     private void UpdatePhysicalController(SdlGamepadSource source, ControllerState state)
@@ -87,67 +134,20 @@ internal sealed class PhysicalControllerPump(
             source.Features,
             source);
     }
-}
 
-
-internal sealed class NoopControllerOutputFactory : IControllerOutputFactory
-{
-    public IControllerOutput Connect(ControllerId controllerId, ControllerOutput output)
+    private async Task DisposeSourcesAsync()
     {
-        _ = controllerId;
-        _ = output;
-        return new NoopControllerOutput();
-    }
-
-    private sealed class NoopControllerOutput : IControllerOutput
-    {
-        public void Send(in ControllerState state)
+        IReadOnlyList<SdlGamepadSource> sources;
+        lock (_gate)
         {
-            _ = state;
+            sources = _sources;
+            _sources = [];
+            _running = false;
         }
 
-        public IDisposable ListenFeedback(Action<ControllerFeedback> handler)
+        foreach (SdlGamepadSource source in sources)
         {
-            _ = handler;
-            return new Subscription();
+            await source.DisposeAsync().ConfigureAwait(false);
         }
-
-        public ValueTask DisposeAsync()
-        {
-            return ValueTask.CompletedTask;
-        }
-    }
-}
-
-internal sealed class NoopMouseOutputFactory : IMouseOutputFactory
-{
-    public IMouseOutput Connect(MouseOutput output)
-    {
-        _ = output;
-        return new NoopMouseOutput();
-    }
-
-    private sealed class NoopMouseOutput : IMouseOutput
-    {
-        public bool IsConnected => true;
-
-        public ValueTask SendAsync(MouseReport report, CancellationToken cancellationToken = default)
-        {
-            _ = report;
-            _ = cancellationToken;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            return ValueTask.CompletedTask;
-        }
-    }
-}
-
-internal sealed class Subscription : IDisposable
-{
-    public void Dispose()
-    {
     }
 }

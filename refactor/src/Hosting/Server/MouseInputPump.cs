@@ -16,12 +16,15 @@ internal sealed class MouseInputPump(
     private readonly CancellationTokenSource _stop = new();
     private RawInputMouseSource? _source;
     private Task? _task;
+    private string? _lastError;
+    private bool _running;
     private bool _disposed;
 
     public void Start(CancellationToken cancellationToken)
     {
         if (!OperatingSystem.IsWindows())
         {
+            _lastError = "Windows is required.";
             logger.LogWarning("Raw Input mouse pump disabled: Windows is required.");
             return;
         }
@@ -29,6 +32,14 @@ internal sealed class MouseInputPump(
 #pragma warning disable CA1416 // Guarded by the Windows check above.
         _task = Task.Run(() => RunLinkedWindows(cancellationToken), CancellationToken.None);
 #pragma warning restore CA1416
+    }
+
+    public MouseInputPumpStatus GetStatus()
+    {
+        return new MouseInputPumpStatus(
+            _running,
+            OperatingSystem.IsWindows() && _source is not null && IsSourceConnected(_source),
+            _lastError);
     }
 
     public async ValueTask DisposeAsync()
@@ -53,6 +64,8 @@ internal sealed class MouseInputPump(
     private async Task RunAsync(CancellationToken cancellationToken)
     {
         _source = await RawInputMouseSource.ConnectAsync(cancellationToken).ConfigureAwait(false);
+        _running = true;
+        _lastError = null;
         logger.LogInformation("Raw Input mouse pump started.");
         _source.Run(HandleMouseInput, cancellationToken);
     }
@@ -74,9 +87,12 @@ internal sealed class MouseInputPump(
         }
         catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException)
         {
+            _running = false;
         }
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
         {
+            _running = false;
+            _lastError = exception.Message;
             logger.LogWarning("Raw Input mouse pump stopped: {Message}", exception.Message);
         }
     }
@@ -85,6 +101,12 @@ internal sealed class MouseInputPump(
     private static ValueTask DisposeSourceAsync(RawInputMouseSource source)
     {
         return source.DisposeAsync();
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool IsSourceConnected(RawInputMouseSource source)
+    {
+        return source.IsConnected;
     }
 
     private static async Task IgnoreExpectedStopAsync(Task? task)

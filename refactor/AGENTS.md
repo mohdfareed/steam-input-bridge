@@ -111,6 +111,12 @@
 - Keep refactor input/output adapters in `refactor/src/Inputs` and
   `refactor/src/Outputs`. Do not reference legacy adapter projects from
   refactor projects.
+- Keep adapter-specific loopback policy out of `Inputs/Sdl`. SDL discovery may
+  accept a caller filter, but Hosting owns the app-specific decision to ignore
+  VIIPER-created virtual controllers.
+- Server-owned input pumps and client controller streams should survive SDL
+  disconnects by disposing stale sources, retrying discovery, and updating
+  status instead of ending the whole server or client run.
 - Keep Steam ROM Manager export in the refactor Steam project; CLI commands only
   orchestrate it from appsettings and print the result.
 - Keep `SteamInputClient`'s public API narrow: `DesktopConfigAppId`,

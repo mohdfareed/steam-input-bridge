@@ -21,7 +21,8 @@ internal sealed class ServerSessions(
     ActiveClientRegistry runtime,
     ControllerBroker forwarding,
     MouseBroker mouseForwarding,
-    ControllerPipeSessions controllerPipes)
+    ControllerPipeSessions controllerPipes,
+    Func<ServerInputStatus>? getInputStatus = null)
 {
     private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
 
@@ -60,6 +61,11 @@ internal sealed class ServerSessions(
             Runtime = runtime.GetStatus(),
             Forwarding = forwarding.GetStatus(),
             MouseForwarding = mouseForwarding.GetStatus(),
+            Inputs = getInputStatus?.Invoke() ??
+                new ServerInputStatus(
+                    new PhysicalControllerPumpStatus(false, 0, [], null),
+                    new MouseInputPumpStatus(false, false, null)),
+            ControllerPipes = controllerPipes.GetStatus(),
         });
     }
 

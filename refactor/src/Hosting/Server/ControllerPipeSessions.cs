@@ -42,6 +42,17 @@ internal sealed class ControllerPipeSessions(ControllerBroker broker, ILogger lo
         }
     }
 
+    public IReadOnlyList<ControllerPipeStatus> GetStatus()
+    {
+        List<ControllerPipeStatus> status = [];
+        foreach (KeyValuePair<Guid, ClientControllerPipe> pipe in _pipes)
+        {
+            status.Add(pipe.Value.GetStatus(pipe.Key));
+        }
+
+        return status;
+    }
+
     public async ValueTask DisposeAsync()
     {
         ClientControllerPipe[] pipes = [.. _pipes.Values];
@@ -91,6 +102,27 @@ internal sealed class ClientControllerPipe(
                 _controllers[controller.ControllerIndex] = controller;
             }
         }
+    }
+
+    public ControllerPipeStatus GetStatus(Guid clientId)
+    {
+        List<ClientControllerStatus> controllers = [];
+        lock (_controllers)
+        {
+            foreach (ClientControllerInfo controller in _controllers.Values)
+            {
+                controllers.Add(new ClientControllerStatus(
+                    controller.ControllerIndex,
+                    controller.PhysicalControllerId,
+                    controller.Features));
+            }
+        }
+
+        return new ControllerPipeStatus(
+            clientId,
+            PipeName,
+            _pipe?.IsConnected == true,
+            controllers);
     }
 
     public async ValueTask DisposeAsync()

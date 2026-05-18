@@ -158,6 +158,13 @@ public sealed class ControllerBrokerTests
 
         FakeControllerOutput output = factory.SingleOutput;
         Assert.IsFalse(output.Disposed);
+        ControllerBrokerStatus status = broker.GetStatus();
+        Assert.AreEqual(clientId, status.ActiveClientId);
+        Assert.HasCount(1, status.Slots);
+        Assert.AreEqual(ControllerOutput.Xbox360, status.Slots[0].Output);
+        Assert.IsTrue(status.Slots[0].OutputConnected);
+        Assert.AreEqual(1, status.Slots[0].SteamEndpointCount);
+        Assert.AreEqual(ControllerFeatures.StandardControls, status.Slots[0].ActiveSteamFeatures);
 
         broker.SetControllerOutputEnabled(false);
         Assert.IsTrue(output.Disposed);

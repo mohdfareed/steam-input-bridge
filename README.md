@@ -57,6 +57,6 @@ Project for local input forwarding transports.
 - [ ] Implement proper Steam Input controller identification.
   - Current implementation only support a single physical Valve-made controller.
 - [ ] HidHide integration for physical controller blocking during xpad emulation.
-- [ ] Packaging/runtime distribution for SDL3 and VIIPER dependencies.
-- [ ] Host protocol versioning, machine-readable diagnostics, and richer
-      observability.
+- [ ] Server WPF tray app with dashboard for diagnostics and profile/client management.
+- [ ] Packaging and deployment as a self-contained executable.
+- [ ] Versioning, machine-readable diagnostics, and richer observability.

@@ -151,7 +151,13 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
                     slot.Value.Output is not null,
                     slot.Value.OutputKind,
                     slot.Value.HasSteam(_activeClientId),
-                    slot.Value.Physical.HasValue));
+                    slot.Value.Physical.HasValue,
+                    slot.Value.Steam.Count,
+                    slot.Value.Physical?.Features,
+                    _activeClientId.HasValue &&
+                        slot.Value.Steam.TryGetValue(_activeClientId.Value, out ControllerEndpointState steam)
+                        ? steam.Features
+                        : null));
             }
 
             return new ControllerBrokerStatus(
@@ -313,4 +319,7 @@ public sealed record ControllerSlotStatus(
     bool OutputConnected,
     ControllerOutput Output,
     bool HasActiveSteamEndpoint,
-    bool HasPhysicalEndpoint);
+    bool HasPhysicalEndpoint,
+    int SteamEndpointCount,
+    ControllerFeatures? PhysicalFeatures,
+    ControllerFeatures? ActiveSteamFeatures);

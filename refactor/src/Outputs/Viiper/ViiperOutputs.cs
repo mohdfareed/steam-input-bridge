@@ -10,6 +10,17 @@ using ViiperXbox360OutputReport = global::Viiper.Client.Devices.Xbox360.Xbox360O
 
 namespace VirtualMouse.Outputs.Viiper;
 
+/// <summary>Identifies VIIPER-created devices that must not feed back into input discovery.</summary>
+public static class ViiperLoopbackDevices
+{
+    /// <summary>Returns whether the USB id is a VIIPER virtual controller owned by this app.</summary>
+    public static bool IsController(ushort vendorId, ushort productId)
+    {
+        return vendorId == ViiperXbox360Output.OwnedVendorId &&
+            productId == ViiperXbox360Output.OwnedProductId;
+    }
+}
+
 /// <summary>Creates VIIPER outputs for forwarding routes.</summary>
 public sealed class ViiperOutputFactory(ViiperOptions options) : IControllerOutputFactory, IMouseOutputFactory
 {
@@ -57,8 +68,11 @@ public sealed class ViiperOutputFactory(ViiperOptions options) : IControllerOutp
 /// <summary>VIIPER Xbox 360 controller output.</summary>
 public sealed class ViiperXbox360Output : IControllerOutput, IDisposable
 {
-    internal const ushort OwnedVendorId = 0x045E;
-    internal const ushort OwnedProductId = 0x028E;
+    /// <summary>Vendor id used by owned VIIPER Xbox 360 devices.</summary>
+    public const ushort OwnedVendorId = 0x045E;
+
+    /// <summary>Product id used by owned VIIPER Xbox 360 devices.</summary>
+    public const ushort OwnedProductId = 0x028E;
 
     private static readonly ViiperOutputDeviceDefinition DeviceDefinition = new(
         "xbox360",

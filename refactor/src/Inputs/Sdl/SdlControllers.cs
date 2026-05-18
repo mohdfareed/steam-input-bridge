@@ -54,27 +54,33 @@ public sealed record SdlControllerInfo(
 public static class SdlControllerCatalog
 {
     /// <summary>Lists SDL game controllers visible to this process.</summary>
-    public static IReadOnlyList<SdlControllerInfo> GetControllers()
+    public static IReadOnlyList<SdlControllerInfo> GetControllers(
+        Func<SdlControllerInfo, bool>? shouldInclude = null)
     {
         return WithSdlErrors(() =>
         {
             using SdlGamepadRuntime.Lease _ = SdlGamepadRuntime.Acquire();
             uint[] gamepadIds = SDL.GetGamepads(out int count) ?? [];
-            return CreateControllerInfos(gamepadIds, count);
+            return Filter(CreateControllerInfos(gamepadIds, count), shouldInclude);
         });
     }
 
     /// <summary>Opens all client-visible controllers except VIIPER loopback devices.</summary>
-    public static IReadOnlyList<SdlGamepadSource> OpenClientControllers()
+    public static IReadOnlyList<SdlGamepadSource> OpenClientControllers(
+        Func<SdlControllerInfo, bool>? shouldInclude = null)
     {
-        return OpenControllers(static controller => controller.Source is
-            SdlControllerSource.Steam or SdlControllerSource.Physical);
+        return OpenControllers(
+            static controller => controller.Source is SdlControllerSource.Steam or SdlControllerSource.Physical,
+            shouldInclude);
     }
 
     /// <summary>Opens physical controllers visible to the server process.</summary>
-    public static IReadOnlyList<SdlGamepadSource> OpenPhysicalControllers()
+    public static IReadOnlyList<SdlGamepadSource> OpenPhysicalControllers(
+        Func<SdlControllerInfo, bool>? shouldInclude = null)
     {
-        return OpenControllers(static controller => controller.Source == SdlControllerSource.Physical);
+        return OpenControllers(
+            static controller => controller.Source == SdlControllerSource.Physical,
+            shouldInclude);
     }
 
     /// <summary>Gets the physical slot id used by forwarding.</summary>
@@ -124,7 +130,9 @@ public static class SdlControllerCatalog
         return controllers;
     }
 
-    private static IReadOnlyList<SdlGamepadSource> OpenControllers(Func<SdlControllerInfo, bool> shouldOpen)
+    private static IReadOnlyList<SdlGamepadSource> OpenControllers(
+        Func<SdlControllerInfo, bool> shouldOpen,
+        Func<SdlControllerInfo, bool>? shouldInclude)
     {
         return WithSdlErrors<IReadOnlyList<SdlGamepadSource>>(() =>
         {
@@ -135,7 +143,7 @@ public static class SdlControllerCatalog
             {
                 foreach (SdlControllerInfo controller in CreateControllerInfos(gamepadIds, count))
                 {
-                    if (shouldOpen(controller))
+                    if (shouldOpen(controller) && (shouldInclude?.Invoke(controller) ?? true))
                     {
                         sources.Add(SdlGamepadSource.Connect(controller));
                     }
@@ -153,6 +161,27 @@ public static class SdlControllerCatalog
                 throw;
             }
         });
+    }
+
+    private static IReadOnlyList<SdlControllerInfo> Filter(
+        IReadOnlyList<SdlControllerInfo> controllers,
+        Func<SdlControllerInfo, bool>? shouldInclude)
+    {
+        if (shouldInclude is null)
+        {
+            return controllers;
+        }
+
+        List<SdlControllerInfo> filtered = [];
+        foreach (SdlControllerInfo controller in controllers)
+        {
+            if (shouldInclude(controller))
+            {
+                filtered.Add(controller);
+            }
+        }
+
+        return filtered;
     }
 
     private static SdlControllerInfo CreateOpenControllerInfo(uint instanceId, nint gamepad)
