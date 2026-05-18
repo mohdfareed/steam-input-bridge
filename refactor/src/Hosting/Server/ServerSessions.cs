@@ -3,8 +3,11 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using VirtualMouse.Forwarding;
 using VirtualMouse.Runtime;
 using VirtualMouse.Settings.Profiles;
+using ForwardingControllerOutput = VirtualMouse.Forwarding.ControllerOutput;
+using ProfileControllerOutput = VirtualMouse.Settings.Profiles.ControllerOutput;
 
 namespace VirtualMouse.Hosting;
 
@@ -13,7 +16,9 @@ internal sealed record ConnectedClient(Guid Id, int ProcessId, DateTimeOffset Co
 internal sealed class ServerSessions(
     ILogger logger,
     ProfilesService? profiles,
-    ActiveClientRegistry runtime)
+    ActiveClientRegistry runtime,
+    ControllerBroker forwarding,
+    ControllerPipeSessions controllerPipes)
 {
     private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
 
@@ -31,10 +36,13 @@ internal sealed class ServerSessions(
         return client.Id;
     }
 
-    internal void DisconnectClient(Guid clientId)
+    internal async Task DisconnectClientAsync(Guid clientId)
     {
         _ = _clients.TryRemove(clientId, out _);
         runtime.RemoveClient(clientId);
+        forwarding.RemoveClient(clientId);
+        await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
+
         logger.LogInformation(
             "Client disconnected: {ClientId} (clients={ClientCount})",
             clientId,
@@ -46,6 +54,7 @@ internal sealed class ServerSessions(
         return Task.FromResult(new ServerStatus(_clients.Count)
         {
             Runtime = runtime.GetStatus(),
+            Forwarding = forwarding.GetStatus(),
         });
     }
 
@@ -62,12 +71,16 @@ internal sealed class ServerSessions(
             throw new InvalidOperationException($"Profile \"{request.ProfileId}\" was not found.");
         ResolvedGameProfile resolved = ProfileResolver.Resolve(request.ProfileId, profile);
         ConnectedClient client = GetClient(clientId);
+
         runtime.RegisterClient(
             clientId,
             client.ProcessId,
             resolved.Id,
             request.SteamAppId,
             resolved.ReceiverProcesses);
+
+        forwarding.RegisterClient(clientId, MapControllerOutput(resolved.ControllerOutput));
+        string controllerPipeName = controllerPipes.Start(clientId);
 
         return Task.FromResult(new ClientRunLaunch(
             resolved.Id,
@@ -77,7 +90,17 @@ internal sealed class ServerSessions(
             resolved.WorkingDirectory,
             resolved.ReceiverProcesses,
             resolved.ControllerOutput,
-            resolved.MouseOutput));
+            resolved.MouseOutput,
+            controllerPipeName));
+    }
+
+    internal Task RegisterClientControllersAsync(
+        Guid clientId,
+        IReadOnlyList<ClientControllerInfo> controllers)
+    {
+        _ = GetClient(clientId);
+        controllerPipes.RegisterControllers(clientId, controllers);
+        return Task.CompletedTask;
     }
 
     internal Task UpdateRunProcessesAsync(
@@ -93,10 +116,11 @@ internal sealed class ServerSessions(
         return Task.FromResult(runtime.GetOwnedProcesses(clientId));
     }
 
-    internal Task EndRunAsync(Guid clientId)
+    internal async Task EndRunAsync(Guid clientId)
     {
         runtime.RemoveClient(clientId);
-        return Task.CompletedTask;
+        forwarding.RemoveClient(clientId);
+        await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
     }
 
     internal void ConnectionClosed(Exception exception)
@@ -112,5 +136,16 @@ internal sealed class ServerSessions(
         return _clients.TryGetValue(clientId, out ConnectedClient? client)
             ? client
             : throw new InvalidOperationException($"Client {clientId} is not connected.");
+    }
+
+    private static ForwardingControllerOutput MapControllerOutput(ProfileControllerOutput output)
+    {
+        return output switch
+        {
+            ProfileControllerOutput.None => ForwardingControllerOutput.None,
+            ProfileControllerOutput.Xbox360 => ForwardingControllerOutput.Xbox360,
+            ProfileControllerOutput.Ds4 => ForwardingControllerOutput.Ds4,
+            _ => throw new ArgumentOutOfRangeException(nameof(output), output, "Unknown controller output."),
+        };
     }
 }

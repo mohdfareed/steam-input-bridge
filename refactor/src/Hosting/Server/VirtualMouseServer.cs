@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using VirtualMouse.Forwarding;
 using VirtualMouse.Runtime;
 using VirtualMouse.Settings;
 using VirtualMouse.Settings.Profiles;
@@ -19,6 +20,10 @@ public sealed record ServerStatus(int ConnectedClientCount)
     /// <summary>Current active-client runtime status.</summary>
     public ActiveClientRegistryStatus Runtime { get; init; } =
         new(0, null, [], []);
+
+    /// <summary>Current controller forwarding status.</summary>
+    public ControllerBrokerStatus Forwarding { get; init; } =
+        new(null, ControllerOutputEnabled: true, PhysicalMotionEnabled: true, []);
 }
 
 // The app-facing server owns server lifetime and accepts client pipes.
@@ -46,7 +51,8 @@ public sealed class VirtualMouseServer
         SettingsFile? settingsFile,
         ProfilesService? profiles,
         ActiveClientRegistry? runtime,
-        ActiveClientOrchestration? activeClients)
+        ActiveClientOrchestration? activeClients,
+        ControllerBroker? forwarding = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
@@ -54,12 +60,22 @@ public sealed class VirtualMouseServer
         _options = options;
         _logger = logger;
         _settingsFile = settingsFile;
+
         ActiveClientRegistry activeRuntime = runtime ?? new ActiveClientRegistry();
-        _sessions = new ServerSessions(logger, profiles, activeRuntime);
+        ControllerBroker broker = forwarding ?? new ControllerBroker(new NoopControllerOutputFactory());
+
+        _sessions = new ServerSessions(
+            logger,
+            profiles,
+            activeRuntime,
+            broker,
+            new ControllerPipeSessions(broker, logger));
+
         _activeClients = activeClients ?? ActiveClientOrchestration.CreateDefault(
             activeRuntime,
             options.Value,
-            logger);
+            logger,
+            broker);
     }
 
     internal IReadOnlyCollection<ConnectedClient> Clients => _sessions.Clients;
@@ -71,13 +87,16 @@ public sealed class VirtualMouseServer
     public static IServiceCollection AddServices(IServiceCollection services)
     {
         _ = services.AddSingleton<ActiveClientRegistry>();
+        _ = services.AddSingleton<IControllerOutputFactory, NoopControllerOutputFactory>();
+        _ = services.AddSingleton<ControllerBroker>();
         _ = services.AddSingleton(static services => new VirtualMouseServer(
             services.GetRequiredService<IOptions<HostingSettings>>(),
             services.GetRequiredService<ILogger<VirtualMouseServer>>(),
             services.GetService<SettingsFile>(),
             services.GetService<ProfilesService>(),
             services.GetRequiredService<ActiveClientRegistry>(),
-            activeClients: null));
+            activeClients: null,
+            services.GetRequiredService<ControllerBroker>()));
         return services;
     }
 

@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using VirtualMouse.Forwarding;
 using VirtualMouse.Runtime;
 using VirtualMouse.Settings;
 using VirtualMouse.Steam;
@@ -18,13 +19,14 @@ internal sealed class ActiveClientOrchestration(
     public static ActiveClientOrchestration CreateDefault(
         ActiveClientRegistry runtime,
         HostingSettings settings,
-        ILogger logger)
+        ILogger logger,
+        ControllerBroker? forwarding = null)
     {
         return new ActiveClientOrchestration(
             runtime,
             GetForegroundProcessId,
             TimeSpan.FromMilliseconds(settings.ForegroundPollMilliseconds),
-            args => ActiveClientChanged(runtime, logger, new SteamInputClient(), args));
+            args => ActiveClientChanged(runtime, logger, new SteamInputClient(), forwarding, args));
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -72,12 +74,14 @@ internal sealed class ActiveClientOrchestration(
         ActiveClientRegistry runtime,
         ILogger logger,
         SteamInputClient steam,
+        ControllerBroker? forwarding,
         ActiveClientChangedEventArgs args)
     {
         logger.LogInformation(
             "Active client changed: previous={PreviousClientId} current={CurrentClientId}",
             args.PreviousClientId?.ToString() ?? "none",
             args.CurrentClientId?.ToString() ?? "none");
+        forwarding?.SetActiveClient(args.CurrentClientId);
 
         try
         {

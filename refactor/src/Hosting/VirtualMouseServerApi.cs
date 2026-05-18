@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using ProfileControllerOutput = VirtualMouse.Settings.Profiles.ControllerOutput;
+using ProfileMouseOutput = VirtualMouse.Settings.Profiles.MouseOutput;
+using VirtualMouse.Forwarding;
 using PolyType;
 using StreamJsonRpc;
 using VirtualMouse.Runtime;
-using VirtualMouse.Settings.Profiles;
 
 namespace VirtualMouse.Hosting;
 
@@ -19,11 +21,18 @@ public sealed record ClientRunLaunch(
     string Arguments,
     string WorkingDirectory,
     IReadOnlyList<string> ReceiverProcesses,
-    ControllerOutput ControllerOutput,
-    MouseOutput MouseOutput);
+    ProfileControllerOutput ControllerOutput,
+    ProfileMouseOutput MouseOutput,
+    string ControllerPipeName);
 
 /// <summary>Client request to start or restore a profile-backed run.</summary>
 public sealed record StartRunRequest(string ProfileId, uint? SteamAppId);
+
+/// <summary>Client-visible controller mapped to one physical controller slot.</summary>
+public sealed record ClientControllerInfo(
+    ushort ControllerIndex,
+    string PhysicalControllerId,
+    ControllerFeatures Features);
 
 // MARK: API
 // ============================================================================
@@ -44,6 +53,9 @@ internal partial interface IVirtualMouseServerApi
 
     /// <summary>Starts or restores this client's active profile run.</summary>
     Task<ClientRunLaunch> StartRunAsync(StartRunRequest request);
+
+    /// <summary>Registers controllers this client can stream over its controller pipe.</summary>
+    Task RegisterClientControllersAsync(IReadOnlyList<ClientControllerInfo> controllers);
 
     /// <summary>Updates the receiver processes currently observed by this client.</summary>
     Task UpdateRunProcessesAsync(IReadOnlyList<ObservedGameProcess> processes);

@@ -117,6 +117,17 @@ public sealed class VirtualMouseClient : IAsyncDisposable
             .WaitAsync(cancellationToken);
     }
 
+    /// <summary>Registers controller streams this client will send over its controller pipe.</summary>
+    public Task RegisterClientControllersAsync(
+        IReadOnlyList<ClientControllerInfo> controllers,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _connection.Server
+            .RegisterClientControllersAsync(controllers)
+            .WaitAsync(cancellationToken);
+    }
+
     /// <summary>Updates receiver processes observed by this client.</summary>
     public Task UpdateRunProcessesAsync(
         IReadOnlyList<ObservedGameProcess> processes,

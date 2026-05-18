@@ -91,6 +91,11 @@
   disposed when no active client/profile/toggle uses them.
 - Keep per-report controller traffic on the `Forwarding` fixed binary pipe
   model. Do not send hot-path controller reports through JSON-RPC.
+- `Hosting` owns controller pipe lifetime for connected clients, but pipe frames
+  must flow into `Forwarding.ControllerBroker`; do not put merge, output, or
+  feature fallback policy in Hosting.
+- Output feedback sent back to client controller streams must not block broker
+  output callbacks. Use pipe-owned asynchronous delivery or an explicit queue.
 - Server-side active-client orchestration lives in `Hosting/Server`. It observes
   the foreground process id, updates `ActiveClientRegistry`, and dispatches
   active-client changes through simple callbacks. Do not add tiny reaction

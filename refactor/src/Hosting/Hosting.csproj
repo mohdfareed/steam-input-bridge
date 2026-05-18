@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Forwarding\Forwarding.csproj" />
     <ProjectReference Include="..\Runtime\Runtime.csproj" />
     <ProjectReference Include="..\Settings\Settings.csproj" />
     <ProjectReference Include="..\Steam\Steam.csproj" />

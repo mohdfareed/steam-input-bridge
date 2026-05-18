@@ -36,7 +36,7 @@ internal sealed class ServerConnection(
             }
             finally
             {
-                DisconnectClient();
+                await DisconnectClientAsync().ConfigureAwait(false);
             }
         }
     }
@@ -82,6 +82,11 @@ internal sealed class ServerConnection(
         return sessions.StartRunAsync(GetClientId(), request);
     }
 
+    public Task RegisterClientControllersAsync(IReadOnlyList<ClientControllerInfo> controllers)
+    {
+        return sessions.RegisterClientControllersAsync(GetClientId(), controllers);
+    }
+
     public Task UpdateRunProcessesAsync(IReadOnlyList<ObservedGameProcess> processes)
     {
         return sessions.UpdateRunProcessesAsync(GetClientId(), processes);
@@ -97,11 +102,11 @@ internal sealed class ServerConnection(
         return sessions.EndRunAsync(GetClientId());
     }
 
-    private void DisconnectClient()
+    private async Task DisconnectClientAsync()
     {
         if (_clientId is Guid clientId)
         {
-            sessions.DisconnectClient(clientId);
+            await sessions.DisconnectClientAsync(clientId).ConfigureAwait(false);
             _clientId = null;
         }
     }
