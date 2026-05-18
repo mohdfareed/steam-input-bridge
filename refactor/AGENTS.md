@@ -75,5 +75,15 @@
   the foreground process id, updates `ActiveClientRegistry`, and dispatches
   active-client changes through simple callbacks. Do not add tiny reaction
   wrapper types until there are multiple real reactions with different behavior.
-- Do not add Steam Input forcing to active-client runtime. Steam forcing should
-  subscribe to active-client changes later.
+- Steam Input forcing is a server-side active-client reaction. On active-client
+  changes, clear the forced app id first, then apply the new active client's
+  Steam app id when present.
+- Keep refactor Steam integration in `refactor/src/Steam`. Do not reference
+  legacy `src/SteamInput` from refactor projects.
+- Keep Steam ROM Manager export in the refactor Steam project; CLI commands only
+  orchestrate it from appsettings and print the result.
+- Keep `SteamInputClient`'s public API narrow: `DesktopConfigAppId`,
+  `ListGames`, `ResolveAppIdFromEnvironment`, `ForceConfigAsync(uint?)`, and
+  `OpenControllerConfigAsync(uint)`. CLI commands expose desktop and clearing
+  by passing `DesktopConfigAppId` or null rather than adding more SteamInput
+  methods.

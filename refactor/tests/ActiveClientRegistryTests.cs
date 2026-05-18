@@ -42,6 +42,7 @@ public sealed class ActiveClientRegistryTests
 
         ClientStatus status = Find(runtime.GetStatus(), clientId);
         Assert.HasCount(2, status.OwnedProcesses);
+        Assert.IsNull(status.SteamAppId);
     }
 
     /// <summary>Checks foreground pid activates the owning client.</summary>
@@ -117,7 +118,7 @@ public sealed class ActiveClientRegistryTests
     {
         ActiveClientRegistry runtime = new();
         Guid clientId = Guid.NewGuid();
-        runtime.RegisterClient(clientId, Environment.ProcessId, "game", ["game.exe"]);
+        runtime.RegisterClient(clientId, Environment.ProcessId, "game", steamAppId: null, ["game.exe"]);
         runtime.UpdateClientProcesses(clientId, [Receiver(100)]);
 
         runtime.RemoveClient(clientId);
@@ -149,7 +150,7 @@ public sealed class ActiveClientRegistryTests
     private static Guid Start(ActiveClientRegistry runtime, string profileId)
     {
         Guid clientId = Guid.NewGuid();
-        runtime.RegisterClient(clientId, Environment.ProcessId, profileId, ["game.exe"]);
+        runtime.RegisterClient(clientId, Environment.ProcessId, profileId, steamAppId: null, ["game.exe"]);
         return clientId;
     }
 

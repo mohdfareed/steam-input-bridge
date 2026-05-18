@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Runtime\Runtime.csproj" />
     <ProjectReference Include="..\Settings\Settings.csproj" />
+    <ProjectReference Include="..\Steam\Steam.csproj" />
   </ItemGroup>
 
   <ItemGroup>

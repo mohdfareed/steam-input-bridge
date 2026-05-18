@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using VirtualMouse.Runtime;
 using VirtualMouse.Settings;
+using VirtualMouse.Steam;
 
 namespace VirtualMouse.Hosting;
 
@@ -23,7 +24,7 @@ internal sealed class ActiveClientOrchestration(
             runtime,
             GetForegroundProcessId,
             TimeSpan.FromMilliseconds(settings.ForegroundPollMilliseconds),
-            args => LogActiveClientChanged(logger, args));
+            args => ActiveClientChanged(runtime, logger, new SteamInputClient(), args));
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -67,14 +68,56 @@ internal sealed class ActiveClientOrchestration(
         return processId <= int.MaxValue ? (int)processId : 0;
     }
 
-    private static void LogActiveClientChanged(
+    private static void ActiveClientChanged(
+        ActiveClientRegistry runtime,
         ILogger logger,
+        SteamInputClient steam,
         ActiveClientChangedEventArgs args)
     {
         logger.LogInformation(
             "Active client changed: previous={PreviousClientId} current={CurrentClientId}",
             args.PreviousClientId?.ToString() ?? "none",
             args.CurrentClientId?.ToString() ?? "none");
+
+        try
+        {
+            uint? appId = FindSteamAppId(runtime.GetStatus(), args.CurrentClientId);
+            steam.ForceConfigAsync(null).AsTask().GetAwaiter().GetResult();
+            if (appId.HasValue)
+            {
+                steam.ForceConfigAsync(appId.Value).AsTask().GetAwaiter().GetResult();
+            }
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+                ArgumentException or
+                System.ComponentModel.Win32Exception)
+        {
+            logger.LogWarning(
+                "Steam Input forcing failed for client {ClientId}: {Message}",
+                args.CurrentClientId?.ToString() ?? "none",
+                exception.Message);
+        }
+    }
+
+    private static uint? FindSteamAppId(
+        ActiveClientRegistryStatus status,
+        Guid? clientId)
+    {
+        if (!clientId.HasValue)
+        {
+            return null;
+        }
+
+        foreach (ClientStatus client in status.Clients)
+        {
+            if (client.ClientId == clientId)
+            {
+                return client.SteamAppId;
+            }
+        }
+
+        return null;
     }
 
     [DllImport("user32.dll")]

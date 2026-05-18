@@ -77,9 +77,9 @@ internal sealed class ServerConnection(
         return sessions.GetStatusAsync();
     }
 
-    public Task<ClientRunLaunch> StartRunAsync(string profileId)
+    public Task<ClientRunLaunch> StartRunAsync(StartRunRequest request)
     {
-        return sessions.StartRunAsync(GetClientId(), profileId);
+        return sessions.StartRunAsync(GetClientId(), request);
     }
 
     public Task UpdateRunProcessesAsync(IReadOnlyList<ObservedGameProcess> processes)

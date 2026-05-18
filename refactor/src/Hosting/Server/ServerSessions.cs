@@ -49,21 +49,24 @@ internal sealed class ServerSessions(
         });
     }
 
-    internal Task<ClientRunLaunch> StartRunAsync(Guid clientId, string profileId)
+    internal Task<ClientRunLaunch> StartRunAsync(Guid clientId, StartRunRequest request)
     {
+        ArgumentNullException.ThrowIfNull(request);
+
         if (profiles is null)
         {
             throw new InvalidOperationException("Profile settings are not available.");
         }
 
-        GameProfile profile = profiles.GetProfile(profileId) ??
-            throw new InvalidOperationException($"Profile \"{profileId}\" was not found.");
-        ResolvedGameProfile resolved = ProfileResolver.Resolve(profileId, profile);
+        GameProfile profile = profiles.GetProfile(request.ProfileId) ??
+            throw new InvalidOperationException($"Profile \"{request.ProfileId}\" was not found.");
+        ResolvedGameProfile resolved = ProfileResolver.Resolve(request.ProfileId, profile);
         ConnectedClient client = GetClient(clientId);
         runtime.RegisterClient(
             clientId,
             client.ProcessId,
             resolved.Id,
+            request.SteamAppId,
             resolved.ReceiverProcesses);
 
         return Task.FromResult(new ClientRunLaunch(

@@ -20,7 +20,7 @@ public sealed class ActiveClientOrchestrationTests
     {
         ActiveClientRegistry runtime = new();
         Guid clientId = Guid.NewGuid();
-        runtime.RegisterClient(clientId, Environment.ProcessId, "game", ["game.exe"]);
+        runtime.RegisterClient(clientId, Environment.ProcessId, "game", steamAppId: 123, ["game.exe"]);
         runtime.UpdateClientProcesses(clientId, [new ObservedGameProcess(123, "game.exe")]);
 
         int foregroundProcessId = 0;
@@ -43,6 +43,7 @@ public sealed class ActiveClientOrchestrationTests
             ActiveClientRegistryStatus activeStatus = runtime.GetStatus();
             Assert.AreEqual(123, activeStatus.ForegroundProcessId);
             Assert.AreEqual(clientId, activeStatus.ActiveClientId);
+            Assert.AreEqual(123u, activeStatus.Clients[0].SteamAppId);
 
             Volatile.Write(ref foregroundProcessId, 0);
             await WaitUntilAsync(() => runtime.GetStatus().ActiveClientId is null)

@@ -32,6 +32,8 @@ public static class SettingsServices
             configuration.GetSection(GeneralSettings.SectionName));
         _ = services.Configure<LoggingSettings>(
             configuration.GetSection(LoggingSettings.SectionName));
+        _ = services.Configure<SteamSettings>(
+            configuration.GetSection(SteamSettings.SectionName));
         return services;
     }
 }

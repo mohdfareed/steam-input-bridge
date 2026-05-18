@@ -9,6 +9,7 @@ internal sealed class ClientState(
     Guid clientId,
     int clientProcessId,
     string profileId,
+    uint? steamAppId,
     IReadOnlyList<string> receiverProcesses)
 {
     public Guid ClientId { get; } = clientId;
@@ -16,6 +17,8 @@ internal sealed class ClientState(
     public int ClientProcessId { get; } = clientProcessId;
 
     public string ProfileId { get; } = profileId;
+
+    public uint? SteamAppId { get; } = steamAppId;
 
     public IReadOnlyList<string> ReceiverProcesses { get; } = receiverProcesses;
 
@@ -42,12 +45,13 @@ public sealed class ActiveClientRegistry
         Guid clientId,
         int clientProcessId,
         string profileId,
+        uint? steamAppId,
         IReadOnlyList<string> receiverProcesses)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentNullException.ThrowIfNull(receiverProcesses);
 
-        ClientState client = new(clientId, clientProcessId, profileId, receiverProcesses);
+        ClientState client = new(clientId, clientProcessId, profileId, steamAppId, receiverProcesses);
         lock (_gate)
         {
             _clients[clientId] = client;
@@ -198,6 +202,7 @@ public sealed class ActiveClientRegistry
             client.ClientId,
             client.ClientProcessId,
             client.ProfileId,
+            client.SteamAppId,
             _activeClientId == client.ClientId,
             [.. client.Processes.Values],
             owned,

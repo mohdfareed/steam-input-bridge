@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using StreamJsonRpc;
 using VirtualMouse.Runtime;
+using VirtualMouse.Steam;
 
 namespace VirtualMouse.Hosting;
 
@@ -29,10 +30,13 @@ public sealed class GameClient(
         client.ConnectionChanged += OnConnectionChanged;
         try
         {
+            StartRunRequest request = new(profileId, SteamInputClient.ResolveAppIdFromEnvironment());
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
-            ClientRunLaunch launch = await client.StartRunAsync(profileId, cancellationToken).ConfigureAwait(false);
+            ClientRunLaunch launch = await client
+                .StartRunAsync(request, cancellationToken)
+                .ConfigureAwait(false);
             using Process process = GameProcessHost.Launch(launch);
-            ClientRunState state = new(launch, process, client.ClientId);
+            ClientRunState state = new(launch, process, client.ClientId, request);
             using CancellationTokenSource keepAliveStop =
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             Task keepAlive = client.WaitAsync(keepAliveStop.Token);
@@ -40,7 +44,7 @@ public sealed class GameClient(
             try
             {
                 LogStarted(state);
-                await WatchReceiversAsync(profileId, state, cancellationToken).ConfigureAwait(false);
+                await WatchReceiversAsync(state, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -76,7 +80,6 @@ public sealed class GameClient(
     // ========================================================================
 
     private async Task WatchReceiversAsync(
-        string profileId,
         ClientRunState state,
         CancellationToken cancellationToken)
     {
@@ -84,7 +87,7 @@ public sealed class GameClient(
         {
             IReadOnlyList<ObservedGameProcess> observed =
                 GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
-            await SendStateAsync(profileId, state, observed, cancellationToken).ConfigureAwait(false);
+            await SendStateAsync(state, observed, cancellationToken).ConfigureAwait(false);
 
             state.SawReceiver |= observed.Count != 0;
             if (state.SawReceiver && observed.Count == 0)
@@ -102,7 +105,6 @@ public sealed class GameClient(
     }
 
     private async Task SendStateAsync(
-        string profileId,
         ClientRunState state,
         IReadOnlyList<ObservedGameProcess> observed,
         CancellationToken cancellationToken)
@@ -117,7 +119,9 @@ public sealed class GameClient(
         {
             if (state.RegisteredClientId != client.ClientId)
             {
-                state.Launch = await client.StartRunAsync(profileId, cancellationToken).ConfigureAwait(false);
+                state.Launch = await client
+                    .StartRunAsync(state.Request, cancellationToken)
+                    .ConfigureAwait(false);
                 state.RegisteredClientId = client.ClientId;
                 logger.LogInformation(
                     "Restored server registration for {ProfileId} client={ClientId}",
@@ -198,13 +202,16 @@ public sealed class GameClient(
     private sealed class ClientRunState(
         ClientRunLaunch launch,
         Process process,
-        Guid? registeredClientId)
+        Guid? registeredClientId,
+        StartRunRequest request)
     {
         public ClientRunLaunch Launch { get; set; } = launch;
 
         public Process Process { get; } = process;
 
         public Guid? RegisteredClientId { get; set; } = registeredClientId;
+
+        public StartRunRequest Request { get; } = request;
 
         public bool SawReceiver { get; set; }
 

@@ -23,6 +23,7 @@ public sealed record ClientStatus(
     Guid ClientId,
     int ClientProcessId,
     string ProfileId,
+    uint? SteamAppId,
     bool IsActive,
     IReadOnlyList<ObservedGameProcess> ObservedProcesses,
     IReadOnlyList<ObservedGameProcess> OwnedProcesses,

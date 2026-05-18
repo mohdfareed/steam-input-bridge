@@ -1,0 +1,91 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using ValveKeyValue;
+
+namespace VirtualMouse.Steam;
+
+internal sealed class SteamKeyValue
+{
+    internal Dictionary<string, SteamKeyValue> Children { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    internal string? Value { get; set; }
+
+    internal SteamKeyValue? GetChild(string key)
+    {
+        return Children.TryGetValue(key, out SteamKeyValue? child) ? child : null;
+    }
+
+    internal string? GetValue(string key)
+    {
+        return GetChild(key)?.Value;
+    }
+}
+
+internal static class SteamKeyValueParser
+{
+    internal static SteamKeyValue ParseText(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        using MemoryStream stream = new(Encoding.UTF8.GetBytes(text));
+        return Parse(stream, KVSerializationFormat.KeyValues1Text);
+    }
+
+    internal static SteamKeyValue ParseBinary(byte[] data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        using MemoryStream stream = new(data, writable: false);
+        return Parse(stream, KVSerializationFormat.KeyValues1Binary);
+    }
+
+    private static SteamKeyValue Parse(Stream stream, KVSerializationFormat format)
+    {
+        KVSerializer serializer = KVSerializer.Create(format);
+        KVDocument document = serializer.Deserialize(stream);
+        SteamKeyValue root = new();
+        if (string.IsNullOrWhiteSpace(document.Name))
+        {
+            Copy(document.Root, root);
+            return root;
+        }
+
+        root.Children[document.Name] = Convert(document.Root);
+        return root;
+    }
+
+    private static SteamKeyValue Convert(KVObject source)
+    {
+        SteamKeyValue target = new();
+        Copy(source, target);
+        return target;
+    }
+
+    private static void Copy(KVObject source, SteamKeyValue target)
+    {
+        if (source.IsCollection)
+        {
+            foreach (KeyValuePair<string, KVObject> child in source.Children)
+            {
+                target.Children[child.Key] = Convert(child.Value);
+            }
+
+            return;
+        }
+
+        if (source.IsArray)
+        {
+            for (int i = 0; i < source.Count; i++)
+            {
+                target.Children[i.ToString(CultureInfo.InvariantCulture)] = Convert(source[i]);
+            }
+
+            return;
+        }
+
+        target.Value = source.IsNull
+            ? null
+            : source.ToString(CultureInfo.InvariantCulture);
+    }
+}

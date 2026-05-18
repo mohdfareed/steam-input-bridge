@@ -40,6 +40,7 @@
     <Project Path="refactor/src/Hosting/Hosting.csproj" />
     <Project Path="refactor/src/Runtime/Runtime.csproj" />
     <Project Path="refactor/src/Settings/Settings.csproj" />
+    <Project Path="refactor/src/Steam/Steam.csproj" />
   </Folder>
 
   <Folder Name="/refactor/tests/">

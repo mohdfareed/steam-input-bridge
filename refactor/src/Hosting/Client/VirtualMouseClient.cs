@@ -108,12 +108,12 @@ public sealed class VirtualMouseClient : IAsyncDisposable
 
     /// <summary>Starts a profile-backed client run.</summary>
     public Task<ClientRunLaunch> StartRunAsync(
-        string profileId,
+        StartRunRequest request,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         return _connection.Server
-            .StartRunAsync(profileId)
+            .StartRunAsync(request)
             .WaitAsync(cancellationToken);
     }
 
