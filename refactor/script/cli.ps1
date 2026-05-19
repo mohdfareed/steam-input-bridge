@@ -1,6 +1,6 @@
-Push-Location "$PSScriptRoot\..\apps\Cli"
+Push-Location "$PSScriptRoot\..\app"
 try {
-    dotnet run --project .\Cli.csproj -- @args
+    dotnet run --project .\VirtualMouse.csproj -- @args
 }
 finally {
     Pop-Location

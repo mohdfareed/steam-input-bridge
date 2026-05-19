@@ -37,15 +37,15 @@ hot paths:
 ## TODO
 
 - [ ] HidHide integration for physical controller blocking during xpad emulation.
+- [ ] Rename project and merge refactored project, add docs, and update README.
 - [ ] SDL-VIIPER DS4 support, and feedback capabilities.
   - [ ] touchpad, light-bar RGB, flash timing, trigger rumble
 - [ ] Keyboard shortcuts support.
   - Toggle mouse output, motion output, Steam Input forcing
-- [ ] Rename project and merge refactored project, add docs, and update README.
 - [ ] Implement proper Steam Input controller identification.
   - Current implementation only support a single physical instance per controller model.
   - All Steam Input clients use VID/PID-based identification to pair with physical controllers.
   - Since all controllers of the same model share the same VID/PID, only one instance per model will be paired with all clients.
 - [ ] Teensy output architecture and firmware.
-- [ ] Packaging and deployment as a self-contained executable.
+- [ ] Packaging and deployment with install script and self-update (auto?).
 - [ ] Versioning, machine-readable diagnostics, and richer observability.

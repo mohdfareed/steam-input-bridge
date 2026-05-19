@@ -1,11 +1,6 @@
-using System;
 using System.Diagnostics.CodeAnalysis;
-using System.Drawing;
 using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Threading;
-using System.Windows.Forms;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using VirtualMouse.Hosting;
@@ -166,7 +161,22 @@ internal sealed class AppContext : IDisposable
 
     private void ExportSrmManifest()
     {
-        SrmExportAction.Export(_app.Services);
+        SrmExportResult result = SrmExportAction.Export(_app.Services);
+        if (result.Exported)
+        {
+            _tray.ShowBalloonTip(
+                3000,
+                "Virtual Mouse",
+                $"Exported {result.ProfileCount} SRM profiles.",
+                ToolTipIcon.Info);
+            return;
+        }
+
+        _tray.ShowBalloonTip(
+            5000,
+            "Virtual Mouse",
+            $"Could not export SRM manifest: {result.Error}",
+            ToolTipIcon.Error);
     }
 
     private static string? ResolveLogFilePath(string settingsPath, string? path)

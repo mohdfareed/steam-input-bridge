@@ -59,14 +59,17 @@
 - Profiles choose output explicitly with separate `ControllerOutput` and `MouseOutput` values. Do not reintroduce a vague combined output mode.
 - Resolve raw game profile settings through a simple helper, not a DI service. The resolver owns runtime defaults such as title, working directory, receiver process names, and environment-expanded paths.
 - Put app-owned settings under the `VirtualMouse` root in appsettings. Do not use top-level `Logging` for app settings; it is owned by Microsoft.Extensions.Logging provider configuration.
-- Keep `refactor/apps/Cli/appsettings.json` as a practical starter config: small,
-  usable, and not just empty defaults. Keep `refactor/apps/Cli/appsettings.example.json`
+- Keep `refactor/app/Cli/appsettings.json` as a practical starter config: small,
+  usable, and not just empty defaults. Keep `refactor/app/Cli/appsettings.example.json`
   as the compact complete reference with every supported field assigned a
   meaningful value that demonstrates the setting.
-- Keep executable projects organized like `src`: `refactor/apps/Cli/Cli.csproj`,
-  `refactor/apps/Tray/Tray.csproj`, and `refactor/apps/Shortcut/Shortcut.csproj`.
+- Keep the refactor executable as one `refactor/app/VirtualMouse.csproj`.
+  Mode-specific code stays under `Cli`, `Tray`, and `Shortcut`.
 - File logging is configured from `VirtualMouse:Logging:LogFile` at startup. Do not add reloadable logging until a real workflow needs it.
 - Keep useful smoke checks as repeatable tests under `tests`, and expose them through `script/test.ps1`.
+- `refactor/script/build.ps1` is the commit-validation build for the refactor
+  spike. It should format and build `refactor/Refactor.slnx` so MSBuild sees one
+  project graph instead of repeatedly building shared dependencies.
 - Do not add profiles, routes, input devices, output devices, or session orchestration until the communication foundation is stable.
 - Status commands should use the normal client-to-running-server pipe path, not direct access to an in-process server object.
 - Use `StreamJsonRpc` for Hosting server/client communication. Do not
@@ -152,9 +155,16 @@
   orchestrate it from appsettings and print the result.
 - The default Steam ROM Manager manifest path lives at
   `VirtualMouse:Steam:SrmExportPath`; CLI export arguments may override it.
-- Steam shortcuts should target the no-console `refactor/apps/Shortcut` runner for
-  normal profile launches. Keep the console CLI for diagnostics and explicit
-  commands.
+- Steam shortcuts should target `VirtualMouse.exe shortcut <profile>` for normal
+  profile launches. Keep CLI diagnostics as explicit command modes on the same
+  executable.
+- `refactor/script/deploy.ps1` publishes the single app executable into
+  `refactor/deploy`. The app project owns publish content such as appsettings;
+  `appsettings.json` should copy on build and publish, while
+  `appsettings.example.json` should publish only. The script should only choose
+  publish options, clean the output folder, and publish into it. Disable XML
+  documentation generation for deploy through the publish command rather than
+  deleting or filtering published files.
 - Keep `SteamInputClient`'s public API narrow: `DesktopConfigAppId`,
   `ListGames`, `ResolveAppIdFromEnvironment`, `ForceConfigAsync(uint?)`, and
   `OpenControllerConfigAsync(uint)`. CLI commands expose desktop and clearing

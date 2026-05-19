@@ -1,20 +1,19 @@
-using System;
 using System.Windows;
 
 namespace VirtualMouse.Tray;
 
-internal static class Program
+internal static class TrayMode
 {
     [STAThread]
-    private static void Main()
+    public static int Run()
     {
-        Application app = new()
+        System.Windows.Application app = new()
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown,
         };
 
         using AppContext context = AppContext.Create();
         context.Start();
-        _ = app.Run();
+        return app.Run();
     }
 }

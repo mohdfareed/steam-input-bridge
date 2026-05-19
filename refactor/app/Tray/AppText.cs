@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Globalization;
 using VirtualMouse.Forwarding;
 using VirtualMouse.Hosting;
@@ -8,7 +7,7 @@ namespace VirtualMouse.Tray;
 
 internal static class AppText
 {
-    public const string TrayStarting = "Virtual Mouse Server starting";
+    public static string TrayStarting => "Virtual Mouse Server starting";
 
     public static string Header(string? serverError)
     {

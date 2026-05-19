@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
+using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using VirtualMouse.Hosting;
@@ -152,7 +153,7 @@ internal static class SteamCommands
             string manifestPath = ResolveManifestPath(
                 parseResult.GetValue(path) ?? settings.Current.Steam.SrmExportPath,
                 settingsFile.Path);
-            string shortcutExecutable = Path.Combine(AppContext.BaseDirectory, "Shortcut.exe");
+            string shortcutExecutable = Path.Combine(AppContext.BaseDirectory, "VirtualMouse.exe");
 
             string manifestContent = SteamRomManagerExport.CreateJson(profiles, shortcutExecutable);
             WriteFile(manifestPath, manifestContent);

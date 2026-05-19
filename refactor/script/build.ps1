@@ -1,14 +1,9 @@
-Push-Location "$PSScriptRoot\..\apps\Tray"
-try {
-    dotnet build .\Tray.csproj -- @args
-}
-finally {
-    Pop-Location
-}
+$ErrorActionPreference = "Stop"
 
-Push-Location "$PSScriptRoot\..\apps\Cli"
+Push-Location "$PSScriptRoot\.."
 try {
-    dotnet build .\Cli.csproj -- @args
+    dotnet format ".\Refactor.slnx"
+    dotnet build ".\Refactor.slnx" -- @args
 }
 finally {
     Pop-Location

@@ -1,0 +1,23 @@
+<Solution>
+
+  <Folder Name="/src/">
+    <Project Path="src/Forwarding/Forwarding.csproj" />
+    <Project Path="src/Hosting/Hosting.csproj" />
+    <Project Path="src/Inputs/RawInput/Inputs.RawInput.csproj" />
+    <Project Path="src/Inputs/Sdl/Inputs.Sdl.csproj" />
+    <Project Path="src/Outputs/Teensy/Outputs.Teensy.csproj" />
+    <Project Path="src/Outputs/Viiper/Outputs.Viiper.csproj" />
+    <Project Path="src/Runtime/Runtime.csproj" />
+    <Project Path="src/Settings/Settings.csproj" />
+    <Project Path="src/Steam/Steam.csproj" />
+  </Folder>
+
+  <Folder Name="/app/">
+    <Project Path="app/VirtualMouse.csproj" />
+  </Folder>
+
+  <Folder Name="/tests/">
+    <Project Path="tests/VirtualMouse.Tests.csproj" />
+  </Folder>
+
+</Solution>
