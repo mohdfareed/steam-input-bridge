@@ -9,16 +9,15 @@ namespace VirtualMouse.Steam;
 
 internal sealed class SteamKeyValue
 {
-    internal Dictionary<string, SteamKeyValue> Children { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, SteamKeyValue> Children { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public string? Value { get; set; }
 
-    internal string? Value { get; set; }
-
-    internal SteamKeyValue? GetChild(string key)
+    public SteamKeyValue? GetChild(string key)
     {
         return Children.TryGetValue(key, out SteamKeyValue? child) ? child : null;
     }
 
-    internal string? GetValue(string key)
+    public string? GetValue(string key)
     {
         return GetChild(key)?.Value;
     }
@@ -26,14 +25,14 @@ internal sealed class SteamKeyValue
 
 internal static class SteamKeyValueParser
 {
-    internal static SteamKeyValue ParseText(string text)
+    public static SteamKeyValue ParseText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
         using MemoryStream stream = new(Encoding.UTF8.GetBytes(text));
         return Parse(stream, KVSerializationFormat.KeyValues1Text);
     }
 
-    internal static SteamKeyValue ParseBinary(byte[] data)
+    public static SteamKeyValue ParseBinary(byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);
         using MemoryStream stream = new(data, writable: false);
@@ -45,6 +44,7 @@ internal static class SteamKeyValueParser
         KVSerializer serializer = KVSerializer.Create(format);
         KVDocument document = serializer.Deserialize(stream);
         SteamKeyValue root = new();
+
         if (string.IsNullOrWhiteSpace(document.Name))
         {
             Copy(document.Root, root);
@@ -70,7 +70,6 @@ internal static class SteamKeyValueParser
             {
                 target.Children[child.Key] = Convert(child.Value);
             }
-
             return;
         }
 
@@ -80,7 +79,6 @@ internal static class SteamKeyValueParser
             {
                 target.Children[i.ToString(CultureInfo.InvariantCulture)] = Convert(source[i]);
             }
-
             return;
         }
 

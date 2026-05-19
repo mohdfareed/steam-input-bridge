@@ -3,6 +3,9 @@ using System.Collections.Generic;
 
 namespace VirtualMouse.Runtime;
 
+// MARK: API
+// ============================================================================
+
 /// <summary>Process observed by a client.</summary>
 public sealed record ObservedGameProcess(int ProcessId, string ProcessName);
 
@@ -43,3 +46,26 @@ public sealed record ActiveClientRegistryStatus(
     Guid? ActiveClientId,
     IReadOnlyList<ClientStatus> Clients,
     IReadOnlyList<ReceiverProcessClaimStatus> ReceiverProcesses);
+
+// MARK: Internal
+// ============================================================================
+
+internal sealed class ClientState(
+    Guid clientId,
+    int clientProcessId,
+    string profileId,
+    uint? steamAppId,
+    IReadOnlyList<string> receiverProcesses)
+{
+    public Guid ClientId { get; } = clientId;
+
+    public int ClientProcessId { get; } = clientProcessId;
+
+    public string ProfileId { get; } = profileId;
+
+    public uint? SteamAppId { get; } = steamAppId;
+
+    public IReadOnlyList<string> ReceiverProcesses { get; } = receiverProcesses;
+
+    public Dictionary<int, ObservedGameProcess> Processes { get; } = [];
+}

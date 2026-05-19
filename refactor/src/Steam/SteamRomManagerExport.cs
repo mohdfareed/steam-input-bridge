@@ -24,10 +24,12 @@ public static class SteamRomManagerExport
 
         string startIn = Path.GetDirectoryName(executablePath) ?? string.Empty;
         List<SteamRomManagerEntry> entries = [];
+
         foreach (string profileId in profiles.ListProfileIds())
         {
             GameProfile profile = profiles.GetProfile(profileId) ??
                 throw new InvalidOperationException($"Profile \"{profileId}\" was not found.");
+
             ResolvedGameProfile resolved = ProfileResolver.Resolve(profileId, profile);
             entries.Add(new SteamRomManagerEntry(
                 resolved.Title,
@@ -38,22 +40,6 @@ public static class SteamRomManagerExport
         }
 
         return JsonSerializer.Serialize(entries, JsonOptions);
-    }
-
-    /// <summary>Writes the Steam ROM Manager manifest file.</summary>
-    /// <param name="profiles">Profile lookup.</param>
-    /// <param name="executablePath">CLI executable path used as the shortcut target.</param>
-    /// <param name="manifestPath">Manifest output path.</param>
-    public static void Write(ProfilesService profiles, string executablePath, string manifestPath)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
-        string? directory = Path.GetDirectoryName(manifestPath);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            _ = Directory.CreateDirectory(directory);
-        }
-
-        File.WriteAllText(manifestPath, CreateJson(profiles, executablePath));
     }
 
     private static string QuoteArgument(string value)

@@ -46,6 +46,9 @@ public sealed class GameProfile
     /// <summary>Optional process arguments.</summary>
     public string? Arguments { get; set; }
 
+    /// <summary>Optional Steam app id used when the client cannot read one from Steam.</summary>
+    public uint? SteamAppId { get; set; }
+
     /// <summary>Optional working directory.</summary>
     public string? WorkingDirectory { get; set; }
 

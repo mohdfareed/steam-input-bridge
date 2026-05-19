@@ -6,6 +6,9 @@ namespace VirtualMouse.Settings;
 // MARK: Settings Models
 // ============================================================================
 
+/// <summary>Resolved settings file path.</summary>
+public sealed record SettingsFile(string Path);
+
 /// <summary>Application-owned settings root.</summary>
 public sealed class VirtualMouseSettings
 {
@@ -15,17 +18,27 @@ public sealed class VirtualMouseSettings
     /// <summary>Local hosting settings.</summary>
     public HostingSettings Hosting { get; set; } = new();
 
-    /// <summary>General application settings.</summary>
-    public GeneralSettings General { get; set; } = new();
-
     /// <summary>Application logging settings.</summary>
     public LoggingSettings Logging { get; set; } = new();
 
-    /// <summary>Steam integration settings.</summary>
-    public SteamSettings Steam { get; set; } = new();
+    /// <summary>VIIPER output settings.</summary>
+    public ViiperSettings Viiper { get; set; } = new();
 
     /// <summary>Configured game profiles by profile id.</summary>
     public Dictionary<string, GameProfile> Games { get; } = [];
+}
+
+/// <summary>VIIPER output settings.</summary>
+public sealed class ViiperSettings
+{
+    /// <summary>Configuration section name for VIIPER output settings.</summary>
+    public const string SectionName = VirtualMouseSettings.SectionName + ":Viiper";
+
+    /// <summary>VIIPER server host.</summary>
+    public string Host { get; set; } = "localhost";
+
+    /// <summary>VIIPER server port.</summary>
+    public int Port { get; set; } = 3242;
 }
 
 /// <summary>Local hosting settings.</summary>
@@ -47,19 +60,6 @@ public sealed class HostingSettings
     public int ForegroundPollMilliseconds { get; set; } = 100;
 }
 
-/// <summary>General application settings.</summary>
-public sealed class GeneralSettings
-{
-    /// <summary>Configuration section name for general settings.</summary>
-    public const string SectionName = VirtualMouseSettings.SectionName + ":General";
-
-    /// <summary>VIIPER server host.</summary>
-    public string ViiperHost { get; set; } = "localhost";
-
-    /// <summary>VIIPER server port.</summary>
-    public int ViiperPort { get; set; } = 3242;
-}
-
 /// <summary>Application logging settings.</summary>
 public sealed class LoggingSettings
 {
@@ -69,23 +69,3 @@ public sealed class LoggingSettings
     /// <summary>Optional log file path.</summary>
     public string? LogFile { get; set; }
 }
-
-/// <summary>Steam integration settings.</summary>
-public sealed class SteamSettings
-{
-    /// <summary>Configuration section name for Steam settings.</summary>
-    public const string SectionName = VirtualMouseSettings.SectionName + ":Steam";
-
-    /// <summary>Steam ROM Manager settings.</summary>
-    public SteamRomManagerSettings RomManager { get; set; } = new();
-}
-
-/// <summary>Steam ROM Manager export settings.</summary>
-public sealed class SteamRomManagerSettings
-{
-    /// <summary>Optional manifest path written by Steam ROM Manager export.</summary>
-    public string? ManifestPath { get; set; }
-}
-
-/// <summary>Resolved settings file path.</summary>
-public sealed record SettingsFile(string Path);

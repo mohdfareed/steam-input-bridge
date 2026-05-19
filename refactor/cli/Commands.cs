@@ -18,10 +18,16 @@ internal static class Commands
         {
             Description = "Profile id to launch.",
         };
+        Option<uint?> steamAppId = new("--app-id")
+        {
+            Description = "Steam app id to report for this client run.",
+        };
 
         run.Arguments.Add(profile);
+        run.Options.Add(steamAppId);
         run.SetAction(RunClientAsync);
         client.Subcommands.Add(run);
+
         return client;
     }
 
@@ -29,9 +35,11 @@ internal static class Commands
     {
         Command server = new("server");
         Command run = new("run", "Run the server.");
+
         run.SetAction(RunServerAsync);
         server.Subcommands.Add(run);
         server.Subcommands.Add(ServerStatusCommand.Create());
+
         return server;
     }
 
@@ -40,17 +48,21 @@ internal static class Commands
 
     private static async Task RunClientAsync(ParseResult parseResult, CancellationToken cancellationToken)
     {
-        string profileId = parseResult.GetValue<string>("profile") ??
-            throw new InvalidOperationException("Profile id is required.");
+        string? profileId = parseResult.GetValue<string>("profile");
+        ArgumentException.ThrowIfNullOrEmpty(profileId, nameof(profileId));
+        uint? steamAppId = parseResult.GetValue<uint?>("--app-id");
+
         using IHost app = AppSetup.Create();
         await using GameClient game = app.Services.GetRequiredService<GameClient>();
-        await game.RunAsync(profileId, cancellationToken).ConfigureAwait(false);
+        await game.RunAsync(profileId, steamAppId, cancellationToken);
     }
 
     private static async Task RunServerAsync(ParseResult parseResult, CancellationToken cancellationToken)
     {
         _ = parseResult;
+
         using IHost app = AppSetup.Create();
-        await app.Services.GetRequiredService<VirtualMouseServer>().RunAsync(cancellationToken);
+        await using VirtualMouseServer server = app.Services.GetRequiredService<VirtualMouseServer>();
+        await server.RunAsync(cancellationToken);
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -83,16 +84,27 @@ internal sealed class ActiveClientOrchestration(
             "Active client changed: previous={PreviousClientId} current={CurrentClientId}",
             args.PreviousClientId?.ToString() ?? "none",
             args.CurrentClientId?.ToString() ?? "none");
+
         forwarding?.SetActiveClient(args.CurrentClientId);
         mouseForwarding?.SetActiveClient(args.CurrentClientId);
 
         try
         {
             uint? appId = FindSteamAppId(runtime.GetStatus(), args.CurrentClientId);
+            logger.LogInformation("Clearing forced Steam Input app id.");
             steam.ForceConfigAsync(null).AsTask().GetAwaiter().GetResult();
+
             if (appId.HasValue)
             {
+                logger.LogInformation(
+                    "Forcing Steam Input app id {AppId} for client {ClientId}.",
+                    appId.Value.ToString(CultureInfo.InvariantCulture),
+                    args.CurrentClientId?.ToString() ?? "none");
                 steam.ForceConfigAsync(appId.Value).AsTask().GetAwaiter().GetResult();
+            }
+            else
+            {
+                logger.LogDebug("No Steam Input app id to force.");
             }
         }
         catch (Exception exception) when (

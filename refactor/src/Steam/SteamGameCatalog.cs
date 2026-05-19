@@ -13,6 +13,9 @@ internal sealed class SteamGameCatalog(string steamPath)
         ? throw new ArgumentException("Steam path is required.", nameof(steamPath))
         : Path.GetFullPath(steamPath);
 
+    // MARK: API
+    // ========================================================================
+
     public IReadOnlyList<SteamGame> ListGames(uint? steamUserId = null)
     {
         List<SteamGame> games = [.. ReadSteamApps()];
@@ -21,8 +24,16 @@ internal sealed class SteamGameCatalog(string steamPath)
             games.AddRange(ReadNonSteamShortcuts(steamUserId.Value));
         }
 
-        return Sort(games);
+        return
+        [
+            .. games
+                .OrderBy(game => game.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(game => game.AppId),
+        ];
     }
+
+    // MARK: Helpers
+    // ========================================================================
 
     private IReadOnlyList<string> ReadLibraryFolders()
     {
@@ -39,6 +50,7 @@ internal sealed class SteamGameCatalog(string steamPath)
 
         SteamKeyValue root = SteamKeyValueParser.ParseText(File.ReadAllText(libraryFoldersPath));
         SteamKeyValue libraryFolders = root.GetChild("libraryfolders") ?? root;
+
         foreach (SteamKeyValue child in libraryFolders.Children.Values)
         {
             string? path = child.Value ?? child.GetValue("path");
@@ -80,7 +92,8 @@ internal sealed class SteamGameCatalog(string steamPath)
 
     private List<SteamGame> ReadNonSteamShortcuts(uint steamUserId)
     {
-        string shortcutsPath = GetShortcutsPath(_steamPath, steamUserId);
+        string userId = steamUserId.ToString(CultureInfo.InvariantCulture);
+        string shortcutsPath = Path.Combine(steamPath, "userdata", userId, "config", "shortcuts.vdf");
         if (!File.Exists(shortcutsPath))
         {
             return [];
@@ -88,10 +101,11 @@ internal sealed class SteamGameCatalog(string steamPath)
 
         SteamKeyValue root = SteamKeyValueParser.ParseBinary(File.ReadAllBytes(shortcutsPath));
         SteamKeyValue shortcuts = root.GetChild("shortcuts") ?? root;
+
         List<SteamGame> games = [];
         foreach (SteamKeyValue shortcut in shortcuts.Children.Values)
         {
-            SteamGame? game = CreateNonSteamShortcut(shortcut);
+            SteamGame? game = CreateNonSteamShortcutGame(shortcut);
             if (game is not null)
             {
                 games.Add(game);
@@ -99,26 +113,6 @@ internal sealed class SteamGameCatalog(string steamPath)
         }
 
         return games;
-    }
-
-    private static IReadOnlyList<SteamGame> Sort(IEnumerable<SteamGame> games)
-    {
-        return
-        [
-            .. games
-                .OrderBy(game => game.Name, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(game => game.AppId),
-        ];
-    }
-
-    private static string GetShortcutsPath(string steamPath, uint steamUserId)
-    {
-        return Path.Combine(
-            steamPath,
-            "userdata",
-            steamUserId.ToString(CultureInfo.InvariantCulture),
-            "config",
-            "shortcuts.vdf");
     }
 
     private static SteamGame? ReadSteamAppManifest(string libraryPath, string manifestPath)
@@ -145,21 +139,26 @@ internal sealed class SteamGameCatalog(string steamPath)
         };
     }
 
-    private static SteamGame? CreateNonSteamShortcut(SteamKeyValue shortcut)
+    private static SteamGame? CreateNonSteamShortcutGame(SteamKeyValue shortcut)
     {
-        if (!TryGetUInt32(shortcut.GetValue("appid"), out uint appId))
+        string? _id = shortcut.GetValue("appid");
+        string? _dir = shortcut.GetValue("StartDir");
+        string? _exe = shortcut.GetValue("Exe");
+        string? name = shortcut.GetValue("AppName");
+
+        if (!TryGetUInt32(_id, out uint appId))
         {
             return null;
         }
 
-        string? name = shortcut.GetValue("AppName");
         if (string.IsNullOrWhiteSpace(name))
         {
             return null;
         }
 
-        string? startDirectory = EmptyToNull(shortcut.GetValue("StartDir"));
-        string? executablePath = EmptyToNull(shortcut.GetValue("Exe"));
+        string? startDirectory = string.IsNullOrWhiteSpace(_dir) ? null : _dir;
+        string? executablePath = string.IsNullOrWhiteSpace(_exe) ? null : _exe;
+
         return new SteamGame
         {
             AppId = appId,
@@ -167,11 +166,6 @@ internal sealed class SteamGameCatalog(string steamPath)
             Kind = SteamGameKind.NonSteamShortcut,
             LocalPath = startDirectory ?? executablePath,
         };
-    }
-
-    private static string? EmptyToNull(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static bool TryGetUInt32(string? value, out uint result)
@@ -192,29 +186,32 @@ internal sealed class SteamGameCatalog(string steamPath)
     }
 }
 
-internal static class SteamInstallLocator
+internal static class SteamLocator
 {
-    internal static string? FindSteamPath()
+
+    // MARK: API
+    // ========================================================================
+
+    public static string? FindSteamPath()
     {
         string? steamPath = FirstExistingDirectory(
             Environment.GetEnvironmentVariable("SteamPath"),
             Environment.GetEnvironmentVariable("SteamDir"),
             ReadRegistryString(@"Software\Valve\Steam", "SteamPath"),
             ReadRegistryString(@"Software\Valve\Steam", "InstallPath"),
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                "Steam"),
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                "Steam"));
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Steam"));
 
         return steamPath is null ? null : Path.GetFullPath(steamPath);
     }
 
-    internal static uint? FindActiveUserId()
+    public static uint? FindActiveUserId()
     {
         return TryParseUInt32(ReadRegistryString(@"Software\Valve\Steam\ActiveProcess", "ActiveUser"));
     }
+
+    // MARK: Helpers
+    // ========================================================================
 
     private static string? FirstExistingDirectory(params string?[] paths)
     {

@@ -2,8 +2,6 @@ using System.CommandLine;
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
-using VirtualMouse.Settings;
 using VirtualMouse.Settings.Profiles;
 using VirtualMouse.Steam;
 
@@ -22,15 +20,8 @@ internal static class SteamCommands
         return steam;
     }
 
-    internal static string DisplayKind(SteamGameKind kind)
-    {
-        return kind switch
-        {
-            SteamGameKind.SteamApp => "steam",
-            SteamGameKind.NonSteamShortcut => "shortcut",
-            _ => kind.ToString(),
-        };
-    }
+    // MARK: Commands
+    // ========================================================================
 
     private static Command CreateListCommand()
     {
@@ -43,14 +34,18 @@ internal static class SteamCommands
         {
             Description = "Steam userdata id for non-Steam shortcuts.",
         };
+
         command.Options.Add(steamPath);
         command.Options.Add(userId);
 
         command.SetAction(async (parseResult, _) =>
         {
+            using IHost app = AppSetup.Create();
+
             IReadOnlyList<SteamGame> games = SteamInputClient.ListGames(
                 parseResult.GetValue(steamPath),
                 parseResult.GetValue(userId));
+
             await PrintGamesAsync(games).ConfigureAwait(false);
         });
 
@@ -61,8 +56,8 @@ internal static class SteamCommands
     {
         Command command = new("force", "Force Steam Input to use an app or desktop configuration.");
         Argument<string> appId = CreateAppIdArgument("app-id", allowDesktop: true);
-        command.Arguments.Add(appId);
 
+        command.Arguments.Add(appId);
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             uint parsedAppId = ParseAppId(parseResult.GetValue(appId));
@@ -78,6 +73,7 @@ internal static class SteamCommands
     private static Command CreateClearCommand()
     {
         Command command = new("clear", "Clear Steam Input app id forcing.");
+
         command.SetAction(async (_, cancellationToken) =>
         {
             SteamInputClient client = new();
@@ -92,8 +88,8 @@ internal static class SteamCommands
     {
         Command command = new("open-config", "Open Steam's controller configurator.");
         Argument<string> appId = CreateAppIdArgument("app-id", allowDesktop: true);
-        command.Arguments.Add(appId);
 
+        command.Arguments.Add(appId);
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             uint parsedAppId = ParseAppId(parseResult.GetValue(appId));
@@ -108,33 +104,46 @@ internal static class SteamCommands
 
     private static Command CreateSrmCommand()
     {
-        Command command = new("srm", "Export Steam ROM Manager manifests.");
-        Command export = new("export", "Export configured profiles.");
-        export.SetAction(async (_, _) =>
+        Command command = new("export", "Export configured profiles to SRM manifest.");
+        Argument<string> path = new("path")
+        {
+            DefaultValueFactory = (_) => Path.Combine(AppContext.BaseDirectory, "srm-manifest.json"),
+            Description = "Path to the SRM manifest file."
+        };
+
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             using IHost app = AppSetup.Create();
             ProfilesService profiles = app.Services.GetRequiredService<ProfilesService>();
-            SteamSettings steam = app.Services.GetRequiredService<IOptions<SteamSettings>>().Value;
-            string manifestPath = ResolveManifestPath(steam.RomManager.ManifestPath);
+
+            string manifestPath = ResolveManifestPath(parseResult.GetValue(path) ??
+                throw new ArgumentNullException("Manifest path is required."));
             string executablePath = Environment.ProcessPath ??
                 throw new InvalidOperationException("Could not resolve executable path.");
 
-            SteamRomManagerExport.Write(profiles, executablePath, manifestPath);
-            await Console.Out.WriteLineAsync($"srm manifest={manifestPath} profiles={profiles.ListProfileIds().Count}")
+            string manifestContent = SteamRomManagerExport.CreateJson(profiles, executablePath);
+            WriteFile(manifestPath, manifestContent);
+
+            await Console.Out.WriteLineAsync($"manifest={manifestPath} profiles={profiles.ListProfileIds().Count}")
                 .ConfigureAwait(false);
         });
-        command.Subcommands.Add(export);
+
         return command;
     }
+
+    // MARK: Commands
+    // ========================================================================
 
     private static Argument<string> CreateAppIdArgument(string name, bool allowDesktop)
     {
         Argument<string> argument = new(name)
         {
+            DefaultValueFactory = (_) => allowDesktop ? "desktop" : string.Empty,
             Description = allowDesktop
                 ? "Steam app id, non-Steam shortcut app id, or desktop."
                 : "Steam app id or non-Steam shortcut app id.",
         };
+
         argument.Validators.Add(result =>
         {
             string? value = result.GetValue(argument);
@@ -149,6 +158,7 @@ internal static class SteamCommands
                 result.AddError($"{name} must be a positive app id or desktop.");
             }
         });
+
         return argument;
     }
 
@@ -159,14 +169,25 @@ internal static class SteamCommands
             : uint.Parse(value ?? string.Empty, NumberStyles.Integer, CultureInfo.InvariantCulture);
     }
 
-    private static string ResolveManifestPath(string? configuredPath)
+    private static string ResolveManifestPath(string path)
     {
-        string path = string.IsNullOrWhiteSpace(configuredPath)
-            ? Path.Combine(AppContext.BaseDirectory, "srm-manifest.json")
-            : Environment.ExpandEnvironmentVariables(configuredPath);
-        return Path.IsPathFullyQualified(path)
-            ? path
-            : Path.Combine(AppContext.BaseDirectory, path);
+        string filePath = Environment.ExpandEnvironmentVariables(path);
+        return Path.IsPathFullyQualified(filePath)
+            ? filePath
+            : Path.Combine(AppContext.BaseDirectory, filePath);
+    }
+
+    public static void WriteFile(string manifestPath, string content)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
+        string? directory = Path.GetDirectoryName(manifestPath);
+
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            _ = Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(manifestPath, content);
     }
 
     private static async Task PrintGamesAsync(IReadOnlyList<SteamGame> games)
@@ -177,10 +198,23 @@ internal static class SteamCommands
             return;
         }
 
-        int appIdWidth = Math.Max(5, games.Max(game => game.AppId.ToString(CultureInfo.InvariantCulture).Length));
-        await Console.Out.WriteLineAsync($"{Pad("appId", appIdWidth)}  {"kind",-8}  name  path")
-            .ConfigureAwait(false);
+        static string DisplayKind(SteamGameKind kind)
+        {
+            return kind switch
+            {
+                SteamGameKind.SteamApp => "steam",
+                SteamGameKind.NonSteamShortcut => "shortcut",
+                _ => kind.ToString(),
+            };
+        }
 
+        static string Pad(string value, int width)
+        {
+            return value.PadLeft(width);
+        }
+
+        int appIdWidth = Math.Max(5, games.Max(game => game.AppId.ToString(CultureInfo.InvariantCulture).Length));
+        await Console.Out.WriteLineAsync($"{Pad("appId", appIdWidth)}  {"kind",-8}  name  path").ConfigureAwait(false);
         foreach (SteamGame game in games)
         {
             await Console.Out.WriteLineAsync(
@@ -188,10 +222,5 @@ internal static class SteamCommands
                     $"{DisplayKind(game.Kind),-8}  {game.Name}  {game.LocalPath ?? string.Empty}")
                 .ConfigureAwait(false);
         }
-    }
-
-    private static string Pad(string value, int width)
-    {
-        return value.PadLeft(width);
     }
 }

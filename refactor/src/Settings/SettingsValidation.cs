@@ -12,7 +12,7 @@ internal static class SettingsValidation
 
         List<string> failures = [];
         ValidateHosting(settings.Hosting, failures);
-        ValidateGeneral(settings.General, failures);
+        ValidateViiper(settings.Viiper, failures);
         ValidateProfiles(settings.Games, failures);
 
         if (failures.Count > 0)
@@ -44,16 +44,16 @@ internal static class SettingsValidation
         }
     }
 
-    private static void ValidateGeneral(GeneralSettings settings, List<string> failures)
+    private static void ValidateViiper(ViiperSettings settings, List<string> failures)
     {
-        if (string.IsNullOrWhiteSpace(settings.ViiperHost))
+        if (string.IsNullOrWhiteSpace(settings.Host))
         {
-            failures.Add("general:viiperHost is required.");
+            failures.Add("viiper:host is required.");
         }
 
-        if (settings.ViiperPort is < 1 or > 65_535)
+        if (settings.Port is < 1 or > 65_535)
         {
-            failures.Add("general:viiperPort must be between 1 and 65535.");
+            failures.Add("viiper:port must be between 1 and 65535.");
         }
     }
 

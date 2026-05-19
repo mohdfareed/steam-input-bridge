@@ -99,6 +99,13 @@
   wants that output kind. Active-client state gates report forwarding, not
   virtual-device lifetime. Dispose the output only when no attached clients need
   it or output is explicitly disabled.
+- SDL gamepad indices are transport-local and can change between discovery
+  calls. Use them only for the current client controller pipe snapshot; clear
+  stale client controller endpoints whenever the client re-registers
+  controllers.
+- Client-launched game processes should be attached to a Windows kill-on-close
+  job when possible. Keep explicit receiver cleanup too, because launchers may
+  not keep every receiver in the process tree.
 - Keep per-report controller traffic on the `Forwarding` fixed binary pipe
   model. Do not send hot-path controller reports through JSON-RPC.
 - `Hosting` owns controller pipe lifetime for connected clients, but pipe frames

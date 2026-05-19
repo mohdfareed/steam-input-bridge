@@ -5,30 +5,10 @@ using System.Threading;
 
 namespace VirtualMouse.Runtime;
 
-internal sealed class ClientState(
-    Guid clientId,
-    int clientProcessId,
-    string profileId,
-    uint? steamAppId,
-    IReadOnlyList<string> receiverProcesses)
-{
-    public Guid ClientId { get; } = clientId;
-
-    public int ClientProcessId { get; } = clientProcessId;
-
-    public string ProfileId { get; } = profileId;
-
-    public uint? SteamAppId { get; } = steamAppId;
-
-    public IReadOnlyList<string> ReceiverProcesses { get; } = receiverProcesses;
-
-    public Dictionary<int, ObservedGameProcess> Processes { get; } = [];
-}
-
 /// <summary>Tracks receiver-process ownership and the active client.</summary>
 public sealed class ActiveClientRegistry
 {
-    private readonly Lock _gate = new();
+    private readonly Lock _lock = new();
     private readonly Dictionary<Guid, ClientState> _clients = [];
     private readonly Dictionary<int, List<Guid>> _claims = [];
     private int _foregroundProcessId;
@@ -52,47 +32,18 @@ public sealed class ActiveClientRegistry
         ArgumentNullException.ThrowIfNull(receiverProcesses);
 
         ClientState client = new(clientId, clientProcessId, profileId, steamAppId, receiverProcesses);
-        lock (_gate)
+        lock (_lock)
         {
             _clients[clientId] = client;
         }
-    }
-
-    /// <summary>Replaces the receiver process snapshot for a client.</summary>
-    public void UpdateClientProcesses(
-        Guid clientId,
-        IReadOnlyList<ObservedGameProcess> processes)
-    {
-        ArgumentNullException.ThrowIfNull(processes);
-
-        ActiveClientChangedEventArgs? changed;
-        lock (_gate)
-        {
-            ClientState client = GetClient(clientId);
-            Dictionary<int, ObservedGameProcess> next = FilterProcesses(client, processes);
-            foreach (int removedProcessId in client.Processes.Keys.Except(next.Keys).ToArray())
-            {
-                _ = client.Processes.Remove(removedProcessId);
-                RemoveObserver(clientId, removedProcessId);
-            }
-
-            foreach (ObservedGameProcess process in next.Values)
-            {
-                client.Processes[process.ProcessId] = process;
-                Observe(clientId, process.ProcessId);
-            }
-
-            changed = RefreshActiveClient();
-        }
-
-        RaiseChanged(changed);
     }
 
     /// <summary>Removes a connected client and releases its receiver-process claims.</summary>
     public void RemoveClient(Guid clientId)
     {
         ActiveClientChangedEventArgs? changed;
-        lock (_gate)
+
+        lock (_lock)
         {
             if (!_clients.Remove(clientId, out ClientState? client))
             {
@@ -110,11 +61,40 @@ public sealed class ActiveClientRegistry
         RaiseChanged(changed);
     }
 
+    /// <summary>Replaces the receiver process snapshot for a client.</summary>
+    public void UpdateClient(Guid clientId, IReadOnlyList<ObservedGameProcess> processes)
+    {
+        ArgumentNullException.ThrowIfNull(processes);
+        ActiveClientChangedEventArgs? changed;
+
+        lock (_lock)
+        {
+            ClientState client = GetClient(clientId);
+            Dictionary<int, ObservedGameProcess> added = FilterProcesses(client, processes);
+
+            foreach (int removedProcessId in client.Processes.Keys.Except(added.Keys).ToArray())
+            {
+                _ = client.Processes.Remove(removedProcessId);
+                RemoveObserver(clientId, removedProcessId);
+            }
+
+            foreach (ObservedGameProcess process in added.Values)
+            {
+                client.Processes[process.ProcessId] = process;
+                AddObserver(clientId, process.ProcessId);
+            }
+
+            changed = RefreshActiveClient();
+        }
+
+        RaiseChanged(changed);
+    }
+
     /// <summary>Refreshes active-client state from the foreground process id.</summary>
-    public void RefreshActiveClient(int foregroundProcessId)
+    public void RefreshClients(int foregroundProcessId)
     {
         ActiveClientChangedEventArgs? changed;
-        lock (_gate)
+        lock (_lock)
         {
             _foregroundProcessId = foregroundProcessId;
             changed = RefreshActiveClient();
@@ -124,19 +104,19 @@ public sealed class ActiveClientRegistry
     }
 
     /// <summary>Gets receiver processes currently owned by one client.</summary>
-    public IReadOnlyList<ObservedGameProcess> GetOwnedProcesses(Guid clientId)
+    public IReadOnlyList<ObservedGameProcess> GetClientProcesses(Guid clientId)
     {
-        lock (_gate)
+        lock (_lock)
         {
             ClientState client = GetClient(clientId);
-            return [.. client.Processes.Values.Where(process => Owns(clientId, process.ProcessId))];
+            return [.. client.Processes.Values.Where(process => OwnsProcess(clientId, process.ProcessId))];
         }
     }
 
     /// <summary>Gets current runtime status.</summary>
     public ActiveClientRegistryStatus GetStatus()
     {
-        lock (_gate)
+        lock (_lock)
         {
             return new ActiveClientRegistryStatus(
                 _foregroundProcessId,
@@ -149,7 +129,14 @@ public sealed class ActiveClientRegistry
     // MARK: Helpers
     // ========================================================================
 
-    private void Observe(Guid clientId, int processId)
+    private ClientState GetClient(Guid clientId)
+    {
+        return _clients.TryGetValue(clientId, out ClientState? client)
+            ? client
+            : throw new InvalidOperationException($"Client {clientId} is not active.");
+    }
+
+    private void AddObserver(Guid clientId, int processId)
     {
         if (!_claims.TryGetValue(processId, out List<Guid>? observers))
         {
@@ -194,9 +181,9 @@ public sealed class ActiveClientRegistry
     private ClientStatus ToStatus(ClientState client)
     {
         ObservedGameProcess[] owned =
-            [.. client.Processes.Values.Where(process => Owns(client.ClientId, process.ProcessId))];
+            [.. client.Processes.Values.Where(process => OwnsProcess(client.ClientId, process.ProcessId))];
         ObservedGameProcess[] blocked =
-            [.. client.Processes.Values.Where(process => !Owns(client.ClientId, process.ProcessId))];
+            [.. client.Processes.Values.Where(process => !OwnsProcess(client.ClientId, process.ProcessId))];
 
         return new ClientStatus(
             client.ClientId,
@@ -225,18 +212,11 @@ public sealed class ActiveClientRegistry
             [.. claim.Value]);
     }
 
-    private bool Owns(Guid clientId, int processId)
+    private bool OwnsProcess(Guid clientId, int processId)
     {
         return _claims.TryGetValue(processId, out List<Guid>? observers) &&
             observers.Count > 0 &&
             observers[0] == clientId;
-    }
-
-    private ClientState GetClient(Guid clientId)
-    {
-        return _clients.TryGetValue(clientId, out ClientState? client)
-            ? client
-            : throw new InvalidOperationException($"Client {clientId} is not active.");
     }
 
     private static Dictionary<int, ObservedGameProcess> FilterProcesses(

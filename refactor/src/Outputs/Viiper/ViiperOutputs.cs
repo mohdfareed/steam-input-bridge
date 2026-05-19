@@ -19,6 +19,14 @@ public static class ViiperLoopbackDevices
         return vendorId == ViiperXbox360Output.OwnedVendorId &&
             productId == ViiperXbox360Output.OwnedProductId;
     }
+
+    /// <summary>Returns whether a Raw Input device name is the owned VIIPER mouse.</summary>
+    public static bool IsMouseDeviceName(string? deviceName)
+    {
+        return !string.IsNullOrWhiteSpace(deviceName) &&
+            deviceName.Contains("VID_6969", StringComparison.OrdinalIgnoreCase) &&
+            deviceName.Contains("PID_5050", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>Creates VIIPER outputs for forwarding routes.</summary>
@@ -193,6 +201,12 @@ public sealed class ViiperMouseOutput : IMouseOutput, IDisposable
 
     /// <inheritdoc />
     public bool IsConnected => _device.IsConnected;
+
+    /// <inheritdoc />
+    public bool FilterInput(in MouseInput input)
+    {
+        return ViiperLoopbackDevices.IsMouseDeviceName(input.DeviceName);
+    }
 
     /// <summary>Creates and connects a VIIPER mouse device.</summary>
     public static Task<ViiperMouseOutput> ConnectAsync(

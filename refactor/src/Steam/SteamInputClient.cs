@@ -40,7 +40,6 @@ public sealed record SteamGame
 // MARK: API
 // ============================================================================
 
-
 /// <summary>Reads local Steam state and controls Steam Input through Steam URLs.</summary>
 /// <param name="openUrl">Steam URL opener. Defaults to the OS URL handler.</param>
 public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? openUrl = null)
@@ -56,7 +55,7 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
     public static IReadOnlyList<SteamGame> ListGames(string? steamPath = null, uint? steamUserId = null)
     {
         string resolvedPath = ResolveSteamPath(steamPath);
-        uint? resolvedUserId = steamUserId ?? SteamInstallLocator.FindActiveUserId();
+        uint? resolvedUserId = steamUserId ?? SteamLocator.FindActiveUserId();
         return new SteamGameCatalog(resolvedPath).ListGames(resolvedUserId);
     }
 
@@ -79,7 +78,7 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
             uint value => value,
         };
 
-        return OpenAsync(CreateForceInputAppIdUri(forcedAppId), cancellationToken);
+        return OpenAsync(CreateForceInputUri(forcedAppId), cancellationToken);
     }
 
     /// <summary>Opens Steam's controller configurator for an app.</summary>
@@ -88,8 +87,11 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
     public ValueTask OpenControllerConfigAsync(uint appId, CancellationToken cancellationToken = default)
     {
         ValidateAppId(appId);
-        return OpenAsync(CreateControllerConfigUri(appId), cancellationToken);
+        return OpenAsync(CreateOpenConfigUri(appId), cancellationToken);
     }
+
+    // MARK: Helpers
+    // ========================================================================
 
     private ValueTask OpenAsync(Uri url, CancellationToken cancellationToken)
     {
@@ -97,12 +99,12 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
         return _openUrl(url, cancellationToken);
     }
 
-    private static Uri CreateForceInputAppIdUri(uint appId)
+    private static Uri CreateForceInputUri(uint appId)
     {
         return new Uri($"steam://forceinputappid/{appId.ToString(CultureInfo.InvariantCulture)}");
     }
 
-    private static Uri CreateControllerConfigUri(uint appId)
+    private static Uri CreateOpenConfigUri(uint appId)
     {
         return new Uri($"steam://controllerconfig/{appId.ToString(CultureInfo.InvariantCulture)}");
     }
@@ -125,7 +127,7 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
     private static string ResolveSteamPath(string? steamPath)
     {
         string? resolvedPath = string.IsNullOrWhiteSpace(steamPath)
-            ? SteamInstallLocator.FindSteamPath()
+            ? SteamLocator.FindSteamPath()
             : Path.GetFullPath(steamPath);
 
         return string.IsNullOrWhiteSpace(resolvedPath) || !Directory.Exists(resolvedPath)
