@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -8,24 +9,29 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using StreamJsonRpc;
 using VirtualMouse.Runtime;
+using VirtualMouse.Settings.Profiles;
 using VirtualMouse.Steam;
 
 namespace VirtualMouse.Hosting;
 
 /// <summary>Runs one client-managed game and keeps server state restored.</summary>
 public sealed class GameClient(
-    VirtualMouseClient client,
+    ClientService client,
+    ProfilesService profiles,
     ILogger<GameClient> logger) : IAsyncDisposable
 {
     private static readonly TimeSpan ReceiverStartupGrace = TimeSpan.FromSeconds(60);
 
     private bool _disposed;
 
-    // MARK: Implementation
+    // MARK: Publics
     // ========================================================================
 
     /// <summary>Launches a profile and reports receiver processes until it exits.</summary>
-    public async Task RunAsync(string profileId, CancellationToken cancellationToken)
+    public async Task RunAsync(
+        string profileId,
+        uint? steamAppId,
+        CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
@@ -33,12 +39,16 @@ public sealed class GameClient(
         client.ConnectionChanged += OnConnectionChanged;
         try
         {
-            StartRunRequest request = new(profileId, SteamInputClient.ResolveAppIdFromEnvironment());
+            StartRunRequest request = new(profileId, ResolveSteamAppId(profileId, steamAppId));
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
             ClientRunLaunch launch = await client
                 .StartRunAsync(request, cancellationToken)
                 .ConfigureAwait(false);
-            using Process process = GameProcessHost.Launch(launch);
+            using Process process = GameProcessHost.Launch(
+                launch.Executable,
+                launch.Arguments,
+                launch.WorkingDirectory);
+            using IDisposable? processOwner = TryOwnProcessTree(process);
             ClientRunState state = new(launch, process, client.ClientId, request);
             AppDomain.CurrentDomain.ProcessExit += ProcessExit;
             try
@@ -83,6 +93,12 @@ public sealed class GameClient(
         }
     }
 
+    /// <summary>Launches a profile and reads Steam app id from settings or Steam.</summary>
+    public Task RunAsync(string profileId, CancellationToken cancellationToken)
+    {
+        return RunAsync(profileId, steamAppId: null, cancellationToken);
+    }
+
     /// <summary>Disposes the underlying client.</summary>
     public async ValueTask DisposeAsync()
     {
@@ -95,7 +111,7 @@ public sealed class GameClient(
         await client.DisposeAsync().ConfigureAwait(false);
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private async Task WatchReceiversAsync(
@@ -145,10 +161,7 @@ public sealed class GameClient(
                     .ConfigureAwait(false);
                 state.RegisteredClientId = client.ClientId;
                 await StartControllerStreamsAsync(state, cancellationToken).ConfigureAwait(false);
-                logger.LogInformation(
-                    "Restored server registration for {ProfileId} client={ClientId}",
-                    state.Launch.ProfileId,
-                    client.ClientId);
+                HostingLog.RestoredServerRegistration(logger, state.Launch.ProfileId, client.ClientId);
             }
 
             await client.UpdateRunProcessesAsync(observed, cancellationToken).ConfigureAwait(false);
@@ -183,10 +196,7 @@ public sealed class GameClient(
 
     private void OnConnectionChanged(object? sender, ClientConnectionChangedEventArgs update)
     {
-        logger.LogInformation(
-            "Connection changed: {State} client={ClientId}",
-            update.State,
-            update.ClientId?.ToString() ?? "none");
+        HostingLog.ConnectionChanged(logger, update.State, update.ClientId);
     }
 
     private async Task StartControllerStreamsAsync(
@@ -209,18 +219,18 @@ public sealed class GameClient(
 
     private void LogStarted(ClientRunState state)
     {
-        logger.LogInformation(
-            "Started {ProfileId} rootPid={ProcessId}",
-            state.Launch.ProfileId,
-            state.Process.Id);
+        HostingLog.Started(logger, state.Launch.ProfileId, state.Process.Id);
     }
 
     private void LogReceiverWatch(ClientRunState state)
     {
-        logger.LogInformation(
-            "Watching receiver processes for {ProfileId}: {Receivers}",
-            state.Launch.ProfileId,
-            string.Join(", ", state.Launch.ReceiverProcesses));
+        if (!logger.IsEnabled(LogLevel.Information))
+        {
+            return;
+        }
+
+        string receivers = string.Join(", ", state.Launch.ReceiverProcesses);
+        HostingLog.WatchingReceiverProcesses(logger, state.Launch.ProfileId, receivers);
     }
 
     private void LogReceiverChange(
@@ -236,8 +246,8 @@ public sealed class GameClient(
         }
 
         state.LastObservedSignature = signature;
-        logger.LogInformation(
-            "Receiver processes for {ProfileId}: count={Count} {Processes}",
+        HostingLog.ReceiverProcesses(
+            logger,
             state.Launch.ProfileId,
             observed.Count,
             observed.Count == 0 ? "none" : FormatProcesses(observed));
@@ -258,8 +268,8 @@ public sealed class GameClient(
         if (state.RootExitedAt is null)
         {
             state.RootExitedAt = now;
-            logger.LogInformation(
-                "Root process exited before receiver detection for {ProfileId}; waiting {Seconds}s for receivers.",
+            HostingLog.RootProcessExitedBeforeReceiver(
+                logger,
                 state.Launch.ProfileId,
                 ReceiverStartupGrace.TotalSeconds);
             return false;
@@ -268,9 +278,7 @@ public sealed class GameClient(
         bool expired = now - state.RootExitedAt >= ReceiverStartupGrace;
         if (expired)
         {
-            logger.LogInformation(
-                "No receiver processes appeared for {ProfileId}; ending client run.",
-                state.Launch.ProfileId);
+            HostingLog.NoReceiverProcessesAppeared(logger, state.Launch.ProfileId);
         }
 
         return expired;
@@ -291,7 +299,41 @@ public sealed class GameClient(
         int killed = state.OwnedProcesses.Count == 0
             ? GameProcessHost.KillRootAndReceivers(state.Process, state.Launch.ReceiverProcesses)
             : GameProcessHost.KillRootAndReceivers(state.Process, state.OwnedProcesses);
-        logger.LogInformation("{Reason} stopped game processes: {Count}", reason, killed);
+        HostingLog.StoppedGameProcesses(logger, reason, killed);
+    }
+
+    private IDisposable? TryOwnProcessTree(Process process)
+    {
+        try
+        {
+            return GameProcessHost.OwnProcessTree(process);
+        }
+        catch (Exception exception) when (
+            exception is Win32Exception or InvalidOperationException or NotSupportedException)
+        {
+            HostingLog.CouldNotAttachProcessJob(logger, exception.Message);
+            return null;
+        }
+    }
+
+    private uint? ResolveSteamAppId(string profileId, uint? overrideAppId)
+    {
+        if (overrideAppId.HasValue)
+        {
+            return ValidateSteamAppId(overrideAppId.Value);
+        }
+
+        GameProfile? profile = profiles.GetProfile(profileId);
+        return profile?.SteamAppId is uint profileAppId
+            ? ValidateSteamAppId(profileAppId)
+            : SteamInputClient.ResolveAppIdFromEnvironment();
+    }
+
+    private static uint ValidateSteamAppId(uint appId)
+    {
+        return appId == 0
+            ? throw new ArgumentOutOfRangeException(nameof(appId), "Steam app id must be greater than zero.")
+            : appId;
     }
 
     private void ThrowIfDisposed()

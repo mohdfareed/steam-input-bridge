@@ -31,34 +31,36 @@ internal static class ServerStatusCommand
         bool json = parseResult.GetValue<bool>("--json");
 
         using IHost app = AppSetup.Create();
-        await using VirtualMouseClient client = app.Services.GetRequiredService<VirtualMouseClient>();
-
-        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(2));
-
-        try
+        ClientService client = app.Services.GetRequiredService<ClientService>();
+        await using (client.ConfigureAwait(false))
         {
-            await client.ConnectAsync(timeout.Token);
-            ServerStatus status = await client.GetStatusAsync(timeout.Token);
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(2));
 
-            if (json)
+            try
             {
-                await PrintStatusReportJson(status).ConfigureAwait(false);
+                await client.ConnectAsync(timeout.Token).ConfigureAwait(false);
+                ServerStatus status = await client.GetStatusAsync(timeout.Token).ConfigureAwait(false);
+
+                if (json)
+                {
+                    await PrintStatusReportJson(status).ConfigureAwait(false);
+                }
+                else
+                {
+                    await PrintStatusReportText(status).ConfigureAwait(false);
+                }
             }
-            else
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                await PrintStatusReportText(status).ConfigureAwait(false);
+                await Console.Out.WriteLineAsync("server running=false").ConfigureAwait(false);
             }
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            await Console.Out.WriteLineAsync("server running=false").ConfigureAwait(false);
-        }
-        catch (IOException exception)
-        {
-            await Console.Error.WriteLineAsync($"server status: unavailable ({exception.Message})")
-                .ConfigureAwait(false);
-            Environment.ExitCode = 1;
+            catch (IOException exception)
+            {
+                await Console.Error.WriteLineAsync($"server status: unavailable ({exception.Message})")
+                    .ConfigureAwait(false);
+                Environment.ExitCode = 1;
+            }
         }
     }
 

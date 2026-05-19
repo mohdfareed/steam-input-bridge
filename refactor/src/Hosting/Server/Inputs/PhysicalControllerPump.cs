@@ -13,7 +13,7 @@ internal static class SdlControllerFilters
 {
     public static bool IsForwardable(SdlControllerInfo controller)
     {
-        return !ViiperLoopbackDevices.IsController(controller.VendorId, controller.ProductId);
+        return !ViiperDevices.IsController(controller.VendorId, controller.ProductId);
     }
 }
 
@@ -101,7 +101,7 @@ internal sealed class PhysicalControllerPump(
                     continue;
                 }
 
-                logger.LogInformation("Physical SDL controller pump started: controllers={Count}", sources.Count);
+                HostingLog.PhysicalControllerPumpStarted(logger, sources.Count);
                 SdlGamepadEventLoop.Run(sources, UpdatePhysicalController, cancellationToken);
             }
             catch (Exception exception) when (
@@ -113,7 +113,7 @@ internal sealed class PhysicalControllerPump(
                     _lastError = exception.Message;
                 }
 
-                logger.LogInformation("Physical SDL controller pump restarting: {Message}", exception.Message);
+                HostingLog.PhysicalControllerPumpRestarting(logger, exception.Message);
                 await Task.Delay(RetryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -129,7 +129,7 @@ internal sealed class PhysicalControllerPump(
     private void UpdatePhysicalController(SdlGamepadSource source, ControllerState state)
     {
         broker.UpdatePhysicalController(
-            new ControllerId(SdlControllerCatalog.GetPhysicalControllerId(source.Controller)),
+            new ControllerId(SdlControllerCatalog.GetPhysicalControllerId(source.Controller), source.Controller.Name),
             state,
             source.Features,
             source);

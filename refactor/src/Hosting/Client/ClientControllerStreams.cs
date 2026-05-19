@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using VirtualMouse.Forwarding;
@@ -15,16 +16,23 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
 
     private readonly CancellationTokenSource _stop = new();
-    private readonly Lock _writeGate = new();
     private readonly Lock _sourcesGate = new();
+    private readonly Channel<ControllerInputFrame> _inputWrites = Channel.CreateBounded<ControllerInputFrame>(
+        new BoundedChannelOptions(capacity: 128)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false,
+        });
     private IReadOnlyList<SdlGamepadSource> _sources = [];
     private NamedPipeClientStream? _pipe;
     private ControllerPipeWriter? _writer;
     private Task? _inputTask;
+    private Task? _writeTask;
     private Task? _feedbackTask;
 
     public async Task StartAsync(
-        VirtualMouseClient client,
+        ClientService client,
         ClientRunLaunch launch,
         CancellationToken cancellationToken)
     {
@@ -42,6 +50,7 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         ControllerPipeReader reader = new(pipe);
 
         _inputTask = Task.Run(() => RunInputLoopAsync(client), CancellationToken.None);
+        _writeTask = Task.Run(RunInputWriteLoopAsync, CancellationToken.None);
         _feedbackTask = Task.Run(() => RunFeedbackLoopAsync(reader), CancellationToken.None);
     }
 
@@ -50,6 +59,7 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         await _stop.CancelAsync().ConfigureAwait(false);
         _pipe?.Dispose();
         await IgnoreExpectedStopAsync(_inputTask).ConfigureAwait(false);
+        await IgnoreExpectedStopAsync(_writeTask).ConfigureAwait(false);
         await IgnoreExpectedStopAsync(_feedbackTask).ConfigureAwait(false);
 
         await DisposeSourcesAsync().ConfigureAwait(false);
@@ -57,7 +67,7 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         _stop.Dispose();
     }
 
-    private async Task RunInputLoopAsync(VirtualMouseClient client)
+    private async Task RunInputLoopAsync(ClientService client)
     {
         while (!_stop.IsCancellationRequested)
         {
@@ -84,7 +94,7 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
                     return;
                 }
 
-                logger.LogInformation("SDL controller streaming restarting: {Message}", exception.Message);
+                HostingLog.SdlControllerStreamingRestarting(logger, exception.Message);
                 await Task.Delay(RetryDelay, _stop.Token).ConfigureAwait(false);
             }
         }
@@ -104,6 +114,18 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         }
     }
 
+    private async Task RunInputWriteLoopAsync()
+    {
+        ControllerPipeWriter writer = _writer ??
+            throw new InvalidOperationException("Controller pipe writer is not connected.");
+
+        await foreach (ControllerInputFrame frame in _inputWrites.Reader.ReadAllAsync(_stop.Token)
+            .ConfigureAwait(false))
+        {
+            await writer.WriteInputAsync(frame, _stop.Token).ConfigureAwait(false);
+        }
+    }
+
     private void SendInput(
         SdlGamepadSource source,
         ControllerState state)
@@ -115,47 +137,96 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         }
 
         ushort controllerIndex = FindSourceIndex(source);
-        lock (_writeGate)
-        {
-            writer.WriteInputAsync(new ControllerInputFrame(controllerIndex, state))
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
-        }
+        _ = _inputWrites.Writer.TryWrite(new ControllerInputFrame(controllerIndex, state));
     }
 
     private static ClientControllerInfo[] CreateControllerInfos(
         IReadOnlyList<SdlGamepadSource> sources,
-        Dictionary<SdlGamepadSource, string> physicalIds)
+        Dictionary<SdlGamepadSource, ControllerSlotIdentity> identities)
     {
         ClientControllerInfo[] controllers = new ClientControllerInfo[sources.Count];
         for (int i = 0; i < sources.Count; i++)
         {
             SdlGamepadSource source = sources[i];
+            ControllerSlotIdentity identity = identities[source];
             controllers[i] = new ClientControllerInfo(
                 checked((ushort)i),
-                physicalIds[source],
+                identity.PhysicalId,
+                identity.Label,
                 source.Features);
         }
 
         return controllers;
     }
 
-    private static Dictionary<SdlGamepadSource, string> CreatePhysicalIds(
+    internal static IReadOnlyList<SdlControllerInfo> SelectClientControllers(
+        IReadOnlyList<SdlControllerInfo> visibleControllers)
+    {
+        List<SdlControllerInfo> physicalControllers = GetPhysicalControllers(visibleControllers);
+        HashSet<string> steamMatchedPhysicalIds = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SdlControllerInfo controller in visibleControllers)
+        {
+            if (controller.Source == SdlControllerSource.Steam &&
+                SdlControllerMatcher.FindPhysicalController(controller, physicalControllers) is { } physical)
+            {
+                _ = steamMatchedPhysicalIds.Add(SdlControllerCatalog.GetPhysicalControllerId(physical));
+            }
+        }
+
+        List<SdlControllerInfo> selected = [];
+        foreach (SdlControllerInfo controller in visibleControllers)
+        {
+            if (controller.Source == SdlControllerSource.Steam ||
+                !steamMatchedPhysicalIds.Contains(SdlControllerCatalog.GetPhysicalControllerId(controller)))
+            {
+                selected.Add(controller);
+            }
+        }
+
+        return selected;
+    }
+
+    private static List<SdlGamepadSource> OpenSources(IReadOnlyList<SdlControllerInfo> controllers)
+    {
+        List<SdlGamepadSource> sources = [];
+        try
+        {
+            foreach (SdlControllerInfo controller in controllers)
+            {
+                sources.Add(SdlGamepadSource.Connect(controller));
+            }
+
+            return sources;
+        }
+        catch
+        {
+            foreach (SdlGamepadSource source in sources)
+            {
+                source.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    private static Dictionary<SdlGamepadSource, ControllerSlotIdentity> CreateSlotIdentities(
         IReadOnlyList<SdlGamepadSource> sources,
         IReadOnlyList<SdlControllerInfo> physicalControllers)
     {
-        Dictionary<SdlGamepadSource, string> ids = [];
+        Dictionary<SdlGamepadSource, ControllerSlotIdentity> identities = [];
         foreach (SdlGamepadSource source in sources)
         {
             SdlControllerInfo controller = source.Controller;
             SdlControllerInfo? physical = SdlControllerMatcher.FindPhysicalController(
                 controller,
                 physicalControllers);
-            ids[source] = SdlControllerCatalog.GetPhysicalControllerId(physical ?? controller);
+            SdlControllerInfo slot = physical ?? controller;
+            identities[source] = new ControllerSlotIdentity(
+                SdlControllerCatalog.GetPhysicalControllerId(slot),
+                slot.Name);
         }
 
-        return ids;
+        return identities;
     }
 
     private static List<SdlControllerInfo> GetPhysicalControllers(
@@ -188,7 +259,7 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
     }
 
     private async Task<IReadOnlyList<SdlGamepadSource>> RefreshSourcesAsync(
-        VirtualMouseClient client,
+        ClientService client,
         CancellationToken cancellationToken)
     {
         await DisposeSourcesAsync().ConfigureAwait(false);
@@ -196,12 +267,12 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         IReadOnlyList<SdlControllerInfo> visibleControllers =
             SdlControllerCatalog.GetControllers(SdlControllerFilters.IsForwardable);
         List<SdlControllerInfo> physicalControllers = GetPhysicalControllers(visibleControllers);
-        IReadOnlyList<SdlGamepadSource> sources =
-            SdlControllerCatalog.OpenClientControllers(SdlControllerFilters.IsForwardable);
+        IReadOnlyList<SdlGamepadSource> sources = OpenSources(SelectClientControllers(visibleControllers));
         try
         {
-            Dictionary<SdlGamepadSource, string> physicalIds = CreatePhysicalIds(sources, physicalControllers);
-            ClientControllerInfo[] controllers = CreateControllerInfos(sources, physicalIds);
+            Dictionary<SdlGamepadSource, ControllerSlotIdentity> identities =
+                CreateSlotIdentities(sources, physicalControllers);
+            ClientControllerInfo[] controllers = CreateControllerInfos(sources, identities);
 
             await client.RegisterClientControllersAsync(controllers, cancellationToken).ConfigureAwait(false);
             lock (_sourcesGate)
@@ -261,4 +332,6 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         {
         }
     }
+
+    private sealed record ControllerSlotIdentity(string PhysicalId, string Label);
 }

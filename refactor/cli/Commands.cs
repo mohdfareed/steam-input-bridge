@@ -53,8 +53,11 @@ internal static class Commands
         uint? steamAppId = parseResult.GetValue<uint?>("--app-id");
 
         using IHost app = AppSetup.Create();
-        await using GameClient game = app.Services.GetRequiredService<GameClient>();
-        await game.RunAsync(profileId, steamAppId, cancellationToken);
+        GameClient game = app.Services.GetRequiredService<GameClient>();
+        await using (game.ConfigureAwait(false))
+        {
+            await game.RunAsync(profileId, steamAppId, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async Task RunServerAsync(ParseResult parseResult, CancellationToken cancellationToken)
@@ -62,7 +65,10 @@ internal static class Commands
         _ = parseResult;
 
         using IHost app = AppSetup.Create();
-        await using VirtualMouseServer server = app.Services.GetRequiredService<VirtualMouseServer>();
-        await server.RunAsync(cancellationToken);
+        ServerService server = app.Services.GetRequiredService<ServerService>();
+        await using (server.ConfigureAwait(false))
+        {
+            await server.RunAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 }

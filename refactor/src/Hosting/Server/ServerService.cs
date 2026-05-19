@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,34 +16,45 @@ namespace VirtualMouse.Hosting;
 
 // The app-facing server owns server lifetime and accepts client pipes.
 /// <summary>Long-lived local server for client connections.</summary>
-public sealed class VirtualMouseServer : IAsyncDisposable
+public sealed class ServerService : IAsyncDisposable
 {
     private readonly IOptions<HostingSettings> _options;
-    private readonly ILogger<VirtualMouseServer> _logger;
+    private readonly ILogger<ServerService> _logger;
     private readonly SettingsFile? _settingsFile;
-    private readonly ConcurrentDictionary<ServerConnection, byte> _connections = [];
+    private readonly ConcurrentDictionary<ServerConnectionHandle, byte> _connections = [];
     private readonly ServerSessions _sessions;
-    private readonly ActiveClientOrchestration _activeClients;
+    private readonly ServerActiveClientLoop _activeClients;
     private readonly PhysicalControllerPump _physicalControllers;
     private readonly MouseInputPump _mouseInput;
+    private readonly Func<CancellationToken, Task> _startupCleanup;
+
+    // MARK: Construction
+    // ========================================================================
 
     /// <summary>Creates a server from configured hosting settings.</summary>
-    public VirtualMouseServer(
+    public ServerService(
         IOptions<HostingSettings> options,
-        ILogger<VirtualMouseServer> logger)
-        : this(RequireOptions(options), logger, settingsFile: null, profiles: null, runtime: null, activeClients: null)
+        ILogger<ServerService> logger)
+        : this(
+            options ?? throw new ArgumentNullException(nameof(options)),
+            logger,
+            settingsFile: null,
+            profiles: null,
+            runtime: null,
+            activeClients: null)
     {
     }
 
-    internal VirtualMouseServer(
+    internal ServerService(
         IOptions<HostingSettings> options,
-        ILogger<VirtualMouseServer> logger,
+        ILogger<ServerService> logger,
         SettingsFile? settingsFile,
         ProfilesService? profiles,
         ActiveClientRegistry? runtime,
-        ActiveClientOrchestration? activeClients,
+        ServerActiveClientLoop? activeClients,
         ControllerBroker? forwarding = null,
-        MouseBroker? mouseForwarding = null)
+        MouseBroker? mouseForwarding = null,
+        Func<CancellationToken, Task>? startupCleanup = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
@@ -50,47 +62,68 @@ public sealed class VirtualMouseServer : IAsyncDisposable
         _options = options;
         _logger = logger;
         _settingsFile = settingsFile;
+        _startupCleanup = startupCleanup ?? (static _ => Task.CompletedTask);
 
         ActiveClientRegistry activeRuntime = runtime ?? new ActiveClientRegistry();
-        ControllerBroker broker = forwarding ?? new ControllerBroker(new NoopControllerOutputFactory());
-        MouseBroker mouseBroker = mouseForwarding ?? new MouseBroker(new NoopMouseOutputFactory());
-        _physicalControllers = new PhysicalControllerPump(broker, logger);
-        _mouseInput = new MouseInputPump(mouseBroker, logger);
+        ControllerBroker? broker = forwarding ?? new ControllerBroker(new NoopControllerOutputFactory());
+        MouseBroker? mouseBroker = mouseForwarding ?? new MouseBroker(new NoopMouseOutputFactory());
+        ControllerPipeSessions? controllerPipes = new(broker, logger);
+        try
+        {
+            _physicalControllers = new PhysicalControllerPump(broker, logger);
+            _mouseInput = new MouseInputPump(mouseBroker, logger);
 
-        _sessions = new ServerSessions(
-            logger,
-            profiles,
-            activeRuntime,
-            broker,
-            mouseBroker,
-            new ControllerPipeSessions(broker, logger),
-            () => new ServerInputStatus(
-                _physicalControllers.GetStatus(),
-                _mouseInput.GetStatus()));
+            _sessions = new ServerSessions(
+                logger,
+                profiles,
+                activeRuntime,
+                broker,
+                mouseBroker,
+                controllerPipes,
+                () => new ServerInputStatus(
+                    _physicalControllers.GetStatus(),
+                    _mouseInput.GetStatus()));
 
-        _activeClients = activeClients ?? ActiveClientOrchestration.CreateDefault(
-            activeRuntime,
-            options.Value,
-            logger,
-            broker,
-            mouseBroker);
+            _activeClients = activeClients ?? ServerActiveClientLoop.CreateDefault(
+                activeRuntime,
+                options.Value,
+                logger,
+                broker,
+                mouseBroker);
+
+            broker = null;
+            mouseBroker = null;
+            controllerPipes = null;
+        }
+        finally
+        {
+            controllerPipes?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            broker?.Dispose();
+            mouseBroker?.Dispose();
+        }
     }
 
     internal IReadOnlyCollection<ConnectedClient> Clients => _sessions.Clients;
 
-    // MARK: API
+    // MARK: Publics
     // ========================================================================
 
     /// <summary>Runs the server until cancellation.</summary>
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Accepted pipe ownership transfers to a tracked connection handle.")]
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         string pipeName = _options.Value.PipeName;
-        _logger.LogInformation("Listening on server pipe {PipeName}", pipeName);
+        HostingLog.ListeningOnServerPipe(_logger, pipeName);
 
         if (_settingsFile is not null)
         {
-            _logger.LogInformation("Using settings {SettingsPath}", _settingsFile.Path);
+            HostingLog.UsingSettingsFile(_logger, _settingsFile.Path);
         }
+
+        await _startupCleanup(cancellationToken).ConfigureAwait(false);
 
         using CancellationTokenSource orchestrationStop =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -108,18 +141,23 @@ public sealed class VirtualMouseServer : IAsyncDisposable
                     maxNumberOfServerInstances: 254,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous);
+                ServerConnectionHandle? connection = null;
 
                 try
                 {
                     await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
-                    NamedPipeServerStream connectedPipe = pipe;
-                    ServerConnection connection = new(connectedPipe, _sessions);
-                    _connections[connection] = 0;
-                    _ = Task.Run(() => RunConnectionAsync(connection, cancellationToken), CancellationToken.None);
+                    connection = ServerConnectionHandle.Start(pipe, _sessions, cancellationToken);
                     pipe = null;
+                    TrackConnection(connection);
+                    connection = null;
                 }
                 finally
                 {
+                    if (connection is not null)
+                    {
+                        await connection.DisposeAsync().ConfigureAwait(false);
+                    }
+
                     if (pipe is not null)
                     {
                         await pipe.DisposeAsync().ConfigureAwait(false);
@@ -134,6 +172,7 @@ public sealed class VirtualMouseServer : IAsyncDisposable
             await _physicalControllers.DisposeAsync().ConfigureAwait(false);
             await _mouseInput.DisposeAsync().ConfigureAwait(false);
             await DisposeConnectionsAsync().ConfigureAwait(false);
+            await _sessions.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -143,29 +182,32 @@ public sealed class VirtualMouseServer : IAsyncDisposable
         await _physicalControllers.DisposeAsync().ConfigureAwait(false);
         await _mouseInput.DisposeAsync().ConfigureAwait(false);
         await DisposeConnectionsAsync().ConfigureAwait(false);
+        await _sessions.DisposeAsync().ConfigureAwait(false);
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
-
-    private async Task RunConnectionAsync(ServerConnection connection, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await connection.RunAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _ = _connections.TryRemove(connection, out _);
-        }
-    }
 
     private async Task DisposeConnectionsAsync()
     {
-        foreach (ServerConnection connection in _connections.Keys)
+        ServerConnectionHandle[] connections = [.. _connections.Keys];
+        foreach (ServerConnectionHandle connection in connections)
         {
+            _ = _connections.TryRemove(connection, out _);
             await connection.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    private void TrackConnection(ServerConnectionHandle connection)
+    {
+        _connections[connection] = 0;
+        _ = RemoveWhenCompleteAsync(connection);
+    }
+
+    private async Task RemoveWhenCompleteAsync(ServerConnectionHandle connection)
+    {
+        await IgnoreCancellationAsync(connection.Completion).ConfigureAwait(false);
+        _ = _connections.TryRemove(connection, out _);
     }
 
     private static async Task IgnoreCancellationAsync(Task task)
@@ -179,9 +221,4 @@ public sealed class VirtualMouseServer : IAsyncDisposable
         }
     }
 
-    private static IOptions<HostingSettings> RequireOptions(IOptions<HostingSettings> options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        return options;
-    }
 }

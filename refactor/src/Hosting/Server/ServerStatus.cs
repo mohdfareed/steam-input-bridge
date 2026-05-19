@@ -56,4 +56,5 @@ public sealed record ControllerPipeStatus(
 public sealed record ClientControllerStatus(
     ushort ControllerIndex,
     string PhysicalControllerId,
+    string Label,
     ControllerFeatures Features);

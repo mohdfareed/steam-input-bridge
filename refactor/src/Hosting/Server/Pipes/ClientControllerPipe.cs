@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using VirtualMouse.Forwarding;
@@ -17,8 +18,16 @@ internal sealed class ClientControllerPipe(
 {
     private readonly CancellationTokenSource _stop = new();
     private readonly Dictionary<ushort, ClientControllerInfo> _controllers = [];
-    private readonly Lock _writeGate = new();
+    private readonly Channel<ControllerFeedbackFrame> _feedbackWrites =
+        Channel.CreateBounded<ControllerFeedbackFrame>(
+            new BoundedChannelOptions(capacity: 32)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false,
+            });
     private Task? _task;
+    private Task? _feedbackTask;
     private NamedPipeServerStream? _pipe;
     private ControllerPipeWriter? _writer;
 
@@ -32,6 +41,8 @@ internal sealed class ClientControllerPipe(
     public void RegisterControllers(IReadOnlyList<ClientControllerInfo> controllers)
     {
         ArgumentNullException.ThrowIfNull(controllers);
+        broker.RemoveClientControllers(clientId);
+
         lock (_controllers)
         {
             _controllers.Clear();
@@ -52,6 +63,7 @@ internal sealed class ClientControllerPipe(
                 controllers.Add(new ClientControllerStatus(
                     controller.ControllerIndex,
                     controller.PhysicalControllerId,
+                    controller.Label,
                     controller.Features));
             }
         }
@@ -78,36 +90,81 @@ internal sealed class ClientControllerPipe(
             }
         }
 
+        await IgnoreExpectedStopAsync(_feedbackTask).ConfigureAwait(false);
         _stop.Dispose();
     }
 
     private async Task RunAsync()
     {
-        using NamedPipeServerStream pipe = new(
-            PipeName,
-            PipeDirection.InOut,
-            maxNumberOfServerInstances: 1,
-            PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous);
-        _pipe = pipe;
-        await pipe.WaitForConnectionAsync(_stop.Token).ConfigureAwait(false);
-        ControllerPipeReader reader = new(pipe);
-        _writer = new ControllerPipeWriter(pipe);
-
-        while (!_stop.IsCancellationRequested && pipe.IsConnected)
+        NamedPipeServerStream? pipe = null;
+        try
         {
-            ControllerPipeMessage message = await reader.ReadAsync(_stop.Token).ConfigureAwait(false);
-            if (message.Type == ControllerPipeFrameType.Input &&
-                TryGetController(message.Input.ControllerIndex, out ClientControllerInfo? controller) &&
-                controller is not null)
+            pipe = new NamedPipeServerStream(
+                PipeName,
+                PipeDirection.InOut,
+                maxNumberOfServerInstances: 1,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous);
+            _pipe = pipe;
+            await pipe.WaitForConnectionAsync(_stop.Token).ConfigureAwait(false);
+            ControllerPipeReader reader = new(pipe);
+            _writer = new ControllerPipeWriter(pipe);
+            _feedbackTask = Task.Run(() => RunFeedbackWriteLoopAsync(pipe), CancellationToken.None);
+
+            try
             {
-                broker.UpdateClientController(
-                    clientId,
-                    new ControllerId(controller.PhysicalControllerId),
-                    message.Input.State,
-                    controller.Features,
-                    new PipeFeedbackSink(this, message.Input.ControllerIndex));
+                while (!_stop.IsCancellationRequested && pipe.IsConnected)
+                {
+                    ControllerPipeMessage message = await reader.ReadAsync(_stop.Token).ConfigureAwait(false);
+                    if (message.Type == ControllerPipeFrameType.Input &&
+                        TryGetController(message.Input.ControllerIndex, out ClientControllerInfo? controller) &&
+                        controller is not null)
+                    {
+                        broker.UpdateClientController(
+                            clientId,
+                            message.Input.ControllerIndex,
+                            new ControllerId(controller.PhysicalControllerId, controller.Label),
+                            message.Input.State,
+                            controller.Features,
+                            new PipeFeedbackSink(this, message.Input.ControllerIndex));
+                    }
+                }
             }
+            finally
+            {
+                await _stop.CancelAsync().ConfigureAwait(false);
+                await IgnoreExpectedStopAsync(_feedbackTask).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_pipe, pipe))
+            {
+                _pipe = null;
+            }
+
+            if (pipe is not null)
+            {
+                await pipe.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task RunFeedbackWriteLoopAsync(NamedPipeServerStream pipe)
+    {
+        ControllerPipeWriter writer = _writer ??
+            throw new InvalidOperationException("Controller pipe writer is not connected.");
+
+        await foreach (ControllerFeedbackFrame frame in _feedbackWrites.Reader.ReadAllAsync(_stop.Token)
+            .ConfigureAwait(false))
+        {
+            if (!pipe.IsConnected)
+            {
+                return;
+            }
+
+            await writer.WriteFeedbackAsync(frame, _stop.Token).ConfigureAwait(false);
+            await pipe.FlushAsync(_stop.Token).ConfigureAwait(false);
         }
     }
 
@@ -126,56 +183,33 @@ internal sealed class ClientControllerPipe(
             return true;
         }
 
-        logger.LogInformation(
-            "Controller pipe for client {ClientId} closed: {Message}",
-            clientId,
-            exception.Message);
+        HostingLog.ControllerPipeClosed(logger, clientId, exception.Message);
         return false;
-    }
-
-    private bool TrySendFeedback(ushort controllerIndex, ControllerFeedback feedback)
-    {
-        ControllerPipeWriter? writer = _writer;
-        NamedPipeServerStream? pipe = _pipe;
-        if (writer is null || pipe is null || !pipe.IsConnected)
-        {
-            return false;
-        }
-
-        try
-        {
-            lock (_writeGate)
-            {
-                if (!pipe.IsConnected)
-                {
-                    return false;
-                }
-
-                writer.WriteFeedbackAsync(new ControllerFeedbackFrame(controllerIndex, feedback))
-                    .AsTask()
-                    .GetAwaiter()
-                    .GetResult();
-                pipe.Flush();
-            }
-
-            return true;
-        }
-        catch (Exception exception) when (
-            exception is IOException or ObjectDisposedException or InvalidOperationException)
-        {
-            return false;
-        }
     }
 
     private bool QueueFeedback(ushort controllerIndex, ControllerFeedback feedback)
     {
-        if (_writer is null || _pipe is null || !_pipe.IsConnected)
+        return _writer is not null &&
+            _pipe is not null &&
+            _pipe.IsConnected &&
+            _feedbackWrites.Writer.TryWrite(new ControllerFeedbackFrame(controllerIndex, feedback));
+    }
+
+    private static async Task IgnoreExpectedStopAsync(Task? task)
+    {
+        if (task is null)
         {
-            return false;
+            return;
         }
 
-        _ = Task.Run(() => TrySendFeedback(controllerIndex, feedback), CancellationToken.None);
-        return true;
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+        }
     }
 
     private sealed class PipeFeedbackSink(

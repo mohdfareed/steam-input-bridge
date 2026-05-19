@@ -10,9 +10,9 @@ using VirtualMouse.Settings;
 
 namespace VirtualMouse.Tests;
 
-/// <summary>Tests server-side active-client orchestration.</summary>
+/// <summary>Tests server-side active-client foreground tracking.</summary>
 [TestClass]
-public sealed class ActiveClientOrchestrationTests
+public sealed class ServerActiveClientLoopTests
 {
     /// <summary>Checks foreground pid updates active-client state and fan-out events.</summary>
     [TestMethod]
@@ -25,7 +25,7 @@ public sealed class ActiveClientOrchestrationTests
 
         int foregroundProcessId = 0;
         List<ActiveClientChangedEventArgs> changes = [];
-        ActiveClientOrchestration activeClients = new(
+        ServerActiveClientLoop activeClients = new(
             runtime,
             () => Volatile.Read(ref foregroundProcessId),
             TimeSpan.FromMilliseconds(5),
@@ -63,7 +63,7 @@ public sealed class ActiveClientOrchestrationTests
 
     /// <summary>Checks the server starts foreground observation with its lifetime.</summary>
     [TestMethod]
-    public async Task ServerRunStartsActiveClientOrchestration()
+    public async Task ServerRunStartsActiveClientLoop()
     {
         HostingSettings options = new()
         {
@@ -73,15 +73,15 @@ public sealed class ActiveClientOrchestrationTests
 
         ActiveClientRegistry runtime = new();
         int foregroundProcessId = 0;
-        ActiveClientOrchestration activeClients = new(
+        ServerActiveClientLoop activeClients = new(
             runtime,
             () => Volatile.Read(ref foregroundProcessId),
             TimeSpan.FromMilliseconds(options.ForegroundPollMilliseconds),
             static _ => { });
 
-        await using VirtualMouseServer server = new(
+        await using ServerService server = new(
             Options.Create(options),
-            NullLogger<VirtualMouseServer>.Instance,
+            NullLogger<ServerService>.Instance,
             settingsFile: null,
             profiles: null,
             runtime,

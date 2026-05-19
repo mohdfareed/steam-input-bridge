@@ -26,14 +26,14 @@
   only for pipe/RPC plumbing. Avoid generic names such as `Runner`, `Tools`,
   `Manager`, or `Helper` unless the file is genuinely tiny glue.
 - Keep app-facing hosting classes readable first; move per-connection plumbing into internal helper types when it starts hiding the public contract.
-- Keep `VirtualMouseServer` focused on server lifetime and pipe acceptance.
+- Keep `HostServer` focused on server lifetime and pipe acceptance.
   Connected-client state, profile run state, status, and runtime updates belong
   in `ServerSessions`; pipe RPC target code should talk to `ServerSessions`, not
   to the app-facing server object.
 - In `Hosting`, keep user-facing public types at the project root. Put internal protocol, pipe, connection, and registry plumbing under `Shared`.
 - Keep `ClientConnection` focused on connection lifecycle. Server API calls such as status belong on `VirtualMouseClient` and use the connection pipe internally.
 - Keep server-owned status construction on server state/root server code. `ServerConnection` should dispatch status requests, not decide what status contains.
-- Endpoint request mapping belongs on `VirtualMouseServer` until it is large enough to deserve a dedicated router. `ServerConnection` only owns pipe connection lifecycle and delegates post-connect requests.
+- Endpoint request mapping belongs on `HostServer` until it is large enough to deserve a dedicated router. `ServerConnection` only owns pipe connection lifecycle and delegates post-connect requests.
 - Before adding code, inspect the full pipeline and place behavior where that responsibility already belongs; do not add code to a nearby file just because it is convenient.
 - When moving or flattening files, update project names, assembly names,
   namespaces, scripts, solution entries, and friend assembly names so no stale

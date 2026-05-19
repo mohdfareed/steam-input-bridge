@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,29 +10,29 @@ using VirtualMouse.Steam;
 
 namespace VirtualMouse.Hosting;
 
-internal sealed class ActiveClientOrchestration(
-    ActiveClientRegistry runtime,
+internal sealed class ServerActiveClientLoop(
+    ActiveClientRegistry clients,
     Func<int> getForegroundProcessId,
     TimeSpan pollInterval,
     Action<ActiveClientChangedEventArgs> activeClientChanged)
 {
-    public static ActiveClientOrchestration CreateDefault(
-        ActiveClientRegistry runtime,
+    public static ServerActiveClientLoop CreateDefault(
+        ActiveClientRegistry clients,
         HostingSettings settings,
         ILogger logger,
         ControllerBroker? forwarding = null,
         MouseBroker? mouseForwarding = null)
     {
-        return new ActiveClientOrchestration(
-            runtime,
+        return new ServerActiveClientLoop(
+            clients,
             GetForegroundProcessId,
             TimeSpan.FromMilliseconds(settings.ForegroundPollMilliseconds),
-            args => ActiveClientChanged(runtime, logger, new SteamInputClient(), forwarding, mouseForwarding, args));
+            args => ActiveClientChanged(clients, logger, new SteamInputClient(), forwarding, mouseForwarding, args));
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        runtime.ActiveClientChanged += OnActiveClientChanged;
+        clients.ActiveClientChanged += OnActiveClientChanged;
         try
         {
             int lastForegroundProcessId = -1;
@@ -42,7 +41,7 @@ internal sealed class ActiveClientOrchestration(
                 int foregroundProcessId = getForegroundProcessId();
                 if (foregroundProcessId != lastForegroundProcessId)
                 {
-                    runtime.RefreshActiveClient(foregroundProcessId);
+                    clients.RefreshClients(foregroundProcessId);
                     lastForegroundProcessId = foregroundProcessId;
                 }
 
@@ -51,7 +50,7 @@ internal sealed class ActiveClientOrchestration(
         }
         finally
         {
-            runtime.ActiveClientChanged -= OnActiveClientChanged;
+            clients.ActiveClientChanged -= OnActiveClientChanged;
         }
     }
 
@@ -73,38 +72,32 @@ internal sealed class ActiveClientOrchestration(
     }
 
     private static void ActiveClientChanged(
-        ActiveClientRegistry runtime,
+        ActiveClientRegistry clients,
         ILogger logger,
         SteamInputClient steam,
         ControllerBroker? forwarding,
         MouseBroker? mouseForwarding,
         ActiveClientChangedEventArgs args)
     {
-        logger.LogInformation(
-            "Active client changed: previous={PreviousClientId} current={CurrentClientId}",
-            args.PreviousClientId?.ToString() ?? "none",
-            args.CurrentClientId?.ToString() ?? "none");
+        HostingLog.ActiveClientChanged(logger, args.PreviousClientId, args.CurrentClientId);
 
         forwarding?.SetActiveClient(args.CurrentClientId);
         mouseForwarding?.SetActiveClient(args.CurrentClientId);
 
         try
         {
-            uint? appId = FindSteamAppId(runtime.GetStatus(), args.CurrentClientId);
-            logger.LogInformation("Clearing forced Steam Input app id.");
+            uint? appId = FindSteamAppId(clients.GetStatus(), args.CurrentClientId);
+            HostingLog.ClearingForcedSteamInputAppId(logger);
             steam.ForceConfigAsync(null).AsTask().GetAwaiter().GetResult();
 
             if (appId.HasValue)
             {
-                logger.LogInformation(
-                    "Forcing Steam Input app id {AppId} for client {ClientId}.",
-                    appId.Value.ToString(CultureInfo.InvariantCulture),
-                    args.CurrentClientId?.ToString() ?? "none");
+                HostingLog.ForcingSteamInputAppId(logger, appId.Value, args.CurrentClientId);
                 steam.ForceConfigAsync(appId.Value).AsTask().GetAwaiter().GetResult();
             }
             else
             {
-                logger.LogDebug("No Steam Input app id to force.");
+                HostingLog.NoSteamInputAppIdToForce(logger);
             }
         }
         catch (Exception exception) when (
@@ -112,10 +105,7 @@ internal sealed class ActiveClientOrchestration(
                 ArgumentException or
                 System.ComponentModel.Win32Exception)
         {
-            logger.LogWarning(
-                "Steam Input forcing failed for client {ClientId}: {Message}",
-                args.CurrentClientId?.ToString() ?? "none",
-                exception.Message);
+            HostingLog.SteamInputForcingFailed(logger, args.CurrentClientId, exception.Message);
         }
     }
 

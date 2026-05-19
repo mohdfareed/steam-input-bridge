@@ -22,9 +22,10 @@ internal sealed class ServerSessions(
     ControllerBroker forwarding,
     MouseBroker mouseForwarding,
     ControllerPipeSessions controllerPipes,
-    Func<ServerInputStatus>? getInputStatus = null)
+    Func<ServerInputStatus>? getInputStatus = null) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
+    private bool _disposed;
 
     internal IReadOnlyCollection<ConnectedClient> Clients => [.. _clients.Values];
 
@@ -32,11 +33,7 @@ internal sealed class ServerSessions(
     {
         ConnectedClient client = new(Guid.NewGuid(), processId, DateTimeOffset.UtcNow);
         _clients[client.Id] = client;
-        logger.LogInformation(
-            "Client connected: {ClientId} process={ProcessId} (clients={ClientCount})",
-            client.Id,
-            client.ProcessId,
-            _clients.Count);
+        HostingLog.ClientConnected(logger, client.Id, client.ProcessId, _clients.Count);
         return client.Id;
     }
 
@@ -48,10 +45,7 @@ internal sealed class ServerSessions(
         mouseForwarding.RemoveClient(clientId);
         await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
 
-        logger.LogInformation(
-            "Client disconnected: {ClientId} (clients={ClientCount})",
-            clientId,
-            _clients.Count);
+        HostingLog.ClientDisconnected(logger, clientId, _clients.Count);
     }
 
     internal Task<ServerStatus> GetStatusAsync()
@@ -119,13 +113,13 @@ internal sealed class ServerSessions(
         Guid clientId,
         IReadOnlyList<ObservedGameProcess> processes)
     {
-        runtime.UpdateClientProcesses(clientId, processes);
+        runtime.UpdateClient(clientId, processes);
         return Task.CompletedTask;
     }
 
     internal Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync(Guid clientId)
     {
-        return Task.FromResult(runtime.GetOwnedProcesses(clientId));
+        return Task.FromResult(runtime.GetClientProcesses(clientId));
     }
 
     internal async Task EndRunAsync(Guid clientId)
@@ -140,8 +134,21 @@ internal sealed class ServerSessions(
     {
         if (exception is not OperationCanceledException)
         {
-            logger.LogInformation("Client pipe closed: {Message}", exception.Message);
+            HostingLog.ClientPipeClosed(logger, exception.Message);
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        await controllerPipes.DisposeAsync().ConfigureAwait(false);
+        await forwarding.DisposeAsync().ConfigureAwait(false);
+        await mouseForwarding.DisposeAsync().ConfigureAwait(false);
     }
 
     private ConnectedClient GetClient(Guid clientId)

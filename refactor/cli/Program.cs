@@ -6,4 +6,4 @@ root.Subcommands.Add(Commands.CreateServerCommand());
 root.Subcommands.Add(Commands.CreateClientCommand());
 root.Subcommands.Add(SteamCommands.Create());
 
-return await root.Parse(args).InvokeAsync();
+return await root.Parse(args).InvokeAsync().ConfigureAwait(false);

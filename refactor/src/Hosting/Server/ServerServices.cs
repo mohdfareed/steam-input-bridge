@@ -8,6 +8,7 @@ using VirtualMouse.Outputs.Viiper;
 using VirtualMouse.Runtime;
 using VirtualMouse.Settings;
 using VirtualMouse.Settings.Profiles;
+using ForwardingMouseOutput = VirtualMouse.Forwarding.MouseOutput;
 
 namespace VirtualMouse.Hosting;
 
@@ -18,7 +19,17 @@ public static class ServerServices
     public static IServiceCollection AddApplicationServer(this IServiceCollection services)
     {
         _ = services.AddSingleton<ActiveClientRegistry>();
-        _ = services.AddSingleton(CreateViiperOutputFactory);
+        _ = services.AddSingleton(static services =>
+        {
+            ViiperSettings settings = services.GetRequiredService<IOptions<ViiperSettings>>().Value;
+            ILoggerFactory loggerFactory = services.GetRequiredService<ILoggerFactory>();
+            return new ViiperOutputFactory(new ViiperOptions
+            {
+                Host = settings.Host,
+                Port = settings.Port,
+                Logger = loggerFactory.CreateLogger<ViiperOutputFactory>(),
+            });
+        });
         _ = services.AddSingleton<IControllerOutputFactory>(
             static services => services.GetRequiredService<ViiperOutputFactory>());
         _ = services.AddSingleton<TeensyOutputFactory>();
@@ -27,32 +38,36 @@ public static class ServerServices
             static services => services.GetRequiredService<ServerMouseOutputFactory>());
         _ = services.AddSingleton<ControllerBroker>();
         _ = services.AddSingleton<MouseBroker>();
-        _ = services.AddSingleton(CreateServer);
+        _ = services.AddSingleton(static services =>
+        {
+            ViiperOutputFactory viiper = services.GetRequiredService<ViiperOutputFactory>();
+            return new ServerService(
+                services.GetRequiredService<IOptions<HostingSettings>>(),
+                services.GetRequiredService<ILogger<ServerService>>(),
+                services.GetService<SettingsFile>(),
+                services.GetService<ProfilesService>(),
+                services.GetRequiredService<ActiveClientRegistry>(),
+                activeClients: null,
+                services.GetRequiredService<ControllerBroker>(),
+                services.GetRequiredService<MouseBroker>(),
+                viiper.ReclaimDevicesAsync);
+        });
         return services;
     }
 
-    private static ViiperOutputFactory CreateViiperOutputFactory(IServiceProvider services)
+    private sealed class ServerMouseOutputFactory(
+        ViiperOutputFactory viiper,
+        TeensyOutputFactory teensy) : IMouseOutputFactory
     {
-        GeneralSettings settings = services.GetRequiredService<IOptions<GeneralSettings>>().Value;
-        ILoggerFactory loggerFactory = services.GetRequiredService<ILoggerFactory>();
-        return new ViiperOutputFactory(new ViiperOptions
+        public IMouseOutput Connect(ForwardingMouseOutput output)
         {
-            Host = settings.ViiperHost,
-            Port = settings.ViiperPort,
-            Logger = loggerFactory.CreateLogger<ViiperOutputFactory>(),
-        });
-    }
-
-    private static VirtualMouseServer CreateServer(IServiceProvider services)
-    {
-        return new VirtualMouseServer(
-            services.GetRequiredService<IOptions<HostingSettings>>(),
-            services.GetRequiredService<ILogger<VirtualMouseServer>>(),
-            services.GetService<SettingsFile>(),
-            services.GetService<ProfilesService>(),
-            services.GetRequiredService<ActiveClientRegistry>(),
-            activeClients: null,
-            services.GetRequiredService<ControllerBroker>(),
-            services.GetRequiredService<MouseBroker>());
+            return output switch
+            {
+                ForwardingMouseOutput.Viiper => viiper.Connect(output),
+                ForwardingMouseOutput.Teensy => teensy.Connect(output),
+                ForwardingMouseOutput.None => throw new NotSupportedException("None is not a mouse output."),
+                _ => throw new NotSupportedException($"Unsupported mouse output: {output}."),
+            };
+        }
     }
 }

@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using ProfileControllerOutput = VirtualMouse.Settings.Profiles.ControllerOutput;
-using ProfileMouseOutput = VirtualMouse.Settings.Profiles.MouseOutput;
-using VirtualMouse.Forwarding;
 using PolyType;
 using StreamJsonRpc;
+using VirtualMouse.Forwarding;
 using VirtualMouse.Runtime;
+using ProfileControllerOutput = VirtualMouse.Settings.Profiles.ControllerOutput;
+using ProfileMouseOutput = VirtualMouse.Settings.Profiles.MouseOutput;
 
 namespace VirtualMouse.Hosting;
 
@@ -32,15 +32,16 @@ public sealed record StartRunRequest(string ProfileId, uint? SteamAppId);
 public sealed record ClientControllerInfo(
     ushort ControllerIndex,
     string PhysicalControllerId,
+    string Label,
     ControllerFeatures Features);
 
-// MARK: API
+// MARK: Publics
 // ============================================================================
 
 /// <summary>JSON-RPC contract between app clients and the local server.</summary>
 [JsonRpcContract]
 [GenerateShape(IncludeMethods = MethodShapeFlags.PublicInstance)]
-internal partial interface IVirtualMouseServerApi
+internal partial interface IHostServerApi
 {
     /// <summary>Registers this pipe as one connected client process.</summary>
     Task<Guid> ConnectAsync(int processId);

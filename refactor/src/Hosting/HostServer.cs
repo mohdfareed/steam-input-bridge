@@ -9,9 +9,9 @@ using VirtualMouse.Runtime;
 
 namespace VirtualMouse.Hosting;
 
-internal sealed class ServerConnection(
+internal sealed class HostServer(
     NamedPipeServerStream pipe,
-    ServerSessions sessions) : IVirtualMouseServerApi, IAsyncDisposable
+    ServerSessions sessions) : IHostServerApi, IDisposable, IAsyncDisposable
 {
     private Guid? _clientId;
 
@@ -44,6 +44,11 @@ internal sealed class ServerConnection(
     internal async ValueTask DisposeAsync()
     {
         await pipe.DisposeAsync().ConfigureAwait(false);
+    }
+
+    public void Dispose()
+    {
+        pipe.Dispose();
     }
 
     ValueTask IAsyncDisposable.DisposeAsync()
@@ -114,5 +119,70 @@ internal sealed class ServerConnection(
     private Guid GetClientId()
     {
         return _clientId ?? throw new InvalidOperationException("Client is not connected.");
+    }
+}
+
+internal sealed class ServerConnectionHandle : IAsyncDisposable
+{
+    private readonly HostServer _connection;
+
+    private ServerConnectionHandle(HostServer connection, CancellationToken cancellationToken)
+    {
+        _connection = connection;
+        Completion = RunAsync(cancellationToken);
+    }
+
+    public Task Completion { get; }
+
+    public static ServerConnectionHandle Start(
+        NamedPipeServerStream pipe,
+        ServerSessions sessions,
+        CancellationToken cancellationToken)
+    {
+        HostServer? connection = new(pipe, sessions);
+        try
+        {
+            ServerConnectionHandle handle = new(connection, cancellationToken);
+            connection = null;
+            return handle;
+        }
+        finally
+        {
+            connection?.Dispose();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _connection.DisposeAsync().ConfigureAwait(false);
+        await IgnoreExpectedStopAsync(Completion).ConfigureAwait(false);
+    }
+
+    private async Task RunAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _connection.RunAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await _connection.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async Task IgnoreExpectedStopAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsExpectedStop(exception))
+        {
+        }
+    }
+
+    private static bool IsExpectedStop(Exception exception)
+    {
+        return exception is OperationCanceledException or ObjectDisposedException or IOException;
     }
 }

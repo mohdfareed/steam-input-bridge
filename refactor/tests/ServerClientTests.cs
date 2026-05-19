@@ -19,10 +19,10 @@ public sealed class ServerClientTests
     {
         HostingSettings options = CreateOptions();
         using CancellationTokenSource serverStop = new();
-        await using VirtualMouseServer server = CreateServer(options);
+        await using ServerService server = CreateServer(options);
         Task serverTask = server.RunAsync(serverStop.Token);
 
-        await using VirtualMouseClient client = CreateClient(options);
+        await using ClientService client = CreateClient(options);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
 
         await WaitUntilAsync(() => server.Clients.Count == 1).ConfigureAwait(false);
@@ -42,10 +42,10 @@ public sealed class ServerClientTests
     {
         HostingSettings options = CreateOptions();
         using CancellationTokenSource serverOneStop = new();
-        await using VirtualMouseServer serverOne = CreateServer(options);
+        await using ServerService serverOne = CreateServer(options);
         Task serverOneTask = serverOne.RunAsync(serverOneStop.Token);
 
-        await using VirtualMouseClient client = CreateClient(options);
+        await using ClientService client = CreateClient(options);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
         Guid firstClientId = client.ClientId.GetValueOrDefault();
         await WaitUntilAsync(() => serverOne.Clients.Count == 1).ConfigureAwait(false);
@@ -56,7 +56,7 @@ public sealed class ServerClientTests
         await StopServerAsync(serverOneStop, serverOneTask).ConfigureAwait(false);
 
         using CancellationTokenSource serverTwoStop = new();
-        await using VirtualMouseServer serverTwo = CreateServer(options);
+        await using ServerService serverTwo = CreateServer(options);
         Task serverTwoTask = serverTwo.RunAsync(serverTwoStop.Token);
 
         await WaitUntilAsync(() => serverTwo.Clients.Count == 1).ConfigureAwait(false);
@@ -73,10 +73,10 @@ public sealed class ServerClientTests
     {
         HostingSettings options = CreateOptions();
         using CancellationTokenSource serverStop = new();
-        await using VirtualMouseServer server = CreateServer(options);
+        await using ServerService server = CreateServer(options);
         Task serverTask = server.RunAsync(serverStop.Token);
 
-        await using VirtualMouseClient client = CreateClient(options);
+        await using ClientService client = CreateClient(options);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
 
         ServerStatus status = await client.GetStatusAsync(CancellationToken.None).ConfigureAwait(false);
@@ -91,10 +91,10 @@ public sealed class ServerClientTests
     {
         HostingSettings options = CreateOptions();
         using CancellationTokenSource serverStop = new();
-        await using VirtualMouseServer server = CreateServer(options);
+        await using ServerService server = CreateServer(options);
         Task serverTask = server.RunAsync(serverStop.Token);
 
-        await using VirtualMouseClient client = CreateClient(options);
+        await using ClientService client = CreateClient(options);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
         await WaitUntilAsync(() => server.Clients.Count == 1).ConfigureAwait(false);
 
@@ -109,10 +109,10 @@ public sealed class ServerClientTests
     {
         HostingSettings options = CreateOptions();
         using CancellationTokenSource serverStop = new();
-        await using VirtualMouseServer server = CreateServer(options);
+        await using ServerService server = CreateServer(options);
         Task serverTask = server.RunAsync(serverStop.Token);
 
-        await using VirtualMouseClient client = CreateClient(options);
+        await using ClientService client = CreateClient(options);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
         await WaitUntilAsync(() => server.Clients.Count == 1).ConfigureAwait(false);
 
@@ -133,16 +133,16 @@ public sealed class ServerClientTests
         };
     }
 
-    private static VirtualMouseClient CreateClient(HostingSettings options)
+    private static ClientService CreateClient(HostingSettings options)
     {
-        return new VirtualMouseClient(
+        return new ClientService(
             Options.Create(options),
             Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
     }
 
-    private static VirtualMouseServer CreateServer(HostingSettings options)
+    private static ServerService CreateServer(HostingSettings options)
     {
-        return new VirtualMouseServer(Options.Create(options), NullLogger<VirtualMouseServer>.Instance);
+        return new ServerService(Options.Create(options), NullLogger<ServerService>.Instance);
     }
 
     private static async Task StopServerAsync(CancellationTokenSource stop, Task serverTask)

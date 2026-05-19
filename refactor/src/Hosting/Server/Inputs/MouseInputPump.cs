@@ -25,7 +25,7 @@ internal sealed class MouseInputPump(
         if (!OperatingSystem.IsWindows())
         {
             _lastError = "Windows is required.";
-            logger.LogWarning("Raw Input mouse pump disabled: Windows is required.");
+            HostingLog.RawInputMousePumpDisabled(logger);
             return;
         }
 
@@ -36,10 +36,12 @@ internal sealed class MouseInputPump(
 
     public MouseInputPumpStatus GetStatus()
     {
+#pragma warning disable CA1416 // Guarded by the Windows check.
         return new MouseInputPumpStatus(
             _running,
-            OperatingSystem.IsWindows() && _source is not null && IsSourceConnected(_source),
+            OperatingSystem.IsWindows() && _source?.IsConnected == true,
             _lastError);
+#pragma warning restore CA1416
     }
 
     public async ValueTask DisposeAsync()
@@ -54,7 +56,9 @@ internal sealed class MouseInputPump(
         await IgnoreExpectedStopAsync(_task).ConfigureAwait(false);
         if (_source is not null && OperatingSystem.IsWindows())
         {
-            await DisposeSourceAsync(_source).ConfigureAwait(false);
+#pragma warning disable CA1416 // Guarded by the Windows check.
+            await _source.DisposeAsync().ConfigureAwait(false);
+#pragma warning restore CA1416
         }
 
         _stop.Dispose();
@@ -66,13 +70,21 @@ internal sealed class MouseInputPump(
         _source = await RawInputMouseSource.ConnectAsync(cancellationToken).ConfigureAwait(false);
         _running = true;
         _lastError = null;
-        logger.LogInformation("Raw Input mouse pump started.");
+        HostingLog.RawInputMousePumpStarted(logger);
         _source.Run(HandleMouseInput, cancellationToken);
     }
 
     private void HandleMouseInput(in MouseInput input)
     {
-        broker.Send(in input);
+        if (ShouldForwardRawInputMouse(in input))
+        {
+            broker.Send(in input);
+        }
+    }
+
+    internal static bool ShouldForwardRawInputMouse(in MouseInput input)
+    {
+        return input.DeviceHandle == nint.Zero && string.IsNullOrWhiteSpace(input.DeviceName);
     }
 
     [SupportedOSPlatform("windows")]
@@ -93,20 +105,8 @@ internal sealed class MouseInputPump(
         {
             _running = false;
             _lastError = exception.Message;
-            logger.LogWarning("Raw Input mouse pump stopped: {Message}", exception.Message);
+            HostingLog.RawInputMousePumpStopped(logger, exception.Message);
         }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static ValueTask DisposeSourceAsync(RawInputMouseSource source)
-    {
-        return source.DisposeAsync();
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static bool IsSourceConnected(RawInputMouseSource source)
-    {
-        return source.IsConnected;
     }
 
     private static async Task IgnoreExpectedStopAsync(Task? task)

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VirtualMouse.Runtime;
@@ -10,22 +9,7 @@ using VirtualMouse.Settings;
 
 namespace VirtualMouse.Hosting;
 
-// MARK: Dependency Injection
-// ============================================================================
-
-/// <summary>Dependency injection registration for the app-facing client.</summary>
-public static class ClientServices
-{
-    /// <summary>Adds the local server client.</summary>
-    public static IServiceCollection AddApplicationClient(this IServiceCollection services)
-    {
-        _ = services.AddTransient<VirtualMouseClient>();
-        _ = services.AddTransient<GameClient>();
-        return services;
-    }
-}
-
-// MARK: Implementation
+// MARK: Models
 // ============================================================================
 
 /// <summary>Current connection state of a client.</summary>
@@ -53,7 +37,7 @@ public sealed class ClientConnectionChangedEventArgs(ClientConnectionState state
 
 // The app-facing client: connect it, send requests through it, then dispose it.
 /// <summary>App-facing client connection to the local server.</summary>
-public sealed class VirtualMouseClient : IAsyncDisposable
+public sealed class ClientService : IDisposable, IAsyncDisposable
 {
     private readonly ClientConnection _connection;
     private bool _disposed;
@@ -62,18 +46,23 @@ public sealed class VirtualMouseClient : IAsyncDisposable
     // ========================================================================
 
     /// <summary>Creates a client from configured hosting settings.</summary>
-    public VirtualMouseClient(IOptions<HostingSettings> options, ILoggerFactory loggerFactory)
-        : this(new ClientConnection(options, loggerFactory.CreateLogger<ClientConnection>()))
+    public ClientService(IOptions<HostingSettings> options, ILoggerFactory loggerFactory)
     {
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        _connection = new ClientConnection(
+            options,
+            loggerFactory.CreateLogger<ClientConnection>());
+        _connection.Changed += OnConnectionChanged;
     }
 
-    internal VirtualMouseClient(ClientConnection connection)
+    internal ClientService(ClientConnection connection)
     {
         _connection = connection;
         _connection.Changed += OnConnectionChanged;
     }
 
-    // MARK: API
+    // MARK: Publics
     // ========================================================================
 
     /// <summary>Raised when the server connection state changes.</summary>
@@ -169,7 +158,20 @@ public sealed class VirtualMouseClient : IAsyncDisposable
         await _connection.DisposeAsync().ConfigureAwait(false);
     }
 
-    // MARK: Helpers
+    /// <summary>Disconnects from the server.</summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _connection.Changed -= OnConnectionChanged;
+        _connection.Dispose();
+    }
+
+    // MARK: Privates
     // ========================================================================
 
     private void OnConnectionChanged(object? sender, ClientConnectionChangedEventArgs args)

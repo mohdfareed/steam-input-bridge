@@ -104,6 +104,8 @@ Do not set `LangVersion=latest`.
 - Keep host responsibilities focused on configuration, profile resolution, foreground active-run selection, VIIPER output ownership, route-local feedback, and cleanup.
 - Keep client responsibilities focused on launching one profile run, reading client-visible SDL controllers, streaming route input to the host, handling route-local feedback, and normal run release.
 - Separate durable configuration from runtime state. Profiles, games, controllers, and global settings are configuration; client runs, controller routes, process ids, and created device ids are state.
+- Keep process launch, receiver discovery, process ownership, and process-kill helpers in `src/Runtime`; Hosting should orchestrate those helpers, not own platform process primitives.
+- Keep active-client state and receiver-process claims in `ActiveClientRegistry`; server-side foreground polling and side effects such as forwarding gates or Steam forcing belong in a server loop, not in the registry.
 
 ## Current API Direction
 
@@ -265,6 +267,7 @@ characters, rather than copying a fixed separator length.
 - Use `Inputs`, `Outputs`, `Hosting`, and `SteamInput` as the top-level project buckets for new work.
 - Keep namespaces aligned with project buckets: `Inputs`, `Inputs.RawInput`, `Inputs.Sdl`, `Outputs`, `Outputs.Viiper`, `Outputs.Teensy`, `Hosting`, and `SteamInput`.
 - Prefer clear names over over-general names.
+- Do not add private helper methods that only wrap a constructor, null check, simple property access, or one obvious call. Inline those so the code reads locally without jumping through recipe-style helper chains.
 
 ## Style Preferences
 

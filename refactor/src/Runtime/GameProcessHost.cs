@@ -2,25 +2,43 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using VirtualMouse.Runtime;
 
-namespace VirtualMouse.Hosting;
+namespace VirtualMouse.Runtime;
 
-internal static class GameProcessHost
+/// <summary>Launches, observes, and stops game processes.</summary>
+public static class GameProcessHost
 {
-    public static Process Launch(ClientRunLaunch run)
+    // MARK: Management
+    // ========================================================================
+
+    /// <summary>Starts a process using the resolved profile launch details.</summary>
+    public static Process Launch(
+        string executable,
+        string arguments,
+        string workingDirectory)
     {
         return Process.Start(new ProcessStartInfo
         {
-            FileName = run.Executable,
-            Arguments = run.Arguments,
-            WorkingDirectory = run.WorkingDirectory,
+            FileName = executable,
+            Arguments = arguments,
+            WorkingDirectory = workingDirectory,
             UseShellExecute = false,
-        }) ?? throw new InvalidOperationException($"Could not launch {run.Executable}.");
+        }) ?? throw new InvalidOperationException($"Could not launch {executable}.");
     }
 
+    /// <summary>Owns a process tree when the platform supports it.</summary>
+    public static IDisposable OwnProcessTree(Process process)
+    {
+        return OperatingSystem.IsWindows()
+            ? WindowsProcessJob.Own(process)
+            : new NoopDisposable();
+    }
+
+    /// <summary>Finds receiver processes by executable name.</summary>
     public static IReadOnlyList<ObservedGameProcess> FindReceivers(IReadOnlyList<string> processNames)
     {
+        ArgumentNullException.ThrowIfNull(processNames);
+
         Dictionary<int, ObservedGameProcess> processes = [];
         foreach (string processName in processNames)
         {
@@ -50,8 +68,14 @@ internal static class GameProcessHost
         return [.. processes.Values];
     }
 
+    // MARK: Ending
+    // ========================================================================
+
+    /// <summary>Stops the listed processes and returns how many kill requests were sent.</summary>
     public static int Kill(IReadOnlyList<ObservedGameProcess> processes)
     {
+        ArgumentNullException.ThrowIfNull(processes);
+
         int killed = 0;
         foreach (ObservedGameProcess observed in processes)
         {
@@ -76,19 +100,30 @@ internal static class GameProcessHost
         return killed;
     }
 
+    /// <summary>Stops the root process and known receiver processes.</summary>
     public static int KillRootAndReceivers(Process root, IReadOnlyList<ObservedGameProcess> receivers)
     {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(receivers);
+
         int killed = Kill(receivers);
         killed += KillRoot(root);
         return killed;
     }
 
+    /// <summary>Finds receiver processes, then stops the receivers and root process.</summary>
     public static int KillRootAndReceivers(Process root, IReadOnlyList<string> receiverProcesses)
     {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(receiverProcesses);
+
         int killed = Kill(FindReceivers(receiverProcesses));
         killed += KillRoot(root);
         return killed;
     }
+
+    // MARK: Privates
+    // ========================================================================
 
     private static int KillRoot(Process root)
     {
@@ -108,5 +143,12 @@ internal static class GameProcessHost
         }
 
         return 0;
+    }
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        public void Dispose()
+        {
+        }
     }
 }

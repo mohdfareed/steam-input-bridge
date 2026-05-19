@@ -45,15 +45,15 @@ public sealed class HostingForwardingTests
             await using ControllerBroker broker = new(factory);
             int foregroundProcessId = 0;
 
-            ActiveClientOrchestration activeClients = new(
+            ServerActiveClientLoop activeClients = new(
                 runtime,
                 () => Volatile.Read(ref foregroundProcessId),
                 TimeSpan.FromMilliseconds(options.ForegroundPollMilliseconds),
                 args => broker.SetActiveClient(args.CurrentClientId));
 
-            await using VirtualMouseServer server = new(
+            await using ServerService server = new(
                 Options.Create(options),
-                NullLogger<VirtualMouseServer>.Instance,
+                NullLogger<ServerService>.Instance,
                 settingsFile: null,
                 services.GetRequiredService<ProfilesService>(),
                 runtime,
@@ -62,7 +62,7 @@ public sealed class HostingForwardingTests
 
             using CancellationTokenSource serverStop = new();
             Task serverTask = server.RunAsync(serverStop.Token);
-            await using VirtualMouseClient client = new(
+            await using ClientService client = new(
                 Options.Create(options),
                 NullLoggerFactory.Instance);
 

@@ -12,11 +12,12 @@ namespace VirtualMouse.Hosting;
 
 internal sealed class ClientConnection(
     IOptions<HostingSettings> options,
-    ILogger<ClientConnection> logger) : IAsyncDisposable
+    ILogger<ClientConnection> logger) : IDisposable, IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private NamedPipeClientStream? _pipe;
-    private IVirtualMouseServerApi? _server;
+    private IHostServerApi? _server;
+    private bool _disposed;
 
     internal event EventHandler<ClientConnectionChangedEventArgs>? Changed;
 
@@ -24,10 +25,11 @@ internal sealed class ClientConnection(
 
     internal ClientConnectionState State { get; private set; } = ClientConnectionState.Disconnected;
 
-    internal IVirtualMouseServerApi Server => _server ?? throw new InvalidOperationException("Client is not connected.");
+    internal IHostServerApi Server => _server ?? throw new InvalidOperationException("Client is not connected.");
 
     internal async Task ConnectAsync(CancellationToken cancellationToken)
     {
+        ThrowIfDisposed();
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -46,6 +48,7 @@ internal sealed class ClientConnection(
 
     internal async Task WaitAsync(CancellationToken cancellationToken)
     {
+        ThrowIfDisposed();
         while (!cancellationToken.IsCancellationRequested)
         {
             await Task
@@ -58,7 +61,7 @@ internal sealed class ClientConnection(
             }
             catch (Exception exception) when (IsConnectionFailure(exception))
             {
-                logger.LogWarning("Server connection lost: {Message}", exception.Message);
+                HostingLog.ServerConnectionLost(logger, exception.Message);
                 await ClearAsync().ConfigureAwait(false);
                 await ReconnectAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -67,7 +70,34 @@ internal sealed class ClientConnection(
 
     internal async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         await ClearAsync().ConfigureAwait(false);
+        _gate.Dispose();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        IHostServerApi? server = _server;
+        _server = null;
+        (server as IDisposable)?.Dispose();
+
+        NamedPipeClientStream? pipe = _pipe;
+        _pipe = null;
+        pipe?.Dispose();
+
+        ClientId = null;
+        SetState(ClientConnectionState.Disconnected, null);
         _gate.Dispose();
     }
 
@@ -80,13 +110,13 @@ internal sealed class ClientConnection(
     {
         string pipeName = options.Value.PipeName;
         SetState(ClientConnectionState.Connecting, null);
-        logger.LogInformation("Connecting to server pipe {PipeName}", pipeName);
+        HostingLog.ConnectingToServerPipe(logger, pipeName);
 
         NamedPipeClientStream pipe = new(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         try
         {
             await pipe.ConnectAsync(cancellationToken).ConfigureAwait(false);
-            IVirtualMouseServerApi server = JsonRpc.Attach<IVirtualMouseServerApi>(pipe);
+            IHostServerApi server = JsonRpc.Attach<IHostServerApi>(pipe);
             Guid clientId = await server
                 .ConnectAsync(Environment.ProcessId)
                 .WaitAsync(cancellationToken)
@@ -96,7 +126,7 @@ internal sealed class ClientConnection(
             _server = server;
             ClientId = clientId;
             SetState(ClientConnectionState.Connected, ClientId);
-            logger.LogInformation("Connected to server as {ClientId}", ClientId);
+            HostingLog.ConnectedToServer(logger, ClientId);
         }
         catch
         {
@@ -117,7 +147,7 @@ internal sealed class ClientConnection(
             }
             catch (Exception exception) when (IsConnectionFailure(exception))
             {
-                logger.LogWarning("Reconnect failed: {Message}", exception.Message);
+                HostingLog.ReconnectFailed(logger, exception.Message);
                 await ClearAsync().ConfigureAwait(false);
                 await Task
                     .Delay(TimeSpan.FromMilliseconds(options.Value.ReconnectDelayMilliseconds), cancellationToken)
@@ -128,7 +158,7 @@ internal sealed class ClientConnection(
 
     private async Task ClearAsync()
     {
-        IVirtualMouseServerApi? server = Interlocked.Exchange(ref _server, null);
+        IHostServerApi? server = Interlocked.Exchange(ref _server, null);
         (server as IDisposable)?.Dispose();
 
         NamedPipeClientStream? pipe = Interlocked.Exchange(ref _pipe, null);
@@ -159,5 +189,10 @@ internal sealed class ClientConnection(
             or InvalidOperationException
             or ConnectionLostException
             or ObjectDisposedException;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 }
