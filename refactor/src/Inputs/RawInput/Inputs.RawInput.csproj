@@ -5,7 +5,7 @@
     <ImplicitUsings>disabled</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <NoWarn>$(NoWarn);CA1515;CA2007;IDE0130</NoWarn>
+    <NoWarn>$(NoWarn);IDE0130;</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -20,8 +20,7 @@ public sealed partial class RawInputMouseSource
     private const string WindowClassName = "Inputs.RawInput";
     private const string WindowName = "Raw Input mouse source";
 
-
-    // MARK: Window
+    // MARK: Methods
     // ========================================================================
 
     private static nint HandleWindowMessage(nint hwnd, uint message, nint wParam, nint lParam)

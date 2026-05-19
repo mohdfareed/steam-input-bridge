@@ -32,7 +32,7 @@ public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
 #pragma warning restore CA2000
     }
 
-    // MARK: Implementation
+    // MARK: Publics
     // ========================================================================
 
     /// <inheritdoc />
@@ -41,21 +41,13 @@ public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
     /// <inheritdoc />
     public void Run(MouseInputHandler handler, CancellationToken cancellationToken = default)
     {
-        Run(handler, timingHandler: null, cancellationToken);
-    }
-
-    internal void Run(
-        MouseInputHandler handler,
-        Action<long, long>? timingHandler,
-        CancellationToken cancellationToken = default)
-    {
         ArgumentNullException.ThrowIfNull(handler);
         if (!IsConnected)
         {
             throw new InvalidOperationException("Mouse input is not connected.");
         }
 
-        RunState state = new(handler, timingHandler, cancellationToken);
+        RunState state = new(handler, cancellationToken);
         if (Interlocked.CompareExchange(ref CurrentState, state, null) is not null)
         {
             throw new InvalidOperationException("Another Raw Input mouse source is already running.");

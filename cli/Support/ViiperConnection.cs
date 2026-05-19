@@ -130,7 +130,7 @@ internal static class ViiperConnection
         await Console.Out.WriteLineAsync($"viiper xpad connected={connectionStatus} bus={busId} device={deviceId}").ConfigureAwait(false);
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     internal static ViiperOptions CreateViiperOptions(

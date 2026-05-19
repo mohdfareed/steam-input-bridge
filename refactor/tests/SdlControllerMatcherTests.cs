@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+using VirtualMouse.Hosting;
 using VirtualMouse.Inputs.Sdl;
 
 namespace VirtualMouse.Tests;
@@ -72,6 +75,20 @@ public sealed class SdlControllerMatcherTests
             ]);
 
         Assert.IsNull(match);
+    }
+
+    /// <summary>Steam-routed controllers suppress their matched physical duplicate.</summary>
+    [TestMethod]
+    public void ClientSelectionDropsMatchedPhysicalDuplicate()
+    {
+        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x1234, 0x5678, "same");
+        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x1234, 0x5678, "same");
+        SdlControllerInfo other = Controller(SdlControllerSource.Physical, 0xabcd, 0xef01, "other");
+
+        IReadOnlyList<SdlControllerInfo> selected =
+            ClientControllerStreams.SelectClientControllers([steam, physical, other]);
+
+        CollectionAssert.AreEqual(new[] { steam, other }, selected.ToArray());
     }
 
     private static SdlControllerInfo Controller(

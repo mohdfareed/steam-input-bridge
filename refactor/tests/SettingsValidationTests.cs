@@ -31,7 +31,7 @@ public sealed class SettingsValidationTests
 
             StringAssert.Contains(exception.Message, "hosting:pipeName", StringComparison.Ordinal);
             StringAssert.Contains(exception.Message, "hosting:foregroundPollMilliseconds", StringComparison.Ordinal);
-            StringAssert.Contains(exception.Message, "general:viiperPort", StringComparison.Ordinal);
+            StringAssert.Contains(exception.Message, "viiper:port", StringComparison.Ordinal);
             StringAssert.Contains(exception.Message, "games:bad:executable", StringComparison.Ordinal);
         }
         finally
@@ -115,9 +115,9 @@ public sealed class SettingsValidationTests
               "KeepAliveMilliseconds": 0,
               "ForegroundPollMilliseconds": 0
             },
-            "General": {
-              "ViiperHost": "localhost",
-              "ViiperPort": 70000
+            "Viiper": {
+              "Host": "localhost",
+              "Port": 70000
             },
             "Games": {
               "bad": {

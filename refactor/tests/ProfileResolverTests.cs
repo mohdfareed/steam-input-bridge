@@ -25,6 +25,7 @@ public sealed class ProfileResolverTests
             {
                 Executable = $"%{variableName}%\\Games\\DemoGame\\game.exe",
                 Arguments = "--demo",
+                SteamAppId = 123,
                 ControllerOutput = ControllerOutput.Ds4,
                 MouseOutput = MouseOutput.None,
             };
@@ -35,6 +36,7 @@ public sealed class ProfileResolverTests
             Assert.AreEqual(Path.Combine(root, "Games", "DemoGame", "game.exe"), resolved.Executable);
             Assert.AreEqual(Path.Combine(root, "Games", "DemoGame"), resolved.WorkingDirectory);
             Assert.AreEqual("--demo", resolved.Arguments);
+            Assert.AreEqual(123u, resolved.SteamAppId);
             CollectionAssert.AreEqual(GameReceiverProcess, resolved.ReceiverProcesses.ToArray());
             Assert.AreEqual(ControllerOutput.Ds4, resolved.ControllerOutput);
             Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);

@@ -37,7 +37,7 @@ public sealed record SteamGame
     public string? LocalPath { get; init; }
 }
 
-// MARK: API
+// MARK: Publics
 // ============================================================================
 
 /// <summary>Reads local Steam state and controls Steam Input through Steam URLs.</summary>
@@ -90,7 +90,7 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
         return OpenAsync(CreateOpenConfigUri(appId), cancellationToken);
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private ValueTask OpenAsync(Uri url, CancellationToken cancellationToken)

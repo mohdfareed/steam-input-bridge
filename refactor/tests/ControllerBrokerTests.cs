@@ -141,6 +141,40 @@ public sealed class ControllerBrokerTests
         Assert.HasCount(1, physicalFeedback.Feedback);
     }
 
+    /// <summary>Feedback returns to the active client endpoint for the output slot.</summary>
+    [TestMethod]
+    public void FeedbackUsesControllerEndpointIndex()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        FakeFeedbackSink firstFeedback = new(accept: true);
+        FakeFeedbackSink secondFeedback = new(accept: true);
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.SetActiveClient(clientId);
+        broker.UpdateClientController(
+            clientId,
+            controllerIndex: 0,
+            new ControllerId("physical-1"),
+            new ControllerState(Standard(ControllerButtons.South), null, null),
+            ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
+            firstFeedback);
+        broker.UpdateClientController(
+            clientId,
+            controllerIndex: 1,
+            new ControllerId("physical-2"),
+            new ControllerState(Standard(ControllerButtons.East), null, null),
+            ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
+            secondFeedback);
+
+        factory.Outputs[0].EmitFeedback(new ControllerFeedback(new ControllerRumble(10, 20)));
+        factory.Outputs[1].EmitFeedback(new ControllerFeedback(new ControllerRumble(30, 40)));
+
+        Assert.AreEqual((ushort)10, firstFeedback.Feedback[0].Rumble?.LowFrequency);
+        Assert.AreEqual((ushort)30, secondFeedback.Feedback[0].Rumble?.LowFrequency);
+    }
+
     /// <summary>Output devices connect only while a client actively needs them.</summary>
     [TestMethod]
     public void OutputConnectsAndDisconnectsWithUse()
@@ -183,6 +217,30 @@ public sealed class ControllerBrokerTests
 
         broker.RemoveClient(clientId);
         Assert.IsTrue(factory.Outputs[1].Disposed);
+    }
+
+    /// <summary>Output devices are created with stable physical-controller labels.</summary>
+    [TestMethod]
+    public void OutputUsesPhysicalControllerLabel()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.SetActiveClient(clientId);
+        ControllerId controllerId = new(ControllerId.Value, "Steam Controller");
+        broker.UpdatePhysicalController(
+            controllerId,
+            new ControllerState(null, Motion(1), null),
+            ControllerFeatures.Motion);
+        broker.UpdateClientController(
+            clientId,
+            controllerId,
+            new ControllerState(Standard(ControllerButtons.South), null, null),
+            ControllerFeatures.StandardControls);
+
+        Assert.AreEqual("Steam Controller", factory.SingleOutput.ControllerId.DisplayName);
     }
 
     private static ControllerStandardState Standard(ControllerButtons buttons)

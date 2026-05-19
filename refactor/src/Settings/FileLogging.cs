@@ -30,7 +30,7 @@ public static class FileLoggingExtensions
     }
 }
 
-// MARK: Implementation
+// MARK: Publics
 // ============================================================================
 
 internal sealed class FileLoggerProvider : ILoggerProvider

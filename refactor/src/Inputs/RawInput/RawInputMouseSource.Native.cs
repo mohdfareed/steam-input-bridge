@@ -6,6 +6,9 @@ namespace VirtualMouse.Inputs.RawInput;
 [SupportedOSPlatform("windows")]
 public sealed partial class RawInputMouseSource
 {
+    // MARK: Models
+    // ========================================================================
+
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate nint WindowProc(nint hwnd, uint message, nint wParam, nint lParam);
 
@@ -82,6 +85,9 @@ public sealed partial class RawInputMouseSource
         public int LastY;
         public uint ExtraInformation;
     }
+
+    // MARK: Methods
+    // ========================================================================
 
     private static partial class NativeMethods
     {

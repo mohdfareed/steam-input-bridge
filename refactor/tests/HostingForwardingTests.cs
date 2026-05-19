@@ -73,7 +73,7 @@ public sealed class HostingForwardingTests
                     .StartRunAsync(new StartRunRequest("game", SteamAppId: 123), CancellationToken.None)
                     .ConfigureAwait(false);
                 await client.RegisterClientControllersAsync(
-                        [new ClientControllerInfo(0, "physical-1", ControllerFeatures.StandardControls)],
+                        [new ClientControllerInfo(0, "physical-1", "Physical 1", ControllerFeatures.StandardControls)],
                         CancellationToken.None)
                     .ConfigureAwait(false);
 

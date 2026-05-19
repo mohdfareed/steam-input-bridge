@@ -311,7 +311,7 @@ internal static class ClientCommands
         }
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     internal static async Task<ForwardingClientConnection?> TryConnectAsync(CancellationToken cancellationToken)

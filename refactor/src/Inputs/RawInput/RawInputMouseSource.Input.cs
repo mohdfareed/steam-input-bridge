@@ -8,14 +8,14 @@ namespace VirtualMouse.Inputs.RawInput;
 public sealed partial class RawInputMouseSource
 {
     private const int DeviceName = 0x20000007;
-    private const ushort RI_MOUSE_WHEEL = 0x0400;
+    private const ushort MouseWheel = 0x0400;
     private const int WheelDelta = 120;
 
     private static readonly int RawInputBufferInitialSize = Marshal.SizeOf<RawInput>();
     private static readonly uint RawInputBufferInitialCapacity = (uint)(RawInputBufferInitialSize * 64);
     private static readonly uint RawInputHeaderSize = (uint)Marshal.SizeOf<RawInputHeader>();
 
-    // MARK: Input
+    // MARK: Methods
     // ========================================================================
 
     private static bool HasMouseButtonEvent(ushort flags)
@@ -30,9 +30,23 @@ public sealed partial class RawInputMouseSource
         return (flags & buttonMask) != 0;
     }
 
+    private static MouseButtons ApplyButton(
+        MouseButtons buttons,
+        ushort flags,
+        ushort downFlag,
+        ushort upFlag,
+        MouseButtons button)
+    {
+        return (flags & downFlag) != 0
+            ? buttons | button
+            : (flags & upFlag) != 0
+                ? buttons & ~button
+                : buttons;
+    }
+
     private static int GetWheelDelta(ushort flags, ushort buttonData)
     {
-        return (flags & RI_MOUSE_WHEEL) == 0
+        return (flags & MouseWheel) == 0
             ? 0
             : unchecked((short)buttonData) / WheelDelta;
     }
@@ -63,19 +77,5 @@ public sealed partial class RawInputMouseSource
         {
             Marshal.FreeHGlobal(buffer);
         }
-    }
-
-    private static MouseButtons ApplyButton(
-        MouseButtons buttons,
-        ushort flags,
-        ushort downFlag,
-        ushort upFlag,
-        MouseButtons button)
-    {
-        return (flags & downFlag) != 0
-            ? buttons | button
-            : (flags & upFlag) != 0
-                ? buttons & ~button
-                : buttons;
     }
 }

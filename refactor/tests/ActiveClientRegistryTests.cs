@@ -18,8 +18,8 @@ public sealed class ActiveClientRegistryTests
         Guid second = Start(runtime, "second");
         ObservedGameProcess process = Receiver(100);
 
-        runtime.UpdateClientProcesses(first, [process]);
-        runtime.UpdateClientProcesses(second, [process]);
+        runtime.UpdateClient(first, [process]);
+        runtime.UpdateClient(second, [process]);
 
         ActiveClientRegistryStatus status = runtime.GetStatus();
         ClientStatus firstStatus = Find(status, first);
@@ -38,7 +38,7 @@ public sealed class ActiveClientRegistryTests
         ActiveClientRegistry runtime = new();
         Guid clientId = Start(runtime, "game");
 
-        runtime.UpdateClientProcesses(clientId, [Receiver(100), Receiver(101)]);
+        runtime.UpdateClient(clientId, [Receiver(100), Receiver(101)]);
 
         ClientStatus status = Find(runtime.GetStatus(), clientId);
         Assert.HasCount(2, status.OwnedProcesses);
@@ -51,9 +51,9 @@ public sealed class ActiveClientRegistryTests
     {
         ActiveClientRegistry runtime = new();
         Guid clientId = Start(runtime, "game");
-        runtime.UpdateClientProcesses(clientId, [Receiver(100)]);
+        runtime.UpdateClient(clientId, [Receiver(100)]);
 
-        runtime.RefreshActiveClient(100);
+        runtime.RefreshClients(100);
 
         ActiveClientRegistryStatus status = runtime.GetStatus();
         Assert.AreEqual(clientId, status.ActiveClientId);
@@ -66,10 +66,10 @@ public sealed class ActiveClientRegistryTests
     {
         ActiveClientRegistry runtime = new();
         Guid clientId = Start(runtime, "game");
-        runtime.UpdateClientProcesses(clientId, [Receiver(100)]);
-        runtime.RefreshActiveClient(100);
+        runtime.UpdateClient(clientId, [Receiver(100)]);
+        runtime.RefreshClients(100);
 
-        runtime.RefreshActiveClient(200);
+        runtime.RefreshClients(200);
 
         ActiveClientRegistryStatus status = runtime.GetStatus();
         Assert.IsNull(status.ActiveClientId);
@@ -83,9 +83,9 @@ public sealed class ActiveClientRegistryTests
         Guid first = Start(runtime, "first");
         Guid second = Start(runtime, "second");
         ObservedGameProcess process = Receiver(100);
-        runtime.UpdateClientProcesses(first, [process]);
-        runtime.UpdateClientProcesses(second, [process]);
-        runtime.RefreshActiveClient(100);
+        runtime.UpdateClient(first, [process]);
+        runtime.UpdateClient(second, [process]);
+        runtime.RefreshClients(100);
 
         runtime.RemoveClient(first);
 
@@ -103,9 +103,9 @@ public sealed class ActiveClientRegistryTests
         ActiveClientRegistry runtime = new();
         Guid active = Start(runtime, "active");
         Guid inactive = Start(runtime, "inactive");
-        runtime.UpdateClientProcesses(active, [Receiver(100)]);
-        runtime.UpdateClientProcesses(inactive, [Receiver(200)]);
-        runtime.RefreshActiveClient(100);
+        runtime.UpdateClient(active, [Receiver(100)]);
+        runtime.UpdateClient(inactive, [Receiver(200)]);
+        runtime.RefreshClients(100);
 
         runtime.RemoveClient(inactive);
 
@@ -119,7 +119,7 @@ public sealed class ActiveClientRegistryTests
         ActiveClientRegistry runtime = new();
         Guid clientId = Guid.NewGuid();
         runtime.RegisterClient(clientId, Environment.ProcessId, "game", steamAppId: null, ["game.exe"]);
-        runtime.UpdateClientProcesses(clientId, [Receiver(100)]);
+        runtime.UpdateClient(clientId, [Receiver(100)]);
 
         runtime.RemoveClient(clientId);
 
@@ -134,13 +134,13 @@ public sealed class ActiveClientRegistryTests
     {
         ActiveClientRegistry runtime = new();
         Guid clientId = Start(runtime, "game");
-        runtime.UpdateClientProcesses(clientId, [Receiver(100)]);
+        runtime.UpdateClient(clientId, [Receiver(100)]);
         List<ActiveClientChangedEventArgs> changes = [];
         runtime.ActiveClientChanged += (_, args) => changes.Add(args);
 
-        runtime.RefreshActiveClient(100);
-        runtime.RefreshActiveClient(100);
-        runtime.RefreshActiveClient(0);
+        runtime.RefreshClients(100);
+        runtime.RefreshClients(100);
+        runtime.RefreshClients(0);
 
         Assert.HasCount(2, changes);
         Assert.AreEqual(clientId, changes[0].CurrentClientId);

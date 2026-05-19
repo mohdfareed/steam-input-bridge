@@ -73,6 +73,7 @@ Do not set `LangVersion=latest`.
 - SDL gamepad input should be event-driven through SDL events such as gamepad update-complete and sensor-update events, not an input polling loop.
 - Do not add a shared factory or transport manager unless explicitly requested.
 - Do not add a shared cross-transport options type.
+- Do not add parallel parameters for metadata that belongs to an existing identity or state object. If a method would receive both an id and a display label for the same thing, put the display label on the id-bearing object or remove the label from that boundary.
 - `IMouseOutput` represents a usable mouse output connection, not a transport factory.
 - `IMouseInputSource` represents a usable mouse input connection.
 - Use direct callbacks for virtual mouse input hot paths; do not add event queues or buffering unless explicitly requested.
@@ -131,6 +132,7 @@ Do not set `LangVersion=latest`.
 - For VIIPER-created virtual devices, remove the device and bus before waiting on the connected stream to dispose. The generated client can block while an output read loop waits on the stream; stream shutdown must not block virtual-device removal.
 - Mark created VIIPER devices with fixed route-specific VID/PID pairs and reclaim only those owned devices on startup.
 - Enforce one active VIIPER owner with a named ownership primitive; concurrent instances should fail fast instead of competing, and ownership must be safe across async continuations.
+- Use user-facing VIIPER device labels. Mouse output should identify Steam Input, and controller output should use a readable physical controller name instead of an internal id.
 
 ## Teensy Notes
 
@@ -254,7 +256,9 @@ Format:
 // ========================================================================
 ```
 
-The separator line is always 79 characters wide.
+The full separator line, including the leading `// `, must be exactly 79
+characters wide. Adjust the number of `=` characters to make the whole line 79
+characters, rather than copying a fixed separator length.
 
 ## Naming
 

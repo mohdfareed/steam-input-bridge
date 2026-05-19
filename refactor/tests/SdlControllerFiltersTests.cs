@@ -1,6 +1,5 @@
 using VirtualMouse.Hosting;
 using VirtualMouse.Inputs.Sdl;
-using VirtualMouse.Outputs.Viiper;
 
 namespace VirtualMouse.Tests;
 
@@ -12,9 +11,7 @@ public sealed class SdlControllerFiltersTests
     [TestMethod]
     public void RejectsViiperControllerLoopback()
     {
-        SdlControllerInfo controller = Controller(
-            ViiperXbox360Output.OwnedVendorId,
-            ViiperXbox360Output.OwnedProductId);
+        SdlControllerInfo controller = Controller(0x045e, 0x028e);
 
         Assert.IsFalse(SdlControllerFilters.IsForwardable(controller));
     }

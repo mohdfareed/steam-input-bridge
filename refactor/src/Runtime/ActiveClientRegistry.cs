@@ -14,7 +14,7 @@ public sealed class ActiveClientRegistry
     private int _foregroundProcessId;
     private Guid? _activeClientId;
 
-    // MARK: API
+    // MARK: Publics
     // ========================================================================
 
     /// <summary>Raised when the active client changes.</summary>
@@ -126,7 +126,7 @@ public sealed class ActiveClientRegistry
         }
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private ClientState GetClient(Guid clientId)

@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace VirtualMouse.Settings.Profiles;
 
-// MARK: Game Profiles
+// MARK: Profiles
 // ============================================================================
 
 /// <summary>Virtual controller output selected by a profile.</summary>

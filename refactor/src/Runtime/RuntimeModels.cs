@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace VirtualMouse.Runtime;
 
-// MARK: API
+// MARK: Publics
 // ============================================================================
 
 /// <summary>Process observed by a client.</summary>

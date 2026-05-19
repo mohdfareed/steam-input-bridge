@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using global::Viiper.Client;
@@ -9,6 +10,9 @@ namespace VirtualMouse.Outputs.Viiper;
 
 internal static class ViiperOutputConnector
 {
+    // MARK: Publics
+    // ========================================================================
+
     public static async Task<TOutput> ConnectAsync<TOutput>(
         ViiperOptions options,
         ViiperOutputDeviceDefinition definition,
@@ -17,8 +21,8 @@ internal static class ViiperOutputConnector
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(createOutput);
-
         ViiperClient? client = new(options.Host, options.Port, options.Password);
+
         try
         {
             Device createdDevice = await CreateDeviceAsync(
@@ -38,6 +42,7 @@ internal static class ViiperOutputConnector
                         createOutput,
                         cancellationToken)
                     .ConfigureAwait(false);
+
                 client = null;
                 return output;
             }
@@ -52,7 +57,6 @@ internal static class ViiperOutputConnector
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
-
                 throw;
             }
         }
@@ -63,7 +67,7 @@ internal static class ViiperOutputConnector
         }
     }
 
-    public static async Task ReclaimOwnedDevicesAsync(
+    public static async Task ReclaimDevicesAsync(
         ViiperOptions options,
         ViiperOutputDeviceDefinition definition,
         CancellationToken cancellationToken)
@@ -71,6 +75,7 @@ internal static class ViiperOutputConnector
         ArgumentNullException.ThrowIfNull(options);
         using ViiperClient client = new(options.Host, options.Port, options.Password);
         BusListResponse buses = await client.BusListAsync(cancellationToken).ConfigureAwait(false);
+
         foreach (uint busId in buses.Buses)
         {
             await ReclaimOwnedDevicesAsync(
@@ -83,6 +88,9 @@ internal static class ViiperOutputConnector
         }
     }
 
+    // MARK: Privates
+    // ========================================================================
+
     private static async Task<Device> CreateDeviceAsync(
         ViiperClient client,
         ViiperOutputDeviceDefinition definition,
@@ -90,6 +98,7 @@ internal static class ViiperOutputConnector
         CancellationToken cancellationToken)
     {
         uint busId = (await client.BusCreateAsync(null, cancellationToken).ConfigureAwait(false)).BusID;
+
         try
         {
             Device device = await client.BusDeviceAddAsync(
@@ -99,6 +108,10 @@ internal static class ViiperOutputConnector
                         Type = definition.DeviceType,
                         IdVendor = definition.VendorId,
                         IdProduct = definition.ProductId,
+                        DeviceSpecific = new Dictionary<string, object?>
+                        {
+                            ["name"] = definition.DisplayName,
+                        },
                     },
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -156,6 +169,7 @@ internal static class ViiperOutputConnector
         DevicesListResponse devices = await client.BusDevicesListAsync(busId, cancellationToken)
             .ConfigureAwait(false);
         int removedCount = 0;
+
         foreach (Device device in devices.Devices)
         {
             if (!definition.IsOwnedDevice(device))

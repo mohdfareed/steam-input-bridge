@@ -58,7 +58,7 @@ public sealed class ProfilesService : IDisposable
         _settings.Changed += OnSettingsChanged;
     }
 
-    // MARK: API
+    // MARK: Publics
     // ========================================================================
 
     /// <summary>Lists configured profile ids.</summary>
@@ -89,7 +89,7 @@ public sealed class ProfilesService : IDisposable
         _settings.Changed -= OnSettingsChanged;
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)

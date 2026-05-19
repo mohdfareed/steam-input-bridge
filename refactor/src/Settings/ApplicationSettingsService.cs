@@ -36,7 +36,7 @@ public static class SettingsServices
     }
 }
 
-// MARK: Implementation
+// MARK: Publics
 // ============================================================================
 
 /// <summary>Read-only access to reload-able application settings.</summary>

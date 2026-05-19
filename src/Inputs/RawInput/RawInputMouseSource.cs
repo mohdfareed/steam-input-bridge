@@ -31,7 +31,7 @@ public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
 #pragma warning restore CA2000
     }
 
-    // MARK: Implementation
+    // MARK: Publics
     // ========================================================================
 
     /// <inheritdoc />

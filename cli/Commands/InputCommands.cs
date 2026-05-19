@@ -35,7 +35,7 @@ internal static class InputCommands
         return command;
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private static void RunInput<TInput>(TInput input, TimeSpan outputInterval, CancellationToken cancellationToken)

@@ -3,7 +3,7 @@ using VirtualMouse.Settings.Profiles;
 
 namespace VirtualMouse.Settings;
 
-// MARK: Settings Models
+// MARK: Models
 // ============================================================================
 
 /// <summary>Resolved settings file path.</summary>

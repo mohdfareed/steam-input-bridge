@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
@@ -14,28 +13,25 @@ public sealed partial class RawInputMouseSource
     private const int Input = 0x10000003;
     private const int RawInputMouse = 0;
 
-    // MARK: State
-    // ========================================================================
-
-    private sealed class RunState(
-        MouseInputHandler handler,
-        Action<long, long>? timingHandler,
-        CancellationToken cancellationToken) : IDisposable
+    private sealed class RunState(MouseInputHandler handler, CancellationToken cancellationToken) : IDisposable
     {
         private readonly Dictionary<nint, string> deviceNames = [];
         private MouseButtons currentButtons;
         private nint inputBuffer;
         private uint inputBufferSize;
 
+        // MARK: Publics
+        // ====================================================================
+
         public CancellationToken CancellationToken { get; } = cancellationToken;
 
         public void HandleRawInput(nint rawInputHandle)
         {
             CancellationToken.ThrowIfCancellationRequested();
-            long startedTimestamp = Stopwatch.GetTimestamp();
+
             if (TryReadRawInputData(rawInputHandle, out RawInput rawInput))
             {
-                HandleRawInput(rawInput, startedTimestamp);
+                HandleRawInput(rawInput);
             }
 
             DrainRawInputQueue();
@@ -51,7 +47,10 @@ public sealed partial class RawInputMouseSource
             }
         }
 
-        private void HandleRawInput(RawInput rawInput, long startedTimestamp)
+        // MARK: Raw Input
+        // ====================================================================
+
+        private void HandleRawInput(RawInput rawInput)
         {
             if (rawInput.Header.Type != RawInputMouse)
             {
@@ -61,18 +60,22 @@ public sealed partial class RawInputMouseSource
             RawMouse mouse = rawInput.Mouse;
             ushort buttonFlags = mouse.ButtonFlags;
             ushort buttonData = mouse.ButtonData;
+            bool hasButtonEvent = HasMouseButtonEvent(buttonFlags);
+
             int deltaX = mouse.LastX;
             int deltaY = mouse.LastY;
             int wheelDelta = GetWheelDelta(buttonFlags, buttonData);
-            bool hasButtonEvent = HasMouseButtonEvent(buttonFlags);
             if (deltaX == 0 && deltaY == 0 && !hasButtonEvent && wheelDelta == 0)
             {
                 return;
             }
 
             MouseReport report = CreateReport(buttonFlags, deltaX, deltaY, wheelDelta);
-            MouseInput input = new(report, GetCachedDeviceName(rawInput.Header.Device));
-            timingHandler?.Invoke(startedTimestamp, Stopwatch.GetTimestamp());
+            MouseInput input = new(
+                report,
+                GetCachedDeviceName(rawInput.Header.Device),
+                rawInput.Header.Device);
+
             handler(in input);
         }
 
@@ -173,13 +176,14 @@ public sealed partial class RawInputMouseSource
                 for (uint i = 0; i < count; i++)
                 {
                     CancellationToken.ThrowIfCancellationRequested();
-                    long startedTimestamp = Stopwatch.GetTimestamp();
                     RawInput rawInput = Marshal.PtrToStructure<RawInput>(current);
-                    HandleRawInput(rawInput, startedTimestamp);
                     current += (int)rawInput.Header.Size;
                 }
             }
         }
+
+        // MARK: Privates
+        // ====================================================================
 
         private void EnsureInputBuffer(uint size)
         {

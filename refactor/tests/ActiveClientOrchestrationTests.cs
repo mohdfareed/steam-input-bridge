@@ -21,7 +21,7 @@ public sealed class ActiveClientOrchestrationTests
         ActiveClientRegistry runtime = new();
         Guid clientId = Guid.NewGuid();
         runtime.RegisterClient(clientId, Environment.ProcessId, "game", steamAppId: 123, ["game.exe"]);
-        runtime.UpdateClientProcesses(clientId, [new ObservedGameProcess(123, "game.exe")]);
+        runtime.UpdateClient(clientId, [new ObservedGameProcess(123, "game.exe")]);
 
         int foregroundProcessId = 0;
         List<ActiveClientChangedEventArgs> changes = [];

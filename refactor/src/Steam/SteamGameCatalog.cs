@@ -13,7 +13,7 @@ internal sealed class SteamGameCatalog(string steamPath)
         ? throw new ArgumentException("Steam path is required.", nameof(steamPath))
         : Path.GetFullPath(steamPath);
 
-    // MARK: API
+    // MARK: Publics
     // ========================================================================
 
     public IReadOnlyList<SteamGame> ListGames(uint? steamUserId = null)
@@ -32,7 +32,7 @@ internal sealed class SteamGameCatalog(string steamPath)
         ];
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private IReadOnlyList<string> ReadLibraryFolders()
@@ -189,7 +189,7 @@ internal sealed class SteamGameCatalog(string steamPath)
 internal static class SteamLocator
 {
 
-    // MARK: API
+    // MARK: Publics
     // ========================================================================
 
     public static string? FindSteamPath()
@@ -210,7 +210,7 @@ internal static class SteamLocator
         return TryParseUInt32(ReadRegistryString(@"Software\Valve\Steam\ActiveProcess", "ActiveUser"));
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private static string? FirstExistingDirectory(params string?[] paths)

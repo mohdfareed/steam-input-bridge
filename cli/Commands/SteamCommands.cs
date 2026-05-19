@@ -44,7 +44,7 @@ internal static class SteamCommands
         return game.LocalPath ?? string.Empty;
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private static Command CreateListCommand()
