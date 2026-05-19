@@ -5,6 +5,9 @@ namespace VirtualMouse.Forwarding;
 /// <summary>Maps canonical controller state into concrete output reports.</summary>
 public static class ControllerOutputMapping
 {
+    // MARK: Publics
+    // ========================================================================
+
     /// <summary>Maps a controller state to an Xbox 360 report.</summary>
     public static Xbox360Report ToXbox360Report(in ControllerState state)
     {
@@ -27,6 +30,9 @@ public static class ControllerOutputMapping
             ToUShortMotor(rumble.LeftMotor),
             ToUShortMotor(rumble.RightMotor)));
     }
+
+    // MARK: Private
+    // ========================================================================
 
     private static Xbox360Buttons ToXbox360Buttons(ControllerButtons buttons)
     {

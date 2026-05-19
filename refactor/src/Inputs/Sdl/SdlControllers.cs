@@ -4,6 +4,9 @@ using SDL3;
 
 namespace VirtualMouse.Inputs.Sdl;
 
+// MARK: Models
+// ============================================================================
+
 /// <summary>SDL controller source kind.</summary>
 public enum SdlControllerSource
 {
@@ -53,6 +56,9 @@ public sealed record SdlControllerInfo(
 /// <summary>Lists and opens SDL controllers visible to the current process.</summary>
 public static class SdlControllerCatalog
 {
+    // MARK: Publics
+    // ========================================================================
+
     /// <summary>Lists SDL game controllers visible to this process.</summary>
     public static IReadOnlyList<SdlControllerInfo> GetControllers(
         Func<SdlControllerInfo, bool>? shouldInclude = null)
@@ -92,6 +98,9 @@ public static class SdlControllerCatalog
             : $"vidpid:{controller.VendorId:x4}:{controller.ProductId:x4}";
     }
 
+    // MARK: Internals
+    // ========================================================================
+
     internal static InvalidOperationException CreateSdlUnavailableException(Exception exception)
     {
         return new InvalidOperationException(
@@ -112,6 +121,7 @@ public static class SdlControllerCatalog
         {
             uint instanceId = gamepadIds[i];
             nint gamepad = SDL.OpenGamepad(instanceId);
+
             try
             {
                 controllers.Add(gamepad == 0
@@ -130,6 +140,9 @@ public static class SdlControllerCatalog
         return controllers;
     }
 
+    // MARK: Privates
+    // ========================================================================
+
     private static IReadOnlyList<SdlGamepadSource> OpenControllers(
         Func<SdlControllerInfo, bool> shouldOpen,
         Func<SdlControllerInfo, bool>? shouldInclude)
@@ -139,6 +152,7 @@ public static class SdlControllerCatalog
             using SdlGamepadRuntime.Lease lease = SdlGamepadRuntime.Acquire();
             uint[] gamepadIds = SDL.GetGamepads(out int count) ?? [];
             List<SdlGamepadSource> sources = [];
+
             try
             {
                 foreach (SdlControllerInfo controller in CreateControllerInfos(gamepadIds, count))
@@ -191,6 +205,7 @@ public static class SdlControllerCatalog
             SDL.GetGamepadName(gamepad) ??
             $"SDL gamepad {instanceId}";
         ulong steamHandle = SDL.GetGamepadSteamHandle(gamepad);
+
         SdlControllerInfo controller = new(
             default,
             instanceId,
@@ -202,6 +217,7 @@ public static class SdlControllerCatalog
             SDL.GetGamepadPath(gamepad) ?? SDL.GetGamepadPathForID(instanceId),
             SDL.GamepadHasSensor(gamepad, SDL.SensorType.Gyro),
             SDL.GamepadHasSensor(gamepad, SDL.SensorType.Accel));
+
         return controller with { Id = SdlControllerId.Create(controller) };
     }
 
@@ -218,6 +234,7 @@ public static class SdlControllerCatalog
             SDL.GetGamepadPathForID(instanceId),
             HasGyro: false,
             HasAccelerometer: false);
+
         return controller with { Id = SdlControllerId.Create(controller) };
     }
 

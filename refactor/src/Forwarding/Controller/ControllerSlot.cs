@@ -1,19 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace VirtualMouse.Forwarding;
 
-internal sealed class ControllerSlot(
-    ControllerId controllerId,
-    Action<ControllerSlot, ControllerFeedback> feedback)
+internal sealed class ControllerSlot(ControllerId controllerId, Action<ControllerSlot, ControllerFeedback> feedback)
 {
     private IDisposable? _feedbackSubscription;
 
-    public ControllerId ControllerId { get; } = controllerId;
+    public ControllerId ControllerId { get; private set; } = controllerId;
 
     public ControllerEndpointState? Physical { get; set; }
 
-    public Dictionary<Guid, ControllerEndpointState> Steam { get; } = [];
+    public Dictionary<ControllerEndpointId, ControllerEndpointState> Steam { get; } = [];
 
     public IControllerOutput? Output { get; private set; }
 
@@ -24,12 +23,15 @@ internal sealed class ControllerSlot(
 
     public bool HasSteam(Guid? clientId)
     {
-        return clientId.HasValue && Steam.ContainsKey(clientId.Value);
+        return clientId.HasValue && FindSteam(clientId.Value) is not null;
     }
 
     public void RemoveSteam(Guid clientId)
     {
-        _ = Steam.Remove(clientId);
+        foreach (ControllerEndpointId endpointId in Steam.Keys.Where(id => id.ClientId == clientId).ToArray())
+        {
+            _ = Steam.Remove(endpointId);
+        }
     }
 
     public bool TryGetMergedState(
@@ -38,7 +40,7 @@ internal sealed class ControllerSlot(
         out ControllerState state)
     {
         state = default;
-        if (!Steam.TryGetValue(clientId, out ControllerEndpointState steam))
+        if (FindSteam(clientId) is not { } steam)
         {
             return false;
         }
@@ -54,9 +56,22 @@ internal sealed class ControllerSlot(
     public bool TrySendFeedback(Guid clientId, ControllerFeedback feedback)
     {
         return
-            (Steam.TryGetValue(clientId, out ControllerEndpointState steam) &&
+            (FindSteam(clientId) is { } steam &&
             steam.TrySendFeedback(feedback)) ||
             (Physical?.TrySendFeedback(feedback) ?? false);
+    }
+
+    public ControllerEndpointState? FindSteam(Guid clientId)
+    {
+        foreach (KeyValuePair<ControllerEndpointId, ControllerEndpointState> endpoint in Steam)
+        {
+            if (endpoint.Key.ClientId == clientId)
+            {
+                return endpoint.Value;
+            }
+        }
+
+        return null;
     }
 
     // MARK: Output
@@ -73,6 +88,15 @@ internal sealed class ControllerSlot(
         Output = factory.Connect(ControllerId, outputKind);
         OutputKind = outputKind;
         _feedbackSubscription = Output.ListenFeedback(update => feedback(this, update));
+    }
+
+    public void UpdateControllerId(ControllerId controllerId)
+    {
+        if (string.IsNullOrWhiteSpace(ControllerId.DisplayName) &&
+            !string.IsNullOrWhiteSpace(controllerId.DisplayName))
+        {
+            ControllerId = controllerId;
+        }
     }
 
     public void DisconnectOutput(List<IControllerOutput>? dispose = null)
@@ -97,6 +121,9 @@ internal sealed class ControllerSlot(
             output.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
+
+    // MARK: Privates
+    // ========================================================================
 
     private static ControllerState Select(
         ControllerEndpointState steam,

@@ -177,6 +177,7 @@ public sealed partial class RawInputMouseSource
                 {
                     CancellationToken.ThrowIfCancellationRequested();
                     RawInput rawInput = Marshal.PtrToStructure<RawInput>(current);
+                    HandleRawInput(rawInput);
                     current += (int)rawInput.Header.Size;
                 }
             }

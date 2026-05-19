@@ -2,18 +2,100 @@ using System;
 
 namespace VirtualMouse.Forwarding;
 
-// MARK: Controller State
+// MARK: Endpoints
 // ============================================================================
 
-/// <summary>Stable id for one physical controller slot.</summary>
-public readonly record struct ControllerId(string Value)
+/// <summary>Receives output feedback for a controller endpoint.</summary>
+public interface IControllerFeedbackSink
 {
+    /// <summary>Attempts to deliver feedback to the endpoint.</summary>
+    /// <param name="feedback">Feedback from the game-facing output.</param>
+    /// <returns><see langword="true" /> when the endpoint accepted it.</returns>
+    bool TrySendFeedback(ControllerFeedback feedback);
+}
+
+/// <summary>Game-facing controller output.</summary>
+public interface IControllerOutput : IAsyncDisposable
+{
+    /// <summary>Sends one merged controller state to the output.</summary>
+    /// <param name="state">Merged controller state.</param>
+    void Send(in ControllerState state);
+
+    /// <summary>Registers for output feedback.</summary>
+    /// <param name="handler">Called for each feedback update.</param>
+    IDisposable ListenFeedback(Action<ControllerFeedback> handler);
+}
+
+/// <summary>Creates game-facing controller outputs.</summary>
+public interface IControllerOutputFactory
+{
+    /// <summary>Connects an output for one physical controller slot.</summary>
+    /// <param name="controllerId">Physical controller slot id.</param>
+    /// <param name="output">Requested output shape.</param>
+    IControllerOutput Connect(ControllerId controllerId, ControllerOutput output);
+}
+
+// MARK: Models
+// ============================================================================
+
+/// <summary>Stable id and optional display name for one physical controller slot.</summary>
+public readonly struct ControllerId : IEquatable<ControllerId>
+{
+    /// <summary>Creates a controller id.</summary>
+    /// <param name="value">Stable controller id.</param>
+    /// <param name="displayName">Readable controller name when known.</param>
+    public ControllerId(string value, string? displayName = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        Value = value;
+        DisplayName = string.IsNullOrWhiteSpace(displayName) ? null : displayName.Trim();
+    }
+
+    /// <summary>Stable controller id.</summary>
+    public string Value { get; }
+
+    /// <summary>Readable controller name when known.</summary>
+    public string? DisplayName { get; }
+
+    /// <inheritdoc />
+    public bool Equals(ControllerId other)
+    {
+        return string.Equals(Value, other.Value, StringComparison.Ordinal);
+    }
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj)
+    {
+        return obj is ControllerId other && Equals(other);
+    }
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        return StringComparer.Ordinal.GetHashCode(Value);
+    }
+
     /// <inheritdoc />
     public override string ToString()
     {
         return Value;
     }
+
+    /// <summary>Compares two controller ids by stable value.</summary>
+    public static bool operator ==(ControllerId left, ControllerId right)
+    {
+        return left.Equals(right);
+    }
+
+    /// <summary>Compares two controller ids by stable value.</summary>
+    public static bool operator !=(ControllerId left, ControllerId right)
+    {
+        return !left.Equals(right);
+    }
 }
+
+/// <summary>Stable endpoint id for one controller stream from one client.</summary>
+public readonly record struct ControllerEndpointId(Guid ClientId, ushort ControllerIndex);
 
 /// <summary>Game-facing controller output shape.</summary>
 public enum ControllerOutput
@@ -155,36 +237,3 @@ public readonly record struct ControllerFeedback(
     ControllerRumble? Rumble = null,
     ControllerLight? Light = null,
     ControllerAdaptiveTriggers? AdaptiveTriggers = null);
-
-// MARK: Endpoints
-// ============================================================================
-
-/// <summary>Receives output feedback for a controller endpoint.</summary>
-public interface IControllerFeedbackSink
-{
-    /// <summary>Attempts to deliver feedback to the endpoint.</summary>
-    /// <param name="feedback">Feedback from the game-facing output.</param>
-    /// <returns><see langword="true" /> when the endpoint accepted it.</returns>
-    bool TrySendFeedback(ControllerFeedback feedback);
-}
-
-/// <summary>Game-facing controller output.</summary>
-public interface IControllerOutput : IAsyncDisposable
-{
-    /// <summary>Sends one merged controller state to the output.</summary>
-    /// <param name="state">Merged controller state.</param>
-    void Send(in ControllerState state);
-
-    /// <summary>Registers for output feedback.</summary>
-    /// <param name="handler">Called for each feedback update.</param>
-    IDisposable ListenFeedback(Action<ControllerFeedback> handler);
-}
-
-/// <summary>Creates game-facing controller outputs.</summary>
-public interface IControllerOutputFactory
-{
-    /// <summary>Connects an output for one physical controller slot.</summary>
-    /// <param name="controllerId">Physical controller slot id.</param>
-    /// <param name="output">Requested output shape.</param>
-    IControllerOutput Connect(ControllerId controllerId, ControllerOutput output);
-}

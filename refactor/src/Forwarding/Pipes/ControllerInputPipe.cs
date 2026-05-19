@@ -32,7 +32,7 @@ public enum ControllerPipeFrameType
     Feedback = 2,
 }
 
-// MARK: Stream API
+// MARK: API
 // ============================================================================
 
 /// <summary>Writes fixed-size controller hot-path frames.</summary>

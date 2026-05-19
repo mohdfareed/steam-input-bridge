@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace VirtualMouse.Forwarding;
 
-// MARK: Mouse Reports
+// MARK: Reports
 // ============================================================================
 
 /// <summary>Mouse button flags.</summary>
@@ -49,9 +49,12 @@ public readonly record struct MouseReport(
 }
 
 /// <summary>Mouse report with source metadata.</summary>
-public readonly record struct MouseInput(MouseReport Report, string? DeviceName);
+public readonly record struct MouseInput(
+    MouseReport Report,
+    string? DeviceName,
+    nint DeviceHandle = default);
 
-// MARK: Mouse Endpoints
+// MARK: Endpoints
 // ============================================================================
 
 /// <summary>Connected mouse input source.</summary>
@@ -72,6 +75,13 @@ public interface IMouseOutput : IAsyncDisposable
 {
     /// <summary>Gets whether the output is connected.</summary>
     bool IsConnected { get; }
+
+    /// <summary>Returns whether an input report came from this output and must be ignored.</summary>
+    bool FilterInput(in MouseInput input)
+    {
+        _ = input;
+        return false;
+    }
 
     /// <summary>Sends one mouse report.</summary>
     ValueTask SendAsync(MouseReport report, CancellationToken cancellationToken = default);

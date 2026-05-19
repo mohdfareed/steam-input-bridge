@@ -6,6 +6,9 @@ namespace VirtualMouse.Inputs.Sdl;
 
 internal static class SdlGamepadStateReader
 {
+    // MARK: Publics
+    // ========================================================================
+
     public static ControllerState ReadState(
         nint gamepad,
         bool hasGyro,
@@ -36,9 +39,13 @@ internal static class SdlGamepadStateReader
         return new ControllerState(standard, motion, null);
     }
 
+    // MARK: Privates
+    // ========================================================================
+
     private static ControllerButtons ReadButtons(nint gamepad)
     {
         ControllerButtons buttons = ControllerButtons.None;
+
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.South, ControllerButtons.South);
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.East, ControllerButtons.East);
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.West, ControllerButtons.West);
@@ -54,6 +61,7 @@ internal static class SdlGamepadStateReader
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.DPadDown, ControllerButtons.DPadDown);
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.DPadLeft, ControllerButtons.DPadLeft);
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.DPadRight, ControllerButtons.DPadRight);
+
         return buttons;
     }
 

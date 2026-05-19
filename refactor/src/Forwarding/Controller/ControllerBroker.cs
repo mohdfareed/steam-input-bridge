@@ -5,6 +5,27 @@ using System.Threading.Tasks;
 
 namespace VirtualMouse.Forwarding;
 
+// MARK: Models
+// ========================================================================
+
+/// <summary>Current controller forwarding status.</summary>
+public sealed record ControllerBrokerStatus(
+    Guid? ActiveClientId,
+    bool ControllerOutputEnabled,
+    bool PhysicalMotionEnabled,
+    IReadOnlyList<ControllerSlotStatus> Slots);
+
+/// <summary>Status for one physical controller slot.</summary>
+public sealed record ControllerSlotStatus(
+    ControllerId ControllerId,
+    bool OutputConnected,
+    ControllerOutput Output,
+    bool HasActiveSteamEndpoint,
+    bool HasPhysicalEndpoint,
+    int SteamEndpointCount,
+    ControllerFeatures? PhysicalFeatures,
+    ControllerFeatures? ActiveSteamFeatures);
+
 /// <summary>Routes active-client controller input to game-facing controller outputs.</summary>
 public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : IDisposable, IAsyncDisposable
 {
@@ -16,7 +37,7 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
     private bool _physicalMotionEnabled = true;
     private bool _disposed;
 
-    // MARK: API
+    // MARK: Publics
     // ========================================================================
 
     /// <summary>Registers a connected client and the output shape its profile wants.</summary>
@@ -28,6 +49,22 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
             _clients[clientId] = new ClientEntry(controllerOutput);
             RefreshOutputs();
         }
+    }
+
+    /// <summary>Sets the active client whose controller streams may drive outputs.</summary>
+    public void SetActiveClient(Guid? clientId)
+    {
+        ThrowIfDisposed();
+        List<IControllerOutput> dispose = [];
+        lock (_gate)
+        {
+            _activeClientId = clientId.HasValue && _clients.ContainsKey(clientId.Value)
+                ? clientId
+                : null;
+            RefreshOutputs(dispose);
+        }
+
+        DisposeOutputs(dispose);
     }
 
     /// <summary>Removes a client and releases endpoints owned by it.</summary>
@@ -54,21 +91,87 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
         DisposeOutputs(dispose);
     }
 
-    /// <summary>Sets the active client whose controller streams may drive outputs.</summary>
-    public void SetActiveClient(Guid? clientId)
+    /// <summary>Removes controller endpoints owned by a connected client.</summary>
+    public void RemoveClientControllers(Guid clientId)
     {
         ThrowIfDisposed();
         List<IControllerOutput> dispose = [];
         lock (_gate)
         {
-            _activeClientId = clientId.HasValue && _clients.ContainsKey(clientId.Value)
-                ? clientId
-                : null;
+            foreach (ControllerSlot slot in _slots.Values)
+            {
+                slot.RemoveSteam(clientId);
+            }
+
             RefreshOutputs(dispose);
         }
 
         DisposeOutputs(dispose);
     }
+
+    /// <summary>Updates a Steam-visible controller stream from one client.</summary>
+    public void UpdateClientController(
+        Guid clientId,
+        ushort controllerIndex,
+        ControllerId physicalControllerId,
+        ControllerState state,
+        ControllerFeatures features,
+        IControllerFeedbackSink? feedbackSink = null)
+    {
+        ThrowIfDisposed();
+        PendingControllerSend? send;
+
+        lock (_gate)
+        {
+            if (!_clients.ContainsKey(clientId))
+            {
+                return;
+            }
+
+            ControllerSlot slot = GetOrCreateSlot(physicalControllerId);
+            slot.Steam[new ControllerEndpointId(clientId, controllerIndex)] =
+                new ControllerEndpointState(state, features, feedbackSink);
+
+            RefreshOutput(slot);
+            send = CreateMergedSendIfActive(slot);
+        }
+
+        SendOutput(send);
+    }
+
+    /// <summary>Updates controller index zero from one client.</summary>
+    public void UpdateClientController(
+        Guid clientId,
+        ControllerId physicalControllerId,
+        ControllerState state,
+        ControllerFeatures features,
+        IControllerFeedbackSink? feedbackSink = null)
+    {
+        UpdateClientController(clientId, 0, physicalControllerId, state, features, feedbackSink);
+    }
+
+    /// <summary>Updates the latest physical controller state for one slot.</summary>
+    public void UpdatePhysicalController(
+        ControllerId controllerId,
+        ControllerState state,
+        ControllerFeatures features,
+        IControllerFeedbackSink? feedbackSink = null)
+    {
+        ThrowIfDisposed();
+        PendingControllerSend? send;
+
+        lock (_gate)
+        {
+            ControllerSlot slot = GetOrCreateSlot(controllerId);
+            slot.Physical = new ControllerEndpointState(state, features, feedbackSink);
+            send = CreateMergedSendIfActive(slot);
+        }
+
+        SendOutput(send);
+    }
+
+    // MARK: Control
+    // ========================================================================
 
     /// <summary>Enables or disables all controller output without disconnecting clients.</summary>
     public void SetControllerOutputEnabled(bool enabled)
@@ -88,53 +191,21 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
     public void SetPhysicalMotionEnabled(bool enabled)
     {
         ThrowIfDisposed();
+        List<PendingControllerSend> sends = [];
+
         lock (_gate)
         {
             _physicalMotionEnabled = enabled;
             foreach (ControllerSlot slot in _slots.Values)
             {
-                SendMergedIfActive(slot);
+                if (CreateMergedSendIfActive(slot) is { } send)
+                {
+                    sends.Add(send);
+                }
             }
         }
-    }
 
-    /// <summary>Updates the latest physical controller state for one slot.</summary>
-    public void UpdatePhysicalController(
-        ControllerId controllerId,
-        ControllerState state,
-        ControllerFeatures features,
-        IControllerFeedbackSink? feedbackSink = null)
-    {
-        ThrowIfDisposed();
-        lock (_gate)
-        {
-            ControllerSlot slot = GetOrCreateSlot(controllerId);
-            slot.Physical = new ControllerEndpointState(state, features, feedbackSink);
-            SendMergedIfActive(slot);
-        }
-    }
-
-    /// <summary>Updates a Steam-visible controller stream from one client.</summary>
-    public void UpdateClientController(
-        Guid clientId,
-        ControllerId physicalControllerId,
-        ControllerState state,
-        ControllerFeatures features,
-        IControllerFeedbackSink? feedbackSink = null)
-    {
-        ThrowIfDisposed();
-        lock (_gate)
-        {
-            if (!_clients.ContainsKey(clientId))
-            {
-                return;
-            }
-
-            ControllerSlot slot = GetOrCreateSlot(physicalControllerId);
-            slot.Steam[clientId] = new ControllerEndpointState(state, features, feedbackSink);
-            RefreshOutput(slot);
-            SendMergedIfActive(slot);
-        }
+        SendOutputs(sends);
     }
 
     /// <summary>Gets controller forwarding status.</summary>
@@ -154,8 +225,7 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
                     slot.Value.Physical.HasValue,
                     slot.Value.Steam.Count,
                     slot.Value.Physical?.Features,
-                    _activeClientId.HasValue &&
-                        slot.Value.Steam.TryGetValue(_activeClientId.Value, out ControllerEndpointState steam)
+                    _activeClientId.HasValue && slot.Value.FindSteam(_activeClientId.Value) is { } steam
                         ? steam.Features
                         : null));
             }
@@ -201,7 +271,7 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
         }
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private ControllerSlot GetOrCreateSlot(ControllerId controllerId)
@@ -210,6 +280,10 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
         {
             slot = new ControllerSlot(controllerId, HandleFeedback);
             _slots[controllerId] = slot;
+        }
+        else
+        {
+            slot.UpdateControllerId(controllerId);
         }
 
         return slot;
@@ -249,9 +323,9 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
             return activeClient.ControllerOutput;
         }
 
-        foreach (Guid clientId in slot.Steam.Keys)
+        foreach (ControllerEndpointId endpointId in slot.Steam.Keys)
         {
-            if (_clients.TryGetValue(clientId, out ClientEntry? client) &&
+            if (_clients.TryGetValue(endpointId.ClientId, out ClientEntry? client) &&
                 client.ControllerOutput != ControllerOutput.None)
             {
                 return client.ControllerOutput;
@@ -261,19 +335,13 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
         return ControllerOutput.None;
     }
 
-    private void SendMergedIfActive(ControllerSlot slot)
+    private PendingControllerSend? CreateMergedSendIfActive(ControllerSlot slot)
     {
-        if (slot.Output is null ||
-            !_activeClientId.HasValue ||
-            !slot.TryGetMergedState(
-                _activeClientId.Value,
-                GetPhysicalFallbackFeatures(),
-                out ControllerState state))
-        {
-            return;
-        }
-
-        slot.Output.Send(in state);
+        return slot.Output is null || !_activeClientId.HasValue
+            ? null
+            : !slot.TryGetMergedState(_activeClientId.Value, GetPhysicalFallbackFeatures(), out ControllerState state)
+            ? null
+            : new PendingControllerSend(slot.Output, state);
     }
 
     private void HandleFeedback(ControllerSlot slot, ControllerFeedback feedback)
@@ -308,6 +376,9 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
             : features;
     }
 
+    // MARK: Static Privates
+    // ========================================================================
+
     private static void DisposeOutputs(List<IControllerOutput> outputs)
     {
         foreach (IControllerOutput output in outputs)
@@ -316,23 +387,30 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
         }
     }
 
+    private static void SendOutput(PendingControllerSend? send)
+    {
+        if (send is { } value)
+        {
+            ControllerState state = value.State;
+            value.Output.Send(in state);
+        }
+    }
+
+    private static void SendOutputs(List<PendingControllerSend> sends)
+    {
+        foreach (PendingControllerSend send in sends)
+        {
+            ControllerState state = send.State;
+            send.Output.Send(in state);
+        }
+    }
+
+    // MARK: Static Models
+    // ========================================================================
+
     private sealed record ClientEntry(ControllerOutput ControllerOutput);
+
+    private readonly record struct PendingControllerSend(
+        IControllerOutput Output,
+        ControllerState State);
 }
-
-/// <summary>Current controller forwarding status.</summary>
-public sealed record ControllerBrokerStatus(
-    Guid? ActiveClientId,
-    bool ControllerOutputEnabled,
-    bool PhysicalMotionEnabled,
-    IReadOnlyList<ControllerSlotStatus> Slots);
-
-/// <summary>Status for one physical controller slot.</summary>
-public sealed record ControllerSlotStatus(
-    ControllerId ControllerId,
-    bool OutputConnected,
-    ControllerOutput Output,
-    bool HasActiveSteamEndpoint,
-    bool HasPhysicalEndpoint,
-    int SteamEndpointCount,
-    ControllerFeatures? PhysicalFeatures,
-    ControllerFeatures? ActiveSteamFeatures);

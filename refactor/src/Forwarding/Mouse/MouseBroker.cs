@@ -5,6 +5,36 @@ using System.Threading.Tasks;
 
 namespace VirtualMouse.Forwarding;
 
+// MARK: Models
+// ============================================================================
+
+/// <summary>Mouse output shape.</summary>
+public enum MouseOutput
+{
+    /// <summary>No mouse output.</summary>
+    None,
+
+    /// <summary>VIIPER virtual mouse output.</summary>
+    Viiper,
+
+    /// <summary>Teensy hardware mouse output.</summary>
+    Teensy,
+}
+
+/// <summary>Creates game-facing mouse outputs.</summary>
+public interface IMouseOutputFactory
+{
+    /// <summary>Connects a mouse output.</summary>
+    IMouseOutput Connect(MouseOutput output);
+}
+
+/// <summary>Current mouse forwarding status.</summary>
+public sealed record MouseBrokerStatus(
+    Guid? ActiveClientId,
+    bool MouseOutputEnabled,
+    bool OutputConnected,
+    MouseOutput Output);
+
 /// <summary>Routes mouse input through the active-client output gate.</summary>
 public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable, IAsyncDisposable
 {
@@ -16,7 +46,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     private MouseOutput _outputKind;
     private bool _disposed;
 
-    // MARK: API
+    // MARK: Publics
     // ========================================================================
 
     /// <summary>Registers a connected client and the mouse output its profile wants.</summary>
@@ -24,6 +54,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         ThrowIfDisposed();
         IMouseOutput? dispose;
+
         lock (_gate)
         {
             _clients[clientId] = mouseOutput;
@@ -38,6 +69,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         ThrowIfDisposed();
         IMouseOutput? dispose;
+
         lock (_gate)
         {
             _ = _clients.Remove(clientId);
@@ -57,6 +89,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         ThrowIfDisposed();
         IMouseOutput? dispose;
+
         lock (_gate)
         {
             _activeClientId = clientId.HasValue && _clients.ContainsKey(clientId.Value)
@@ -73,6 +106,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         ThrowIfDisposed();
         IMouseOutput? dispose;
+
         lock (_gate)
         {
             _mouseOutputEnabled = enabled;
@@ -87,14 +121,19 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         ThrowIfDisposed();
         IMouseOutput? output;
+
         lock (_gate)
         {
             output = _output;
         }
 
-        if (output is not null && !input.Report.IsEmpty)
+        if (output is not null && !input.Report.IsEmpty && !output.FilterInput(in input))
         {
-            output.SendAsync(input.Report).AsTask().GetAwaiter().GetResult();
+            ValueTask send = output.SendAsync(input.Report);
+            if (!send.IsCompletedSuccessfully)
+            {
+                _ = ObserveSendAsync(send);
+            }
         }
     }
 
@@ -102,6 +141,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     public MouseBrokerStatus GetStatus()
     {
         ThrowIfDisposed();
+
         lock (_gate)
         {
             return new MouseBrokerStatus(
@@ -142,13 +182,14 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         }
     }
 
-    // MARK: Helpers
+    // MARK: Privates
     // ========================================================================
 
     private IMouseOutput? RefreshOutput()
     {
         MouseOutput outputKind = GetActiveOutputKind();
         bool shouldConnect = _mouseOutputEnabled && outputKind != MouseOutput.None;
+
         if (!shouldConnect)
         {
             return DisconnectOutput();
@@ -181,6 +222,21 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
             : MouseOutput.None;
     }
 
+    private static async Task ObserveSendAsync(ValueTask send)
+    {
+        try
+        {
+            await send.ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ObjectDisposedException)
+        {
+        }
+    }
+
+    // MARK: Disposal
+    // ========================================================================
+
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -191,30 +247,3 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         output?.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
-
-/// <summary>Mouse output shape.</summary>
-public enum MouseOutput
-{
-    /// <summary>No mouse output.</summary>
-    None,
-
-    /// <summary>VIIPER virtual mouse output.</summary>
-    Viiper,
-
-    /// <summary>Teensy hardware mouse output.</summary>
-    Teensy,
-}
-
-/// <summary>Creates game-facing mouse outputs.</summary>
-public interface IMouseOutputFactory
-{
-    /// <summary>Connects a mouse output.</summary>
-    IMouseOutput Connect(MouseOutput output);
-}
-
-/// <summary>Current mouse forwarding status.</summary>
-public sealed record MouseBrokerStatus(
-    Guid? ActiveClientId,
-    bool MouseOutputEnabled,
-    bool OutputConnected,
-    MouseOutput Output);

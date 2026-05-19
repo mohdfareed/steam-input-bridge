@@ -55,6 +55,7 @@ public static class SdlControllerMatcher
     {
         SdlControllerInfo? match = null;
         int count = 0;
+
         foreach (SdlControllerInfo controller in controllers)
         {
             if (!predicate(controller))
