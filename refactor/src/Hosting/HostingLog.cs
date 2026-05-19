@@ -74,6 +74,9 @@ internal static partial class HostingLog
     [LoggerMessage(EventId = 23, Level = LogLevel.Information, Message = "Started {ProfileId} rootPid={ProcessId}")]
     public static partial void Started(ILogger logger, string profileId, int processId);
 
+    [LoggerMessage(EventId = 31, Level = LogLevel.Information, Message = "Attached {ProfileId} without launching a process.")]
+    public static partial void Attached(ILogger logger, string profileId);
+
     [LoggerMessage(EventId = 24, Level = LogLevel.Information, Message = "Watching receiver processes for {ProfileId}: {Receivers}")]
     public static partial void WatchingReceiverProcesses(ILogger logger, string profileId, string receivers);
 

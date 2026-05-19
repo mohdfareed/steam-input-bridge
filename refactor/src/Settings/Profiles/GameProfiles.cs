@@ -40,8 +40,8 @@ public sealed class GameProfile
     /// <summary>Display title.</summary>
     public string Title { get; set; } = "";
 
-    /// <summary>Executable path.</summary>
-    public string Executable { get; set; } = "";
+    /// <summary>Optional executable path used to start the game.</summary>
+    public string? Executable { get; set; }
 
     /// <summary>Optional process arguments.</summary>
     public string? Arguments { get; set; }

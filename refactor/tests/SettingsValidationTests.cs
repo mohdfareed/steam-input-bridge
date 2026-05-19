@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,8 @@ namespace VirtualMouse.Tests;
 [TestClass]
 public sealed class SettingsValidationTests
 {
+    private static readonly string[] FragPunkReceiverProcess = ["FragPunk.exe"];
+
     /// <summary>Checks that clearly invalid settings fail when read.</summary>
     [TestMethod]
     public void InvalidSettingsFailWhenLoaded()
@@ -32,7 +35,7 @@ public sealed class SettingsValidationTests
             StringAssert.Contains(exception.Message, "hosting:pipeName", StringComparison.Ordinal);
             StringAssert.Contains(exception.Message, "hosting:foregroundPollMilliseconds", StringComparison.Ordinal);
             StringAssert.Contains(exception.Message, "viiper:port", StringComparison.Ordinal);
-            StringAssert.Contains(exception.Message, "games:bad:executable", StringComparison.Ordinal);
+            StringAssert.Contains(exception.Message, "games:bad:receiverProcesses", StringComparison.Ordinal);
         }
         finally
         {
@@ -85,6 +88,32 @@ public sealed class SettingsValidationTests
             Assert.AreEqual(ControllerOutput.None, resolved.ControllerOutput);
             Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);
             Assert.AreEqual("C:\\Games\\Nulls", resolved.WorkingDirectory);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>Checks that receiver-only profiles are valid.</summary>
+    [TestMethod]
+    public void AttachOnlyProfileIsAllowed()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "VirtualMouse.Refactor.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithAttachOnlyProfile());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
+            GameProfile profile = settings.Current.Games["attach"];
+            ResolvedGameProfile resolved = ProfileResolver.Resolve("attach", profile);
+
+            Assert.IsNull(resolved.Executable);
+            CollectionAssert.AreEqual(FragPunkReceiverProcess, resolved.ReceiverProcesses.ToArray());
         }
         finally
         {
@@ -154,6 +183,23 @@ public sealed class SettingsValidationTests
                 "Executable": "C:\\Games\\Nulls\\game.exe",
                 "ControllerOutput": null,
                 "MouseOutput": null
+              }
+            }
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithAttachOnlyProfile()
+    {
+        return """
+        {
+          "VirtualMouse": {
+            "Games": {
+              "attach": {
+                "ReceiverProcesses": [
+                  "FragPunk.exe"
+                ]
               }
             }
           }

@@ -104,6 +104,8 @@ Do not set `LangVersion=latest`.
 - Keep host responsibilities focused on configuration, profile resolution, foreground active-run selection, VIIPER output ownership, route-local feedback, and cleanup.
 - Keep client responsibilities focused on launching one profile run, reading client-visible SDL controllers, streaming route input to the host, handling route-local feedback, and normal run release.
 - Separate durable configuration from runtime state. Profiles, games, controllers, and global settings are configuration; client runs, controller routes, process ids, and created device ids are state.
+- Treat receiver processes as the primary game lifetime signal. A profile executable is only an optional startup hint; it may exit immediately or only launch another process. Do not use the launched root process as the run lifetime.
+- Only stop processes this repository actually launched or explicitly owns. Receiver process claims are routing/activation state, not process ownership or kill permission.
 - Keep process launch, receiver discovery, process ownership, and process-kill helpers in `src/Runtime`; Hosting should orchestrate those helpers, not own platform process primitives.
 - Keep active-client state and receiver-process claims in `ActiveClientRegistry`; server-side foreground polling and side effects such as forwarding gates or Steam forcing belong in a server loop, not in the registry.
 

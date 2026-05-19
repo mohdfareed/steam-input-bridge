@@ -20,8 +20,6 @@ public sealed class GameClient(
     ProfilesService profiles,
     ILogger<GameClient> logger) : IAsyncDisposable
 {
-    private static readonly TimeSpan ReceiverStartupGrace = TimeSpan.FromSeconds(60);
-
     private bool _disposed;
 
     // MARK: Publics
@@ -41,16 +39,15 @@ public sealed class GameClient(
         {
             StartRunRequest request = new(profileId, ResolveSteamAppId(profileId, steamAppId));
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
+
             ClientRunLaunch launch = await client
                 .StartRunAsync(request, cancellationToken)
                 .ConfigureAwait(false);
-            using Process process = GameProcessHost.Launch(
-                launch.Executable,
-                launch.Arguments,
-                launch.WorkingDirectory);
-            using IDisposable? processOwner = TryOwnProcessTree(process);
-            ClientRunState state = new(launch, process, client.ClientId, request);
+
+            ClientRunState state = new(launch, client.ClientId, request);
+            StartProfileProcess(state);
             AppDomain.CurrentDomain.ProcessExit += ProcessExit;
+
             try
             {
                 await StartControllerStreamsAsync(state, cancellationToken).ConfigureAwait(false);
@@ -78,6 +75,8 @@ public sealed class GameClient(
             finally
             {
                 AppDomain.CurrentDomain.ProcessExit -= ProcessExit;
+                state.ProcessOwner?.Dispose();
+                state.LaunchedProcess?.Dispose();
             }
 
             void ProcessExit(object? sender, EventArgs args)
@@ -131,11 +130,6 @@ public sealed class GameClient(
                 return;
             }
 
-            if (!state.SawReceiver && state.Process.HasExited && ReceiverStartupExpired(state))
-            {
-                return;
-            }
-
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
         }
     }
@@ -165,9 +159,6 @@ public sealed class GameClient(
             }
 
             await client.UpdateRunProcessesAsync(observed, cancellationToken).ConfigureAwait(false);
-            state.OwnedProcesses = await client
-                .GetOwnedReceiverProcessesAsync(cancellationToken)
-                .ConfigureAwait(false);
         }
         catch (Exception exception) when (IsConnectionFailure(exception))
         {
@@ -217,9 +208,30 @@ public sealed class GameClient(
         }
     }
 
+    private void StartProfileProcess(ClientRunState state)
+    {
+        if (string.IsNullOrWhiteSpace(state.Launch.Executable))
+        {
+            return;
+        }
+
+        Process process = GameProcessHost.Launch(
+            state.Launch.Executable,
+            state.Launch.Arguments,
+            state.Launch.WorkingDirectory ?? AppContext.BaseDirectory);
+        state.LaunchedProcess = process;
+        state.ProcessOwner = TryOwnProcessTree(process);
+    }
+
     private void LogStarted(ClientRunState state)
     {
-        HostingLog.Started(logger, state.Launch.ProfileId, state.Process.Id);
+        if (state.LaunchedProcess is null)
+        {
+            HostingLog.Attached(logger, state.Launch.ProfileId);
+            return;
+        }
+
+        HostingLog.Started(logger, state.Launch.ProfileId, state.LaunchedProcess.Id);
     }
 
     private void LogReceiverWatch(ClientRunState state)
@@ -262,30 +274,13 @@ public sealed class GameClient(
                 .Select(process => $"{process.ProcessName}:{process.ProcessId}"));
     }
 
-    private bool ReceiverStartupExpired(ClientRunState state)
-    {
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-        if (state.RootExitedAt is null)
-        {
-            state.RootExitedAt = now;
-            HostingLog.RootProcessExitedBeforeReceiver(
-                logger,
-                state.Launch.ProfileId,
-                ReceiverStartupGrace.TotalSeconds);
-            return false;
-        }
-
-        bool expired = now - state.RootExitedAt >= ReceiverStartupGrace;
-        if (expired)
-        {
-            HostingLog.NoReceiverProcessesAppeared(logger, state.Launch.ProfileId);
-        }
-
-        return expired;
-    }
-
     private void StopGameProcesses(ClientRunState state, string reason)
     {
+        if (state.LaunchedProcess is null)
+        {
+            return;
+        }
+
         lock (state.StopGate)
         {
             if (state.GameStopRequested)
@@ -296,9 +291,7 @@ public sealed class GameClient(
             state.GameStopRequested = true;
         }
 
-        int killed = state.OwnedProcesses.Count == 0
-            ? GameProcessHost.KillRootAndReceivers(state.Process, state.Launch.ReceiverProcesses)
-            : GameProcessHost.KillRootAndReceivers(state.Process, state.OwnedProcesses);
+        int killed = GameProcessHost.KillLaunchedProcess(state.LaunchedProcess);
         HostingLog.StoppedGameProcesses(logger, reason, killed);
     }
 
@@ -363,13 +356,14 @@ public sealed class GameClient(
 
     private sealed class ClientRunState(
         ClientRunLaunch launch,
-        Process process,
         Guid? registeredClientId,
         StartRunRequest request)
     {
         public ClientRunLaunch Launch { get; set; } = launch;
 
-        public Process Process { get; } = process;
+        public Process? LaunchedProcess { get; set; }
+
+        public IDisposable? ProcessOwner { get; set; }
 
         public Guid? RegisteredClientId { get; set; } = registeredClientId;
 
@@ -377,13 +371,9 @@ public sealed class GameClient(
 
         public bool SawReceiver { get; set; }
 
-        public IReadOnlyList<ObservedGameProcess> OwnedProcesses { get; set; } = [];
-
         public ClientControllerStreams? ControllerStreams { get; set; }
 
         public string? LastObservedSignature { get; set; }
-
-        public DateTimeOffset? RootExitedAt { get; set; }
 
         public object StopGate { get; } = new();
 

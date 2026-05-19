@@ -10,6 +10,7 @@ namespace VirtualMouse.Tests;
 public sealed class ProfileResolverTests
 {
     private static readonly string[] GameReceiverProcess = ["game.exe"];
+    private static readonly string[] FragPunkReceiverProcess = ["FragPunk.exe"];
 
     /// <summary>Checks that raw profile settings resolve into runtime-ready values.</summary>
     [TestMethod]
@@ -97,5 +98,38 @@ public sealed class ProfileResolverTests
 
         Assert.AreEqual(ControllerOutput.None, resolved.ControllerOutput);
         Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);
+    }
+
+    /// <summary>Checks that receiver-only profiles resolve without launch details.</summary>
+    [TestMethod]
+    public void ResolveAllowsAttachOnlyProfile()
+    {
+        GameProfile profile = new()
+        {
+            SteamAppId = 123,
+            ControllerOutput = ControllerOutput.Ds4,
+        };
+        profile.ReceiverProcesses.Add(" FragPunk.exe ");
+
+        ResolvedGameProfile resolved = ProfileResolver.Resolve("fragpunk_attach", profile);
+
+        Assert.IsNull(resolved.Executable);
+        Assert.IsNull(resolved.WorkingDirectory);
+        Assert.AreEqual(string.Empty, resolved.Arguments);
+        Assert.AreEqual(123u, resolved.SteamAppId);
+        CollectionAssert.AreEqual(FragPunkReceiverProcess, resolved.ReceiverProcesses.ToArray());
+        Assert.AreEqual(ControllerOutput.Ds4, resolved.ControllerOutput);
+    }
+
+    /// <summary>Checks that a profile needs either launch or receiver details.</summary>
+    [TestMethod]
+    public void ResolveRejectsProfileWithoutExecutableOrReceivers()
+    {
+        GameProfile profile = new();
+
+        InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
+            () => ProfileResolver.Resolve("broken", profile));
+
+        StringAssert.Contains(exception.Message, "receiverProcesses", StringComparison.Ordinal);
     }
 }

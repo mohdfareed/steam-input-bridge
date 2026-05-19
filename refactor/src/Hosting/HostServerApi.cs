@@ -17,9 +17,9 @@ namespace VirtualMouse.Hosting;
 public sealed record ClientRunLaunch(
     string ProfileId,
     string Title,
-    string Executable,
+    string? Executable,
     string Arguments,
-    string WorkingDirectory,
+    string? WorkingDirectory,
     IReadOnlyList<string> ReceiverProcesses,
     ProfileControllerOutput ControllerOutput,
     ProfileMouseOutput MouseOutput,

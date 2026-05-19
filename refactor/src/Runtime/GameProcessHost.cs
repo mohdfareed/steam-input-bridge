@@ -71,6 +71,13 @@ public static class GameProcessHost
     // MARK: Ending
     // ========================================================================
 
+    /// <summary>Stops the launched root process tree.</summary>
+    public static int KillLaunchedProcess(Process process)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+        return KillRoot(process);
+    }
+
     /// <summary>Stops the listed processes and returns how many kill requests were sent.</summary>
     public static int Kill(IReadOnlyList<ObservedGameProcess> processes)
     {

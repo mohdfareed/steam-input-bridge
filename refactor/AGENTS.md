@@ -75,6 +75,12 @@
 - Receiver process lists are ANY-match lists. The client reports all matching
   receiver pids; Runtime claims pids first-client-wins and may let one client
   own multiple pids.
+- Receiver processes are the primary game lifetime signal. A profile executable
+  is only an optional startup hint; it may exit immediately or only launch
+  another process.
+- Receiver process claims are routing/activation state, not process ownership
+  or kill permission. Only stop processes the client actually launched or
+  explicitly owns.
 - Keep OS process observation and cleanup outside `Runtime`; Runtime is only
   active-client and receiver-pid ownership state.
 - Keep input/output routing in `Forwarding`, not `Hosting` or `Runtime`.
@@ -104,8 +110,8 @@
   stale client controller endpoints whenever the client re-registers
   controllers.
 - Client-launched game processes should be attached to a Windows kill-on-close
-  job when possible. Keep explicit receiver cleanup too, because launchers may
-  not keep every receiver in the process tree.
+  job when possible. Do not kill receiver processes just because this client
+  observed or claimed them.
 - Keep per-report controller traffic on the `Forwarding` fixed binary pipe
   model. Do not send hot-path controller reports through JSON-RPC.
 - `Hosting` owns controller pipe lifetime for connected clients, but pipe frames

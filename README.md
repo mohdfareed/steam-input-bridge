@@ -49,11 +49,11 @@ Project for local input forwarding transports.
 ## TODO
 
 - [ ] Fix CTRL-C handling on server and client (noop correctly).
-- [ ] Rename project
 - [ ] DS4 output contract and DS4-specific mapping.
 - [ ] SDL-VIIPER touchpad, and other controller capability models.
   - [ ] rumble, trigger rumble, light-bar RGB, flash timing
   - [ ] buttons, sticks, triggers, gyro, accel, touchpad
+- [ ] Rename project
 - [ ] Merge refactored project files back into the main branch.
 - [ ] Teensy output architecture and firmware.
 - [ ] Implement proper Steam Input controller identification.

@@ -9,10 +9,10 @@ namespace VirtualMouse.Settings.Profiles;
 public sealed record ResolvedGameProfile(
     string Id,
     string Title,
-    string Executable,
+    string? Executable,
     string Arguments,
     uint? SteamAppId,
-    string WorkingDirectory,
+    string? WorkingDirectory,
     IReadOnlyList<string> ReceiverProcesses,
     ControllerOutput ControllerOutput,
     MouseOutput MouseOutput);
@@ -26,28 +26,30 @@ public static class ProfileResolver
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentNullException.ThrowIfNull(profile);
 
-        string executable = NormalizePath(profile.Executable);
-        if (string.IsNullOrWhiteSpace(executable))
-        {
-            throw new InvalidOperationException($"Profile \"{profileId}\" has no executable.");
-        }
+        string? executable = NormalizePath(profile.Executable);
 
-        string workingDirectory = NormalizePath(profile.WorkingDirectory);
-        if (string.IsNullOrWhiteSpace(workingDirectory))
+        string? workingDirectory = NormalizePath(profile.WorkingDirectory);
+        if (string.IsNullOrWhiteSpace(workingDirectory) &&
+            !string.IsNullOrWhiteSpace(executable))
         {
             workingDirectory = Path.GetDirectoryName(executable) ?? AppContext.BaseDirectory;
         }
 
-        return new ResolvedGameProfile(
-            profileId,
-            ResolveTitle(profileId, profile),
-            executable,
-            profile.Arguments ?? string.Empty,
-            profile.SteamAppId,
-            workingDirectory,
-            ResolveReceiverProcesses(profile, executable),
-            profile.ControllerOutput ?? ControllerOutput.None,
-            profile.MouseOutput ?? MouseOutput.None);
+        string[] receiverProcesses = ResolveReceiverProcesses(profile, executable);
+
+        return receiverProcesses.Length == 0
+            ? throw new InvalidOperationException(
+                $"Profile \"{profileId}\" needs receiverProcesses when executable is missing.")
+            : new ResolvedGameProfile(
+                profileId,
+                ResolveTitle(profileId, profile),
+                executable,
+                profile.Arguments ?? string.Empty,
+                profile.SteamAppId,
+                workingDirectory,
+                receiverProcesses,
+                profile.ControllerOutput ?? ControllerOutput.None,
+                profile.MouseOutput ?? MouseOutput.None);
     }
 
     private static string ResolveTitle(string profileId, GameProfile profile)
@@ -57,7 +59,7 @@ public static class ProfileResolver
             : profile.Title.Trim();
     }
 
-    private static string[] ResolveReceiverProcesses(GameProfile profile, string executable)
+    private static string[] ResolveReceiverProcesses(GameProfile profile, string? executable)
     {
         List<string> receivers = [];
         foreach (string receiver in profile.ReceiverProcesses)
@@ -68,7 +70,7 @@ public static class ProfileResolver
             }
         }
 
-        if (receivers.Count == 0)
+        if (receivers.Count == 0 && !string.IsNullOrWhiteSpace(executable))
         {
             string executableName = Path.GetFileName(executable);
             if (!string.IsNullOrWhiteSpace(executableName))
@@ -80,10 +82,10 @@ public static class ProfileResolver
         return [.. receivers];
     }
 
-    private static string NormalizePath(string? path)
+    private static string? NormalizePath(string? path)
     {
         return string.IsNullOrWhiteSpace(path)
-            ? string.Empty
+            ? null
             : Environment.ExpandEnvironmentVariables(path.Trim());
     }
 

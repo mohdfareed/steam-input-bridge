@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using VirtualMouse.Settings.Profiles;
 
 namespace VirtualMouse.Settings;
@@ -69,9 +70,13 @@ internal static class SettingsValidation
                 continue;
             }
 
-            if (string.IsNullOrWhiteSpace(profile.Executable))
+            bool hasExecutable = !string.IsNullOrWhiteSpace(profile.Executable);
+            bool hasReceivers = profile.ReceiverProcesses.Any(static receiver =>
+                !string.IsNullOrWhiteSpace(receiver));
+            if (!hasExecutable && !hasReceivers)
             {
-                failures.Add($"games:{profileId}:executable is required.");
+                failures.Add(
+                    $"games:{profileId}:receiverProcesses is required when executable is missing.");
             }
         }
     }
