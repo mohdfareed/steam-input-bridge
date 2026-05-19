@@ -16,13 +16,13 @@ public static class SteamRomManagerExport
 
     /// <summary>Creates the Steam ROM Manager manifest JSON.</summary>
     /// <param name="profiles">Profile lookup.</param>
-    /// <param name="executablePath">CLI executable path used as the shortcut target.</param>
-    public static string CreateJson(ProfilesService profiles, string executablePath)
+    /// <param name="shortcutPath">Windowless shortcut runner used as the shortcut target.</param>
+    public static string CreateJson(ProfilesService profiles, string shortcutPath)
     {
         ArgumentNullException.ThrowIfNull(profiles);
-        ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(shortcutPath);
 
-        string startIn = Path.GetDirectoryName(executablePath) ?? string.Empty;
+        string startIn = Path.GetDirectoryName(shortcutPath) ?? string.Empty;
         List<SteamRomManagerEntry> entries = [];
 
         foreach (string profileId in profiles.ListProfileIds())
@@ -33,9 +33,9 @@ public static class SteamRomManagerExport
             ResolvedGameProfile resolved = ProfileResolver.Resolve(profileId, profile);
             entries.Add(new SteamRomManagerEntry(
                 resolved.Title,
-                executablePath,
+                shortcutPath,
                 startIn,
-                $"client run {QuoteArgument(profileId)}",
+                QuoteArgument(profileId),
                 AppendArgsToExecutable: false));
         }
 

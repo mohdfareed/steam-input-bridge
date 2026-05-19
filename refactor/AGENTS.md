@@ -142,6 +142,9 @@
   status instead of ending the whole server or client run.
 - Keep Steam ROM Manager export in the refactor Steam project; CLI commands only
   orchestrate it from appsettings and print the result.
+- Steam shortcuts should target the no-console `refactor/cli/Shortcut` runner for
+  normal profile launches. Keep the console CLI for diagnostics and explicit
+  commands.
 - Keep `SteamInputClient`'s public API narrow: `DesktopConfigAppId`,
   `ListGames`, `ResolveAppIdFromEnvironment`, `ForceConfigAsync(uint?)`, and
   `OpenControllerConfigAsync(uint)`. CLI commands expose desktop and clearing
