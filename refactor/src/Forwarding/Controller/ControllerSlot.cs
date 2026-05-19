@@ -20,6 +20,8 @@ internal sealed class ControllerSlot(ControllerId controllerId, Action<Controlle
 
     public ControllerOutput OutputKind { get; private set; }
 
+    public bool HasEndpoints => Physical.HasValue || Steam.Count != 0;
+
     // MARK: Endpoints
     // ========================================================================
 
@@ -35,6 +37,12 @@ internal sealed class ControllerSlot(ControllerId controllerId, Action<Controlle
             StopFeedbackTarget(new FeedbackTarget(endpointId));
             _ = Steam.Remove(endpointId);
         }
+    }
+
+    public void RemovePhysical()
+    {
+        StopFeedbackTarget(FeedbackTarget.Physical);
+        Physical = null;
     }
 
     public bool TryGetMergedState(

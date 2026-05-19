@@ -88,6 +88,39 @@ public sealed class ControllerBrokerTests
         Assert.AreEqual(1, factory.SingleOutput.LastState.Motion?.GyroX);
     }
 
+    /// <summary>Physical disconnect clears fallback state without dropping a client-owned output.</summary>
+    [TestMethod]
+    public void PhysicalControllerRemovalClearsFallbackAndKeepsClientOutput()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.SetActiveClient(clientId);
+        broker.UpdatePhysicalController(
+            ControllerId,
+            new ControllerState(null, Motion(1), null),
+            ControllerFeatures.Motion);
+        broker.UpdateClientController(
+            clientId,
+            ControllerId,
+            new ControllerState(Standard(ControllerButtons.South), null, null),
+            ControllerFeatures.StandardControls);
+
+        Assert.AreEqual(1, factory.SingleOutput.LastState.Motion?.GyroX);
+
+        broker.RemovePhysicalController(ControllerId);
+
+        Assert.IsFalse(factory.SingleOutput.Disposed);
+        Assert.IsNull(factory.SingleOutput.LastState.Motion);
+        ControllerBrokerStatus status = broker.GetStatus();
+        Assert.HasCount(1, status.Slots);
+        Assert.IsFalse(status.Slots[0].HasPhysicalEndpoint);
+        Assert.IsNull(status.Slots[0].PhysicalFeatures);
+        Assert.IsTrue(status.Slots[0].HasActiveSteamEndpoint);
+    }
+
     /// <summary>Inactive client input connects output but does not drive reports.</summary>
     [TestMethod]
     public void InactiveClientInputConnectsOutputWithoutDrivingReports()
@@ -105,6 +138,32 @@ public sealed class ControllerBrokerTests
 
         Assert.HasCount(1, factory.Outputs);
         Assert.AreEqual(0, factory.SingleOutput.SendCount);
+    }
+
+    /// <summary>Client endpoint removal disconnects outputs with no remaining attached controller.</summary>
+    [TestMethod]
+    public void ClientControllerRemovalDropsStaleSteamEndpoint()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.SetActiveClient(clientId);
+        broker.UpdateClientController(
+            clientId,
+            ControllerId,
+            new ControllerState(Standard(ControllerButtons.South), null, null),
+            ControllerFeatures.StandardControls);
+
+        FakeControllerOutput output = factory.SingleOutput;
+        broker.RemoveClientControllers(clientId);
+
+        Assert.IsTrue(output.Disposed);
+        ControllerBrokerStatus status = broker.GetStatus();
+        Assert.HasCount(1, status.Slots);
+        Assert.AreEqual(0, status.Slots[0].SteamEndpointCount);
+        Assert.IsFalse(status.Slots[0].OutputConnected);
     }
 
     /// <summary>Output feedback prefers the Steam endpoint and falls back to physical.</summary>

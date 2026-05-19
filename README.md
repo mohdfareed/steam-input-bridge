@@ -22,16 +22,17 @@ Project for local input forwarding transports.
 
 ## TODO
 
-- [ ] Fix CTRL-C handling on server and client (noop correctly).
-- [ ] DS4 output contract + VIIPER DS4 transport.
-- [ ] SDL-VIIPER touchpad, and feedback capabilities.
-  - [ ] rumble, trigger rumble, light-bar RGB, flash timing
-- [ ] Keyboard shortcut to toggle output/motion.
-- [ ] Rename project
-- [ ] Merge refactored project files back into the main branch.
-- [ ] Documentation and README.
+- [ ] Create tray app for hosting server.
+- [ ] SDL-VIIPER DS4 support, and feedback capabilities.
+  - [ ] touchpad, light-bar RGB, flash timing, trigger rumble
+  - [ ] Force DualSense mic button/LED to toggle system mic and follow its state (on/off).
+- [ ] Keyboard shortcuts support.
+  - Toggle mouse output, motion output, Steam Input forcing
+- [ ] Rename project and merge refactored project, add docs, and update README.
 - [ ] Implement proper Steam Input controller identification.
-  - Current implementation only support a single physical Valve-made controller.
+  - Current implementation only support a single physical instance per controller model.
+  - All Steam Input clients use VID/PID-based identification to pair with physical controllers.
+  - Since all controllers of the same model share the same VID/PID, only one instance per model will be paired with all clients.
 - [ ] Teensy output architecture and firmware.
 - [ ] HidHide integration for physical controller blocking during xpad emulation.
 - [ ] Packaging and deployment as a self-contained executable.

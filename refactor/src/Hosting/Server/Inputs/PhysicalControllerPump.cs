@@ -25,7 +25,7 @@ internal sealed class PhysicalControllerPump(
 
     private readonly CancellationTokenSource _stop = new();
     private readonly Lock _gate = new();
-    private IReadOnlyList<SdlGamepadSource> _sources = [];
+    private List<SdlGamepadSource> _sources = [];
     private Task? _task;
     private string? _lastError;
     private bool _running;
@@ -86,11 +86,9 @@ internal sealed class PhysicalControllerPump(
             await DisposeSourcesAsync().ConfigureAwait(false);
             try
             {
-                IReadOnlyList<SdlGamepadSource> sources =
-                    SdlControllerCatalog.OpenPhysicalControllers(SdlControllerFilters.IsForwardable);
+                IReadOnlyList<SdlGamepadSource> sources = AddMissingSources();
                 lock (_gate)
                 {
-                    _sources = sources;
                     _running = sources.Count != 0;
                     _lastError = null;
                 }
@@ -102,7 +100,12 @@ internal sealed class PhysicalControllerPump(
                 }
 
                 HostingLog.PhysicalControllerPumpStarted(logger, sources.Count);
-                SdlGamepadEventLoop.Run(sources, UpdatePhysicalController, cancellationToken);
+                SdlGamepadEventLoop.Run(
+                    GetSourcesSnapshot,
+                    UpdatePhysicalController,
+                    RemoveSource,
+                    () => _ = AddMissingSources(),
+                    cancellationToken);
             }
             catch (Exception exception) when (
                 exception is SdlGamepadDisconnectedException or InvalidOperationException)
@@ -116,6 +119,30 @@ internal sealed class PhysicalControllerPump(
                 HostingLog.PhysicalControllerPumpRestarting(logger, exception.Message);
                 await Task.Delay(RetryDelay, cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    private IReadOnlyList<SdlGamepadSource> AddMissingSources()
+    {
+        HashSet<SdlControllerId> openIds = GetOpenSourceIds();
+        IReadOnlyList<SdlControllerInfo> controllers =
+            SdlControllerCatalog.GetControllers(SdlControllerFilters.IsForwardable);
+        List<SdlControllerInfo> missingControllers = [];
+
+        foreach (SdlControllerInfo controller in controllers)
+        {
+            if (controller.Source == SdlControllerSource.Physical &&
+                !openIds.Contains(controller.Id))
+            {
+                missingControllers.Add(controller);
+            }
+        }
+
+        IReadOnlyList<SdlGamepadSource> openedSources = OpenSources(missingControllers);
+        lock (_gate)
+        {
+            _sources.AddRange(openedSources);
+            return [.. _sources];
         }
     }
 
@@ -135,6 +162,31 @@ internal sealed class PhysicalControllerPump(
             source);
     }
 
+    private void RemoveSource(SdlGamepadSource source)
+    {
+        SdlGamepadSource? removed = null;
+        lock (_gate)
+        {
+            List<SdlGamepadSource> sources = [.. _sources];
+            if (sources.Remove(source))
+            {
+                removed = source;
+                _sources = sources;
+                _running = sources.Count != 0;
+            }
+        }
+
+        if (removed is null)
+        {
+            return;
+        }
+
+        broker.RemovePhysicalController(new ControllerId(
+            SdlControllerCatalog.GetPhysicalControllerId(removed.Controller),
+            removed.Controller.Name));
+        removed.Dispose();
+    }
+
     private async Task DisposeSourcesAsync()
     {
         IReadOnlyList<SdlGamepadSource> sources;
@@ -147,7 +199,53 @@ internal sealed class PhysicalControllerPump(
 
         foreach (SdlGamepadSource source in sources)
         {
+            broker.RemovePhysicalController(new ControllerId(
+                SdlControllerCatalog.GetPhysicalControllerId(source.Controller),
+                source.Controller.Name));
             await source.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private IReadOnlyList<SdlGamepadSource> GetSourcesSnapshot()
+    {
+        lock (_gate)
+        {
+            return [.. _sources];
+        }
+    }
+
+    private HashSet<SdlControllerId> GetOpenSourceIds()
+    {
+        IReadOnlyList<SdlGamepadSource> sources = GetSourcesSnapshot();
+        HashSet<SdlControllerId> ids = [];
+        foreach (SdlGamepadSource source in sources)
+        {
+            _ = ids.Add(source.Controller.Id);
+        }
+
+        return ids;
+    }
+
+    private static List<SdlGamepadSource> OpenSources(IReadOnlyList<SdlControllerInfo> controllers)
+    {
+        List<SdlGamepadSource> sources = [];
+        try
+        {
+            foreach (SdlControllerInfo controller in controllers)
+            {
+                sources.Add(SdlGamepadSource.Connect(controller));
+            }
+
+            return sources;
+        }
+        catch
+        {
+            foreach (SdlGamepadSource source in sources)
+            {
+                source.Dispose();
+            }
+
+            throw;
         }
     }
 }

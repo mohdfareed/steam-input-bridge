@@ -181,6 +181,38 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
         SendOutput(send);
     }
 
+    /// <summary>Marks a physical controller endpoint as disconnected.</summary>
+    public void RemovePhysicalController(ControllerId controllerId)
+    {
+        ThrowIfDisposed();
+        PendingControllerSend? send;
+        List<IControllerOutput> dispose = [];
+
+        lock (_gate)
+        {
+            if (!_slots.TryGetValue(controllerId, out ControllerSlot? slot))
+            {
+                return;
+            }
+
+            slot.RemovePhysical();
+            send = CreateMergedSendIfActive(slot);
+            if (!slot.HasEndpoints)
+            {
+                slot.DisconnectOutput(dispose);
+                _ = _slots.Remove(controllerId);
+            }
+            else
+            {
+                RefreshOutput(slot, dispose);
+                RetargetFeedback();
+            }
+        }
+
+        SendOutput(send);
+        DisposeOutputs(dispose);
+    }
+
     // MARK: Control
     // ========================================================================
 

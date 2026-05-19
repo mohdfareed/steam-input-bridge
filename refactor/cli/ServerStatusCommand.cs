@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using VirtualMouse.Forwarding;
 using VirtualMouse.Hosting;
 using VirtualMouse.Runtime;
 
@@ -90,6 +91,64 @@ internal static class ServerStatusCommand
         PrintItem(sb, "client", status.SteamInput.ClientId?.ToString() ?? "none");
         PrintItem(sb, "error", status.SteamInput.LastError ?? "none");
 
+        PrintSection(sb, "Inputs");
+        PrintItem(sb, "physicalSdl", FormatRunning(status.Inputs.PhysicalControllers.Running));
+        PrintItem(sb, "physicalCount", status.Inputs.PhysicalControllers.ControllerCount);
+        PrintItem(sb, "physicalError", status.Inputs.PhysicalControllers.LastError ?? "none");
+        PrintItem(sb, "rawInput", FormatRunning(status.Inputs.Mouse.Running));
+        PrintItem(sb, "rawInputSource", status.Inputs.Mouse.SourceConnected ? "connected" : "disconnected");
+        PrintItem(sb, "rawInputError", status.Inputs.Mouse.LastError ?? "none");
+        foreach (string controllerId in status.Inputs.PhysicalControllers.ControllerIds)
+        {
+            PrintLine(sb, $"physical {controllerId}", 4);
+        }
+
+        PrintSection(sb, "Forwarding");
+        PrintItem(sb, "controllerOutput", status.Forwarding.ControllerOutputEnabled);
+        PrintItem(sb, "physicalMotion", status.Forwarding.PhysicalMotionEnabled);
+        PrintItem(sb, "mouseOutput", status.MouseForwarding.MouseOutputEnabled);
+        PrintItem(sb, "mouseConnected", status.MouseForwarding.OutputConnected);
+        PrintItem(sb, "mouseKind", status.MouseForwarding.Output);
+
+        PrintSection(sb, "Controller Slots");
+        if (status.Forwarding.Slots.Count == 0)
+        {
+            PrintLine(sb, "none");
+        }
+
+        foreach (ControllerSlotStatus slot in status.Forwarding.Slots)
+        {
+            PrintLine(sb,
+                $"{FormatControllerId(slot.ControllerId)} " +
+                $"output={FormatOutput(slot.OutputConnected, slot.Output)} " +
+                $"steam={slot.SteamEndpointCount} " +
+                $"activeSteam={slot.HasActiveSteamEndpoint} " +
+                $"physical={FormatEndpoint(slot.HasPhysicalEndpoint)}");
+            PrintLine(sb, $"physicalFeatures: {FormatFeatures(slot.PhysicalFeatures)}", 4);
+            PrintLine(sb, $"activeSteamFeatures: {FormatFeatures(slot.ActiveSteamFeatures)}", 4);
+        }
+
+        PrintSection(sb, "Controller Pipes");
+        if (status.ControllerPipes.Count == 0)
+        {
+            PrintLine(sb, "none");
+        }
+
+        foreach (ControllerPipeStatus pipe in status.ControllerPipes)
+        {
+            PrintLine(sb,
+                $"{pipe.ClientId} pipe={pipe.PipeName} " +
+                $"connected={pipe.Connected} controllers={pipe.Controllers.Count}");
+            foreach (ClientControllerStatus controller in pipe.Controllers)
+            {
+                PrintLine(sb,
+                    $"{controller.ControllerIndex}: {controller.Label} " +
+                    $"physical={controller.PhysicalControllerId} " +
+                    $"features={FormatFeatures(controller.Features)}",
+                    4);
+            }
+        }
+
         PrintSection(sb, "Clients");
         if (status.Runtime.Clients.Count == 0)
         {
@@ -144,6 +203,35 @@ internal static class ServerStatusCommand
         return processes.Count == 0
             ? "none"
             : string.Join(", ", processes.Select(process => $"{process.ProcessName}:{process.ProcessId}"));
+    }
+
+    private static string FormatRunning(bool running)
+    {
+        return running ? "running" : "stopped";
+    }
+
+    private static string FormatEndpoint(bool connected)
+    {
+        return connected ? "connected" : "missing";
+    }
+
+    private static string FormatOutput(bool connected, ControllerOutput output)
+    {
+        return connected ? $"{output}:connected" : $"{output}:disconnected";
+    }
+
+    private static string FormatControllerId(ControllerId controllerId)
+    {
+        return string.IsNullOrWhiteSpace(controllerId.DisplayName)
+            ? controllerId.Value
+            : $"{controllerId.DisplayName} ({controllerId.Value})";
+    }
+
+    private static string FormatFeatures(ControllerFeatures? features)
+    {
+        return features.HasValue && features.Value != ControllerFeatures.None
+            ? features.Value.ToString()
+            : "none";
     }
 
     private static JsonSerializerOptions CreateJsonOptions()

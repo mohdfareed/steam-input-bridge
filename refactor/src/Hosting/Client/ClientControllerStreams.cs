@@ -81,7 +81,12 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
                     continue;
                 }
 
-                SdlGamepadEventLoop.Run(sources, SendInput, _stop.Token);
+                SdlGamepadEventLoop.Run(
+                    GetSourcesSnapshot,
+                    SendInput,
+                    source => RemoveSource(client, source),
+                    () => RefreshSources(client),
+                    _stop.Token);
             }
             catch (Exception exception) when (
                 exception is SdlGamepadDisconnectedException or
@@ -263,28 +268,42 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         await DisposeSourcesAsync().ConfigureAwait(false);
+        await client.RegisterClientControllersAsync([], cancellationToken).ConfigureAwait(false);
+        return await AddMissingSourcesAsync(client, cancellationToken).ConfigureAwait(false);
+    }
 
+    private async Task<IReadOnlyList<SdlGamepadSource>> AddMissingSourcesAsync(
+        ClientService client,
+        CancellationToken cancellationToken)
+    {
         IReadOnlyList<SdlControllerInfo> visibleControllers =
             SdlControllerCatalog.GetControllers(SdlControllerFilters.IsForwardable);
         List<SdlControllerInfo> physicalControllers = GetPhysicalControllers(visibleControllers);
-        IReadOnlyList<SdlGamepadSource> sources = OpenSources(SelectClientControllers(visibleControllers));
+        IReadOnlyList<SdlControllerInfo> selectedControllers = SelectClientControllers(visibleControllers);
+        HashSet<SdlControllerId> openIds = GetOpenSourceIds();
+        List<SdlControllerInfo> missingControllers = [];
+        foreach (SdlControllerInfo controller in selectedControllers)
+        {
+            if (!openIds.Contains(controller.Id))
+            {
+                missingControllers.Add(controller);
+            }
+        }
+
+        IReadOnlyList<SdlGamepadSource> openedSources = OpenSources(missingControllers);
         try
         {
+            IReadOnlyList<SdlGamepadSource> sources = AddSources(openedSources);
             Dictionary<SdlGamepadSource, ControllerSlotIdentity> identities =
                 CreateSlotIdentities(sources, physicalControllers);
             ClientControllerInfo[] controllers = CreateControllerInfos(sources, identities);
 
             await client.RegisterClientControllersAsync(controllers, cancellationToken).ConfigureAwait(false);
-            lock (_sourcesGate)
-            {
-                _sources = sources;
-            }
-
             return sources;
         }
         catch
         {
-            foreach (SdlGamepadSource source in sources)
+            foreach (SdlGamepadSource source in openedSources)
             {
                 await source.DisposeAsync().ConfigureAwait(false);
             }
@@ -306,6 +325,69 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         {
             await source.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    private void RemoveSource(ClientService client, SdlGamepadSource source)
+    {
+        SdlGamepadSource? removed = null;
+        lock (_sourcesGate)
+        {
+            List<SdlGamepadSource> sources = [.. _sources];
+            if (sources.Remove(source))
+            {
+                removed = source;
+                _sources = sources;
+            }
+        }
+
+        if (removed is null)
+        {
+            return;
+        }
+
+        removed.Dispose();
+        RefreshControllerRegistration(client);
+    }
+
+    private void RefreshSources(ClientService client)
+    {
+        _ = AddMissingSourcesAsync(client, _stop.Token).GetAwaiter().GetResult();
+    }
+
+    private void RefreshControllerRegistration(ClientService client)
+    {
+        IReadOnlyList<SdlGamepadSource> sources = GetSourcesSnapshot();
+        ClientControllerInfo[] controllers = CreateControllerInfos(
+            sources,
+            CreateSlotIdentities(sources, GetPhysicalControllers(SdlControllerCatalog.GetControllers(
+                SdlControllerFilters.IsForwardable))));
+        client.RegisterClientControllersAsync(controllers, _stop.Token).GetAwaiter().GetResult();
+    }
+
+    private IReadOnlyList<SdlGamepadSource> AddSources(IReadOnlyList<SdlGamepadSource> sources)
+    {
+        if (sources.Count == 0)
+        {
+            return GetSourcesSnapshot();
+        }
+
+        lock (_sourcesGate)
+        {
+            _sources = [.. _sources, .. sources];
+            return _sources;
+        }
+    }
+
+    private HashSet<SdlControllerId> GetOpenSourceIds()
+    {
+        IReadOnlyList<SdlGamepadSource> sources = GetSourcesSnapshot();
+        HashSet<SdlControllerId> ids = [];
+        foreach (SdlGamepadSource source in sources)
+        {
+            _ = ids.Add(source.Controller.Id);
+        }
+
+        return ids;
     }
 
     private IReadOnlyList<SdlGamepadSource> GetSourcesSnapshot()

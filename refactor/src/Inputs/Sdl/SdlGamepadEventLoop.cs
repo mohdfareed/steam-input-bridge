@@ -17,11 +17,27 @@ public static class SdlGamepadEventLoop
         Action<SdlGamepadSource, ControllerState> handler,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(sources);
+        Run(() => sources, handler, disconnected: null, added: null, cancellationToken);
+    }
+
+    /// <summary>Runs a dynamic source set until cancellation or no sources remain.</summary>
+    public static void Run(
+        Func<IReadOnlyList<SdlGamepadSource>> getSources,
+        Action<SdlGamepadSource, ControllerState> handler,
+        Action<SdlGamepadSource>? disconnected = null,
+        Action? added = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(getSources);
         ArgumentNullException.ThrowIfNull(handler);
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            if (getSources().Count == 0)
+            {
+                return;
+            }
+
             if (!WaitForSdlEvent(out SDL.Event sdlEvent, cancellationToken))
             {
                 continue;
@@ -36,11 +52,25 @@ public static class SdlGamepadEventLoop
 
         void ProcessEvent(SDL.Event sdlEvent)
         {
-            foreach (SdlGamepadSource source in sources)
+            if ((SDL.EventType)sdlEvent.Type == SDL.EventType.GamepadAdded)
             {
-                if (source.ProcessEvent(sdlEvent))
+                added?.Invoke();
+                return;
+            }
+
+            foreach (SdlGamepadSource source in getSources())
+            {
+                try
                 {
-                    handler(source, source.ReadCurrentState());
+                    if (source.ProcessEvent(sdlEvent))
+                    {
+                        handler(source, source.ReadCurrentState());
+                        break;
+                    }
+                }
+                catch (SdlGamepadDisconnectedException)
+                {
+                    disconnected?.Invoke(source);
                     break;
                 }
             }
