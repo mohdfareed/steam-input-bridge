@@ -35,13 +35,10 @@ internal static class ServerStatusCommand
         ClientService client = app.Services.GetRequiredService<ClientService>();
         await using (client.ConfigureAwait(false))
         {
-            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(2));
-
             try
             {
-                await client.ConnectAsync(timeout.Token).ConfigureAwait(false);
-                ServerStatus status = await client.GetStatusAsync(timeout.Token).ConfigureAwait(false);
+                await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                ServerStatus status = await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
 
                 if (json)
                 {
@@ -51,10 +48,6 @@ internal static class ServerStatusCommand
                 {
                     await PrintStatusReportText(status).ConfigureAwait(false);
                 }
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                await Console.Out.WriteLineAsync("server running=false").ConfigureAwait(false);
             }
             catch (IOException exception)
             {

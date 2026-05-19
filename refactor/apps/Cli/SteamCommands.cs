@@ -115,12 +115,8 @@ internal static class SteamCommands
             ClientService client = app.Services.GetRequiredService<ClientService>();
             await using (client.ConfigureAwait(false))
             {
-                using CancellationTokenSource timeout =
-                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(2));
-
-                await client.ConnectAsync(timeout.Token).ConfigureAwait(false);
-                ServerStatus status = await client.GetStatusAsync(timeout.Token).ConfigureAwait(false);
+                await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                ServerStatus status = await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
                 ServerSteamInputStatus steamInput = status.SteamInput;
                 string name = steamInput.AppId is uint appId ? ResolveGameName(appId) : "none";
 
