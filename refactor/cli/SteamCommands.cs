@@ -110,12 +110,7 @@ internal static class SteamCommands
             DefaultValueFactory = (_) => Path.Combine(AppContext.BaseDirectory, "srm-manifest.json"),
             Description = "Path to the SRM manifest file."
         };
-        Option<string?> shortcutPath = new("--shortcut")
-        {
-            Description = "Windowless shortcut runner path."
-        };
 
-        command.Options.Add(shortcutPath);
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             using IHost app = AppSetup.Create();
@@ -123,7 +118,7 @@ internal static class SteamCommands
 
             string manifestPath = ResolveManifestPath(parseResult.GetValue(path) ??
                 throw new ArgumentNullException("Manifest path is required."));
-            string shortcutExecutable = ResolveShortcutPath(parseResult.GetValue(shortcutPath));
+            string shortcutExecutable = Path.Combine(AppContext.BaseDirectory, "Shortcut.exe");
 
             string manifestContent = SteamRomManagerExport.CreateJson(profiles, shortcutExecutable);
             WriteFile(manifestPath, manifestContent);
@@ -179,19 +174,6 @@ internal static class SteamCommands
         return Path.IsPathFullyQualified(filePath)
             ? filePath
             : Path.Combine(AppContext.BaseDirectory, filePath);
-    }
-
-    private static string ResolveShortcutPath(string? path)
-    {
-        if (!string.IsNullOrWhiteSpace(path))
-        {
-            string expanded = Environment.ExpandEnvironmentVariables(path);
-            return Path.IsPathFullyQualified(expanded)
-                ? expanded
-                : Path.Combine(AppContext.BaseDirectory, expanded);
-        }
-
-        return Path.Combine(AppContext.BaseDirectory, "Shortcut.exe");
     }
 
     public static void WriteFile(string manifestPath, string content)
