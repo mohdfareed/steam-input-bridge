@@ -29,7 +29,7 @@ public sealed record ServerStatus(int ConnectedClientCount)
 
     /// <summary>HidHide scope currently applied by this server.</summary>
     public ServerHidHideStatus HidHide { get; init; } =
-        new(false, false, false, [], [], null, null);
+        new(false, false, false, [], [], [], null, null);
 
     /// <summary>Steam Input forcing status tracked by this server.</summary>
     public ServerSteamInputStatus SteamInput { get; init; } =
@@ -67,6 +67,7 @@ public sealed record ServerHidHideStatus(
     bool CloakEnabled,
     bool InverseEnabled,
     IReadOnlyList<string> HiddenDevices,
+    IReadOnlyList<string> HiddenDeviceLabels,
     IReadOnlyList<string> RegisteredApplications,
     Guid? ClientId,
     string? LastError)
@@ -90,4 +91,5 @@ public sealed record ClientControllerStatus(
     ushort ControllerIndex,
     string PhysicalControllerId,
     string Label,
-    ControllerFeatures Features);
+    ControllerFeatures Features,
+    string? PhysicalDeviceId);

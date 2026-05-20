@@ -11,7 +11,7 @@ namespace SteamInputBridge.Tests;
 [TestClass]
 public sealed class MouseBrokerTests
 {
-    /// <summary>Mouse output connects only while the active client wants it.</summary>
+    /// <summary>Mouse output stays connected for the client run and sends only while active.</summary>
     [TestMethod]
     public void OutputConnectsAndDisconnectsWithActiveClient()
     {
@@ -20,10 +20,10 @@ public sealed class MouseBrokerTests
         using MouseBroker broker = new(factory);
 
         broker.RegisterClient(clientId, MouseOutput.Viiper);
-        Assert.IsEmpty(factory.Outputs);
+        Assert.HasCount(1, factory.Outputs);
+        Assert.IsFalse(factory.Outputs[0].Disposed);
 
         broker.SetActiveClient(clientId);
-        Assert.HasCount(1, factory.Outputs);
         Assert.IsFalse(factory.Outputs[0].Disposed);
 
         broker.SetMouseOutputEnabled(false);

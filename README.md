@@ -34,6 +34,7 @@ hot paths:
 
 ## TODO
 
+- [ ] Rewrite tray app using Windows standards.
 - [ ] SDL-VIIPER DS4 support with gyro integration.
 - [ ] Touchpad support and feedback capabilities.
   - Light-bar RGB, flash timing, trigger rumble

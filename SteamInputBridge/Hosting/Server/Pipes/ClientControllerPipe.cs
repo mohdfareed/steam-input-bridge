@@ -65,7 +65,8 @@ internal sealed class ClientControllerPipe(
                     controller.ControllerIndex,
                     controller.PhysicalControllerId,
                     controller.Label,
-                    controller.Features));
+                    controller.Features,
+                    controller.PhysicalDeviceId));
             }
         }
 

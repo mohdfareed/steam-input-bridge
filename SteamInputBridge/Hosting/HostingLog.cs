@@ -51,6 +51,17 @@ internal static partial class HostingLog
         int forwardablePhysicalCount,
         string controllers);
 
+    [LoggerMessage(EventId = 42, Level = LogLevel.Information, Message = "Client SDL controller scan: visible={VisibleCount} selected={SelectedCount} opened={OpenedCount} controllers={Controllers}")]
+    public static partial void ClientControllerScan(
+        ILogger logger,
+        int visibleCount,
+        int selectedCount,
+        int openedCount,
+        string controllers);
+
+    [LoggerMessage(EventId = 43, Level = LogLevel.Information, Message = "Registered client controllers: client={ClientId} count={Count}")]
+    public static partial void ClientControllersRegistered(ILogger logger, Guid clientId, int count);
+
     [LoggerMessage(EventId = 13, Level = LogLevel.Information, Message = "Active client changed: previous={PreviousClientId} current={CurrentClientId}")]
     public static partial void ActiveClientChanged(ILogger logger, Guid? previousClientId, Guid? currentClientId);
 

@@ -24,13 +24,14 @@ internal sealed class ServerActiveClientLoop(
     ProfilesService? profiles = null,
     HidHideProfileFirewall? hidHide = null,
     Func<ActiveClientRegistryStatus, Guid, IReadOnlyList<string>>? getHidHideDevices = null,
+    Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
     ControllerBroker? forwarding = null,
     MouseBroker? mouseForwarding = null)
 {
     private readonly Lock _steamStatusGate = new();
     private readonly Lock _hidHideStatusGate = new();
     private ServerSteamInputStatus _steamStatus = new(false, null, null, null);
-    private ServerHidHideStatus _hidHideStatus = new(false, false, false, [], [], null, null);
+    private ServerHidHideStatus _hidHideStatus = new(false, false, false, [], [], [], null, null);
 
     private static readonly TimeSpan ForegroundPollDelay = TimeSpan.FromMilliseconds(100);
 
@@ -40,6 +41,7 @@ internal sealed class ServerActiveClientLoop(
         ProfilesService? profiles = null,
         HidHideProfileFirewall? hidHide = null,
         Func<ActiveClientRegistryStatus, Guid, IReadOnlyList<string>>? getHidHideDevices = null,
+        Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
         ControllerBroker? forwarding = null,
         MouseBroker? mouseForwarding = null)
     {
@@ -53,6 +55,7 @@ internal sealed class ServerActiveClientLoop(
             profiles,
             hidHide,
             getHidHideDevices,
+            formatHidHideDevices,
             forwarding,
             mouseForwarding);
     }
@@ -245,7 +248,7 @@ internal sealed class ServerActiveClientLoop(
     {
         if (hidHide is null)
         {
-            return new ServerHidHideStatus(false, false, false, [], [], clientId, error);
+            return new ServerHidHideStatus(false, false, false, [], [], [], clientId, error);
         }
 
         try
@@ -256,6 +259,7 @@ internal sealed class ServerActiveClientLoop(
                 status.CloakEnabled,
                 status.InverseEnabled,
                 status.HiddenDevices,
+                GetDeviceLabels(status.HiddenDevices),
                 status.RegisteredApplications,
                 clientId,
                 error);
@@ -267,8 +271,15 @@ internal sealed class ServerActiveClientLoop(
                 System.IO.IOException or
                 UnauthorizedAccessException)
         {
-            return new ServerHidHideStatus(false, false, false, [], [], clientId, error ?? exception.Message);
+            return new ServerHidHideStatus(false, false, false, [], [], [], clientId, error ?? exception.Message);
         }
+    }
+
+    private IReadOnlyList<string> GetDeviceLabels(IReadOnlyList<string> devicePaths)
+    {
+        return formatHidHideDevices is null || devicePaths.Count == 0
+            ? []
+            : formatHidHideDevices(devicePaths);
     }
 
     private static uint? FindSteamAppId(

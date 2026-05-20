@@ -12,6 +12,7 @@ public sealed record HidHideDevice(
     string Vendor,
     string Product,
     string Usage,
+    string Description,
     string SymbolicLink,
     string DeviceInstancePath);
 
@@ -40,6 +41,7 @@ public sealed class HidHideDeviceCatalog(IHidHideCommandRunner runner)
                     GetString(device, "vendor"),
                     GetString(device, "product"),
                     GetString(device, "usage"),
+                    GetString(device, "description"),
                     GetString(device, "symbolicLink"),
                     GetString(device, "deviceInstancePath")));
             }
@@ -63,6 +65,26 @@ public sealed class HidHideDeviceCatalog(IHidHideCommandRunner runner)
                 !string.IsNullOrWhiteSpace(device.DeviceInstancePath))
             {
                 return device.DeviceInstancePath;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Finds a HidHide device by device instance path.</summary>
+    public HidHideDevice? FindDevice(string? deviceInstancePath)
+    {
+        if (string.IsNullOrWhiteSpace(deviceInstancePath))
+        {
+            return null;
+        }
+
+        string normalized = NormalizeDevicePath(deviceInstancePath);
+        foreach (HidHideDevice device in ListDevices())
+        {
+            if (NormalizeDevicePath(device.DeviceInstancePath) == normalized)
+            {
+                return device;
             }
         }
 

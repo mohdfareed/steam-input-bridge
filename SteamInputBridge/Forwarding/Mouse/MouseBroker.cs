@@ -220,7 +220,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
 
     private IMouseOutput? RefreshOutput()
     {
-        MouseOutput outputKind = GetOutputKind();
+        MouseOutput outputKind = GetOutputKind(keepExistingWhenInactive: true);
         bool shouldConnect = _mouseOutputEnabled && outputKind != MouseOutput.None;
 
         if (!shouldConnect)
@@ -247,13 +247,18 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         return output;
     }
 
-    private MouseOutput GetOutputKind()
+    private MouseOutput GetOutputKind(bool keepExistingWhenInactive)
     {
         if (_activeClientId.HasValue &&
             _clients.TryGetValue(_activeClientId.Value, out MouseOutput activeOutput) &&
             activeOutput != MouseOutput.None)
         {
             return activeOutput;
+        }
+
+        if (keepExistingWhenInactive && _outputKind != MouseOutput.None && HasOutputClient())
+        {
+            return _outputKind;
         }
 
         foreach (MouseOutput output in _clients.Values)
@@ -265,6 +270,19 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         }
 
         return MouseOutput.None;
+    }
+
+    private bool HasOutputClient()
+    {
+        foreach (MouseOutput output in _clients.Values)
+        {
+            if (output != MouseOutput.None)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool HasActiveOutput()

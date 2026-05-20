@@ -34,7 +34,8 @@ public sealed record ClientControllerInfo(
     ushort ControllerIndex,
     string PhysicalControllerId,
     string Label,
-    ControllerFeatures Features);
+    ControllerFeatures Features,
+    string? PhysicalDeviceId = null);
 
 // MARK: Publics
 // ============================================================================

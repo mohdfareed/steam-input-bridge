@@ -54,6 +54,7 @@ internal sealed class ServerSessions(
 
     internal Task<ServerStatus> GetStatusAsync()
     {
+        routeStateChanged?.Invoke();
         return Task.FromResult(new ServerStatus(_clients.Count)
         {
             Runtime = runtime.GetStatus(),
@@ -64,7 +65,7 @@ internal sealed class ServerSessions(
                     new PhysicalControllerPumpStatus(false, 0, [], null),
                     new MouseInputPumpStatus(false, false, null)),
             SteamInput = getSteamInputStatus?.Invoke() ?? new ServerSteamInputStatus(false, null, null, null),
-            HidHide = getHidHideStatus?.Invoke() ?? new ServerHidHideStatus(false, false, false, [], [], null, null),
+            HidHide = getHidHideStatus?.Invoke() ?? new ServerHidHideStatus(false, false, false, [], [], [], null, null),
             ControllerPipes = controllerPipes.GetStatus(),
         });
     }
@@ -114,6 +115,7 @@ internal sealed class ServerSessions(
     {
         _ = GetClient(clientId);
         controllerPipes.RegisterControllers(clientId, controllers);
+        HostingLog.ClientControllersRegistered(logger, clientId, controllers.Count);
         routeStateChanged?.Invoke();
         return Task.CompletedTask;
     }

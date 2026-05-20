@@ -80,6 +80,7 @@ internal sealed class AppContext : IDisposable
         _tray.Visible = true;
         _tray.MouseUp += ShowMenu;
         _refreshTimer.Start();
+        _ = RefreshStatusNowAsync();
     }
 
     public void Dispose()
@@ -128,7 +129,11 @@ internal sealed class AppContext : IDisposable
     {
         _ = sender;
         _ = args;
+        await RefreshStatusNowAsync().ConfigureAwait(true);
+    }
 
+    private async Task RefreshStatusNowAsync()
+    {
         if (_refreshing)
         {
             return;
@@ -159,8 +164,14 @@ internal sealed class AppContext : IDisposable
         _ = sender;
         if (args.Button == MouseButtons.Right)
         {
-            _menu.Show(Cursor.Position, _window.Handle, _status, _serverError);
+            _ = ShowMenuAsync();
         }
+    }
+
+    private async Task ShowMenuAsync()
+    {
+        await RefreshStatusNowAsync().ConfigureAwait(true);
+        _menu.Show(Cursor.Position, _window.Handle, _status, _serverError);
     }
 
     private static bool IsExpectedStop(AggregateException exception)

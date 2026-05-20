@@ -342,7 +342,7 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
 
     private void RefreshOutput(ControllerSlot slot, List<IControllerOutput>? dispose = null)
     {
-        ControllerOutput outputKind = GetOutputKind(slot);
+        ControllerOutput outputKind = GetOutputKind(slot, keepExistingWhenInactive: true);
         bool shouldConnect =
             _controllerOutputEnabled &&
             outputKind != ControllerOutput.None;
@@ -356,7 +356,7 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
         slot.ConnectOutput(outputFactory, outputKind);
     }
 
-    private ControllerOutput GetOutputKind(ControllerSlot slot)
+    private ControllerOutput GetOutputKind(ControllerSlot slot, bool keepExistingWhenInactive)
     {
         if (_activeClientId.HasValue &&
             slot.HasClient(_activeClientId) &&
@@ -364,6 +364,13 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
             activeClient.ControllerOutput != ControllerOutput.None)
         {
             return activeClient.ControllerOutput;
+        }
+
+        if (keepExistingWhenInactive &&
+            slot.OutputKind != ControllerOutput.None &&
+            HasOutputClient(slot))
+        {
+            return slot.OutputKind;
         }
 
         foreach (ControllerEndpointId endpointId in slot.ClientEndpoints.Keys)
@@ -376,6 +383,20 @@ public sealed class ControllerBroker(IControllerOutputFactory outputFactory) : I
         }
 
         return ControllerOutput.None;
+    }
+
+    private bool HasOutputClient(ControllerSlot slot)
+    {
+        foreach (ControllerEndpointId endpointId in slot.ClientEndpoints.Keys)
+        {
+            if (_clients.TryGetValue(endpointId.ClientId, out ClientEntry? client) &&
+                client.ControllerOutput != ControllerOutput.None)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private PendingControllerSend? CreateMergedSendIfActive(ControllerSlot slot)

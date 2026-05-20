@@ -71,6 +71,40 @@ public static class SdlControllerCatalog
         });
     }
 
+    /// <summary>Lists and opens SDL controllers while keeping SDL initialized.</summary>
+    public static IReadOnlyList<SdlGamepadSource> OpenControllers(
+        Func<IReadOnlyList<SdlControllerInfo>, IReadOnlyList<SdlControllerInfo>> selectControllers)
+    {
+        ArgumentNullException.ThrowIfNull(selectControllers);
+
+        return WithSdlErrors<IReadOnlyList<SdlGamepadSource>>(() =>
+        {
+            using SdlGamepadRuntime.Lease lease = SdlGamepadRuntime.Acquire();
+            uint[] gamepadIds = SDL.GetGamepads(out int count) ?? [];
+            IReadOnlyList<SdlControllerInfo> controllers = CreateControllerInfos(gamepadIds, count);
+            List<SdlGamepadSource> sources = [];
+
+            try
+            {
+                foreach (SdlControllerInfo controller in selectControllers(controllers))
+                {
+                    sources.Add(SdlGamepadSource.Connect(controller));
+                }
+
+                return [.. sources];
+            }
+            catch
+            {
+                foreach (SdlGamepadSource source in sources)
+                {
+                    source.Dispose();
+                }
+
+                throw;
+            }
+        });
+    }
+
     /// <summary>Opens all client-visible controllers except VIIPER loopback devices.</summary>
     public static IReadOnlyList<SdlGamepadSource> OpenClientControllers(
         Func<SdlControllerInfo, bool>? shouldInclude = null)

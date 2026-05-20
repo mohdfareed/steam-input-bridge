@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading;
@@ -33,6 +34,7 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
     private Task? _inputTask;
     private Task? _writeTask;
     private Task? _feedbackTask;
+    private string? _lastScanSignature;
 
     public async Task StartAsync(
         ClientService client,
@@ -160,9 +162,10 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
             ControllerSlotIdentity identity = identities[gamepad];
             controllers[i] = new ClientControllerInfo(
                 source.ControllerIndex,
-                identity.PhysicalId,
+                identity.RouteId,
                 identity.Label,
-                gamepad.Features);
+                gamepad.Features,
+                identity.PhysicalDeviceId);
         }
 
         return controllers;
@@ -195,35 +198,6 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         return selected;
     }
 
-    private static List<SdlGamepadSource> OpenSources(IReadOnlyList<SdlControllerInfo> controllers)
-    {
-        List<SdlGamepadSource> sources = [];
-        try
-        {
-            foreach (SdlControllerInfo controller in controllers)
-            {
-                try
-                {
-                    sources.Add(SdlGamepadSource.Connect(controller));
-                }
-                catch (InvalidOperationException exception) when (IsUnmappedController(exception))
-                {
-                }
-            }
-
-            return sources;
-        }
-        catch
-        {
-            foreach (SdlGamepadSource source in sources)
-            {
-                source.Dispose();
-            }
-
-            throw;
-        }
-    }
-
     private static Dictionary<SdlGamepadSource, ControllerSlotIdentity> CreateSlotIdentities(
         IReadOnlyList<ClientControllerSource> sources,
         IReadOnlyList<SdlControllerInfo> physicalControllers)
@@ -235,13 +209,37 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
             SdlControllerInfo? physical = SdlControllerMatcher.FindPhysicalController(
                 controller,
                 physicalControllers);
-            SdlControllerInfo slot = physical ?? controller;
+            string? physicalDeviceId = physical is not null
+                ? GetPathControllerId(physical)
+                : GetPathControllerId(controller);
             identities[source.Source] = new ControllerSlotIdentity(
-                SdlControllerCatalog.GetPhysicalControllerId(slot),
-                slot.Name);
+                GetRouteId(source, physical),
+                physical?.Name ?? controller.Name,
+                physicalDeviceId);
         }
 
         return identities;
+    }
+
+    private static string GetRouteId(ClientControllerSource source, SdlControllerInfo? physical)
+    {
+        SdlControllerInfo controller = source.Source.Controller;
+        return physical is not null
+            ? SdlControllerCatalog.GetPhysicalControllerId(physical)
+            : !string.IsNullOrWhiteSpace(controller.Path)
+            ? SdlControllerCatalog.GetPhysicalControllerId(controller)
+            : controller.Source == SdlControllerSource.Steam && controller.SteamHandle != 0
+            ? controller.Id.Value
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"client:{source.ControllerIndex}:{controller.Source}:{controller.InstanceId}");
+    }
+
+    private static string? GetPathControllerId(SdlControllerInfo controller)
+    {
+        return string.IsNullOrWhiteSpace(controller.Path)
+            ? null
+            : SdlControllerCatalog.GetPhysicalControllerId(controller);
     }
 
     private static List<SdlControllerInfo> GetPhysicalControllers(
@@ -286,21 +284,27 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         ClientService client,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<SdlControllerInfo> visibleControllers =
-            SdlControllerCatalog.GetControllers(SdlControllerFilters.IsForwardable);
-        List<SdlControllerInfo> physicalControllers = GetPhysicalControllers(visibleControllers);
-        IReadOnlyList<SdlControllerInfo> selectedControllers = SelectClientControllers(visibleControllers);
         HashSet<SdlControllerId> openIds = GetOpenSourceIds();
-        List<SdlControllerInfo> missingControllers = [];
-        foreach (SdlControllerInfo controller in selectedControllers)
+        IReadOnlyList<SdlControllerInfo> visibleControllers = [];
+        IReadOnlyList<SdlControllerInfo> selectedControllers = [];
+        List<SdlControllerInfo> physicalControllers = [];
+        IReadOnlyList<SdlGamepadSource> openedSources = SdlControllerCatalog.OpenControllers(controllers =>
         {
-            if (!openIds.Contains(controller.Id))
+            visibleControllers = FilterForwardable(controllers);
+            physicalControllers = GetPhysicalControllers(visibleControllers);
+            selectedControllers = SelectClientControllers(visibleControllers);
+            List<SdlControllerInfo> missingControllers = [];
+            foreach (SdlControllerInfo controller in selectedControllers)
             {
-                missingControllers.Add(controller);
+                if (!openIds.Contains(controller.Id))
+                {
+                    missingControllers.Add(controller);
+                }
             }
-        }
 
-        IReadOnlyList<SdlGamepadSource> openedSources = OpenSources(missingControllers);
+            return missingControllers;
+        });
+        LogScanIfChanged(visibleControllers, selectedControllers, openedSources);
         try
         {
             IReadOnlyList<ClientControllerSource> sources = AddSources(openedSources);
@@ -320,6 +324,59 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
 
             throw;
         }
+    }
+
+    private static List<SdlControllerInfo> FilterForwardable(
+        IReadOnlyList<SdlControllerInfo> controllers)
+    {
+        List<SdlControllerInfo> forwardable = [];
+        foreach (SdlControllerInfo controller in controllers)
+        {
+            if (SdlControllerFilters.IsForwardable(controller))
+            {
+                forwardable.Add(controller);
+            }
+        }
+
+        return forwardable;
+    }
+
+    private void LogScanIfChanged(
+        IReadOnlyList<SdlControllerInfo> visibleControllers,
+        IReadOnlyList<SdlControllerInfo> selectedControllers,
+        IReadOnlyList<SdlGamepadSource> openedSources)
+    {
+        string signature = CreateScanSignature(visibleControllers);
+        if (signature == _lastScanSignature)
+        {
+            return;
+        }
+
+        _lastScanSignature = signature;
+        HostingLog.ClientControllerScan(
+            logger,
+            visibleControllers.Count,
+            selectedControllers.Count,
+            openedSources.Count,
+            signature);
+    }
+
+    private static string CreateScanSignature(IReadOnlyList<SdlControllerInfo> controllers)
+    {
+        if (controllers.Count == 0)
+        {
+            return "none";
+        }
+
+        List<string> values = [];
+        foreach (SdlControllerInfo controller in controllers)
+        {
+            values.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{controller.Name} source={controller.Source} vid={controller.VendorId:x4} pid={controller.ProductId:x4} motion={controller.HasMotion}"));
+        }
+
+        return string.Join("; ", values);
     }
 
     private async Task DisposeSourcesAsync()
@@ -463,12 +520,10 @@ internal sealed class ClientControllerStreams(ILogger logger) : IAsyncDisposable
         }
     }
 
-    private static bool IsUnmappedController(InvalidOperationException exception)
-    {
-        return exception.Message.Contains("mapping", StringComparison.OrdinalIgnoreCase);
-    }
-
     private sealed record ClientControllerSource(ushort ControllerIndex, SdlGamepadSource Source);
 
-    private sealed record ControllerSlotIdentity(string PhysicalId, string Label);
+    private sealed record ControllerSlotIdentity(
+        string RouteId,
+        string Label,
+        string? PhysicalDeviceId);
 }

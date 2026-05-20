@@ -9,7 +9,7 @@ namespace SteamInputBridge.App.Tray;
 
 internal static class AppText
 {
-    public static string None => "none";
+    public static string None => "None";
 
     public static string TrayStarting => "Steam Input Bridge Server starting";
 
@@ -34,22 +34,22 @@ internal static class AppText
 
     public static string Connected(bool connected)
     {
-        return connected ? "connected" : "disconnected";
+        return connected ? "Connected" : "Disconnected";
     }
 
     public static string Enabled(bool enabled)
     {
-        return enabled ? "enabled" : "disabled";
+        return enabled ? "Enabled" : "Disabled";
     }
 
     public static string YesNo(bool value)
     {
-        return value ? "yes" : "no";
+        return value ? "Yes" : "No";
     }
 
     public static string Running(bool running)
     {
-        return running ? "running" : "stopped";
+        return running ? "Running" : "Stopped";
     }
 
     public static string Output(MouseOutput output)
@@ -57,8 +57,8 @@ internal static class AppText
         return output switch
         {
             SteamInputBridge.Forwarding.Mouse.MouseOutput.None => None,
-            SteamInputBridge.Forwarding.Mouse.MouseOutput.Viiper => "viiper",
-            SteamInputBridge.Forwarding.Mouse.MouseOutput.Teensy => "teensy",
+            SteamInputBridge.Forwarding.Mouse.MouseOutput.Viiper => "VIIPER",
+            SteamInputBridge.Forwarding.Mouse.MouseOutput.Teensy => "Teensy",
             _ => output.ToString(),
         };
     }
@@ -68,8 +68,8 @@ internal static class AppText
         return output switch
         {
             ControllerOutput.None => None,
-            ControllerOutput.Xbox360 => "xbox360",
-            ControllerOutput.Ds4 => "ds4",
+            ControllerOutput.Xbox360 => "Xbox 360",
+            ControllerOutput.Ds4 => "DualShock 4",
             _ => output.ToString(),
         };
     }
@@ -78,8 +78,8 @@ internal static class AppText
     {
         return !string.IsNullOrWhiteSpace(status.LastError)
             ? status.ControllerCount == 0
-                ? "retrying"
-                : $"retrying ({status.ControllerCount})"
+                ? "Retrying"
+                : $"Retrying ({status.ControllerCount})"
             : status.ControllerCount == 0
             ? None
             : $"{status.ControllerCount}";
@@ -88,16 +88,16 @@ internal static class AppText
     public static string MouseInput(MouseInputPumpStatus status)
     {
         return !string.IsNullOrWhiteSpace(status.LastError)
-            ? "retrying"
+            ? "Retrying"
             : status.Running && status.SourceConnected
-            ? "running"
-            : "stopped";
+            ? "Running"
+            : "Stopped";
     }
 
     public static string FormatMouseOutput(MouseBrokerStatus status)
     {
         return status.Output == SteamInputBridge.Forwarding.Mouse.MouseOutput.None
-            ? "disabled"
+            ? "Disabled"
             : $"{Output(status.Output)} {Connected(status.OutputConnected)}";
     }
 

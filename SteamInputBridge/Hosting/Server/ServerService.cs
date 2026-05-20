@@ -89,6 +89,7 @@ public sealed class ServerService : IAsyncDisposable
             profiles,
             _hidHide,
             GetHidHideDevicePaths,
+            GetHidHideDeviceLabels,
             _controllerBroker,
             _mouseBroker);
 
@@ -245,7 +246,10 @@ public sealed class ServerService : IAsyncDisposable
 
             foreach (ClientControllerStatus controller in pipe.Controllers)
             {
-                if (_hidHideDevices.FindDeviceInstancePath(GetControllerPath(controller.PhysicalControllerId)) is { } path)
+                string? physicalControllerPath =
+                    GetControllerPath(controller.PhysicalDeviceId) ??
+                    GetControllerPath(controller.PhysicalControllerId);
+                if (_hidHideDevices.FindDeviceInstancePath(physicalControllerPath) is { } path)
                 {
                     _ = devices.Add(path);
                 }
@@ -255,8 +259,75 @@ public sealed class ServerService : IAsyncDisposable
         return [.. devices];
     }
 
-    private static string? GetControllerPath(string physicalControllerId)
+    private IReadOnlyList<string> GetHidHideDeviceLabels(IReadOnlyList<string> devicePaths)
     {
+        if (_hidHideDevices is null || devicePaths.Count == 0)
+        {
+            return [];
+        }
+
+        List<string> labels = [];
+        foreach (string devicePath in devicePaths)
+        {
+            labels.Add(FormatHidHideDeviceLabel(devicePath));
+        }
+
+        return labels;
+    }
+
+    private string FormatHidHideDeviceLabel(string devicePath)
+    {
+        if (_hidHideDevices?.FindDevice(devicePath) is not { } device)
+        {
+            return ShortenDevicePath(devicePath);
+        }
+
+        string name = !string.IsNullOrWhiteSpace(device.FriendlyName)
+            ? device.FriendlyName
+            : !string.IsNullOrWhiteSpace(device.Product)
+            ? device.Product
+            : FormatVidPid(devicePath);
+        string usage = string.IsNullOrWhiteSpace(device.Usage)
+            ? device.Description
+            : device.Usage;
+
+        return string.IsNullOrWhiteSpace(usage)
+            ? name
+            : $"{name} - {usage}";
+    }
+
+    private static string FormatVidPid(string devicePath)
+    {
+        string? vendor = FindHexPart(devicePath, "VID_");
+        string? product = FindHexPart(devicePath, "PID_");
+        return vendor is not null && product is not null
+            ? $"{vendor}:{product}"
+            : ShortenDevicePath(devicePath);
+    }
+
+    private static string ShortenDevicePath(string devicePath)
+    {
+        int slash = devicePath.LastIndexOf('\\');
+        return slash >= 0 && slash + 1 < devicePath.Length
+            ? devicePath[(slash + 1)..]
+            : devicePath;
+    }
+
+    private static string? FindHexPart(string value, string prefix)
+    {
+        int index = value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+        return index < 0 || index + prefix.Length + 4 > value.Length
+            ? null
+            : value.Substring(index + prefix.Length, 4).ToUpperInvariant();
+    }
+
+    private static string? GetControllerPath(string? physicalControllerId)
+    {
+        if (string.IsNullOrWhiteSpace(physicalControllerId))
+        {
+            return null;
+        }
+
         const string Prefix = "path:";
         return physicalControllerId.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
             ? physicalControllerId[Prefix.Length..]

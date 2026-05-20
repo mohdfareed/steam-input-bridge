@@ -76,12 +76,13 @@ internal sealed class AppMenu(
         {
             items.Add(NativeMenuItem.MenuStatus(
                 client.ProfileId,
-                client.IsActive ? "active" : "idle",
+                string.Empty,
                 [
-                    NativeMenuItem.Status("pid", client.ClientProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                    NativeMenuItem.Status("steam app", AppText.AppId(client.SteamAppId)),
-                    NativeMenuItem.Status("receivers", AppText.Processes(client.ObservedProcesses)),
-                    NativeMenuItem.Status("blocked", AppText.Processes(client.BlockedProcesses)),
+                    NativeMenuItem.Status("State", client.IsActive ? "Active" : "Idle"),
+                    NativeMenuItem.Status("PID", client.ClientProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    NativeMenuItem.Status("Steam App", AppText.AppId(client.SteamAppId)),
+                    NativeMenuItem.Status("Receivers", AppText.Processes(client.ObservedProcesses)),
+                    NativeMenuItem.Status("Blocked", AppText.Processes(client.BlockedProcesses)),
                     NativeMenuItem.Separator,
                     NativeMenuItem.Action("Stop client", () => stopClient(client.ClientId)),
                 ],
@@ -107,22 +108,24 @@ internal sealed class AppMenu(
     {
         if (status is null)
         {
-            return NativeMenuItem.Menu("HidHide", [NativeMenuItem.Disabled("waiting for status")]);
+            return NativeMenuItem.Menu("HidHide", [NativeMenuItem.Disabled("Waiting for status")]);
         }
 
         ServerHidHideStatus hidHide = status.HidHide;
         List<NativeMenuItem> items =
         [
-            CreateBoolStatus("cloak", hidHide.CloakEnabled),
-            CreateBoolStatus("inverse", hidHide.InverseEnabled),
-            CreateBoolStatus("active scope", hidHide.Active),
-            CreateValueMenu("Hidden devices", hidHide.HiddenDevices),
-            CreateValueMenu("Allowed apps", hidHide.RegisteredApplications),
+            CreateBoolStatus("Cloak mode", hidHide.CloakEnabled),
+            CreateBoolStatus("Inverse mode", hidHide.InverseEnabled),
+            CreateBoolStatus("Active scope", hidHide.Active),
+            NativeMenuItem.Separator,
+            CreateValueMenu("Hidden devices", GetHidHideDeviceDisplayValues(hidHide)),
+            CreateValueMenu("Allowed apps", GetApplicationNames(hidHide.RegisteredApplications)),
         ];
 
         if (!string.IsNullOrWhiteSpace(hidHide.LastError))
         {
-            items.Add(NativeMenuItem.Disabled($"error: {hidHide.LastError}"));
+            items.Add(NativeMenuItem.Separator);
+            items.Add(NativeMenuItem.Disabled($"Error: {hidHide.LastError}"));
         }
 
         return NativeMenuItem.Menu("HidHide", items);
@@ -130,7 +133,7 @@ internal sealed class AppMenu(
 
     private static NativeMenuItem CreateBoolStatus(string label, bool value)
     {
-        return NativeMenuItem.Status(label, value ? "enabled" : "disabled", isChecked: value);
+        return NativeMenuItem.Status(label, value ? "Enabled" : "Disabled", isChecked: value);
     }
 
     private static NativeMenuItem CreateValueMenu(string title, IReadOnlyList<string> values)
@@ -149,30 +152,53 @@ internal sealed class AppMenu(
         return NativeMenuItem.Menu(title, items);
     }
 
+    private static IReadOnlyList<string> GetHidHideDeviceDisplayValues(ServerHidHideStatus hidHide)
+    {
+        return hidHide.HiddenDeviceLabels.Count == hidHide.HiddenDevices.Count
+            ? hidHide.HiddenDeviceLabels
+            : hidHide.HiddenDevices;
+    }
+
+    private static List<string> GetApplicationNames(IReadOnlyList<string> paths)
+    {
+        List<string> names = [];
+        foreach (string path in paths)
+        {
+            string? name = Path.GetFileName(path);
+            names.Add(string.IsNullOrWhiteSpace(name) ? path : name);
+        }
+
+        return names;
+    }
+
     private static NativeMenuItem CreateInputsMenu(ServerStatus? status)
     {
         if (status is null)
         {
-            return NativeMenuItem.Menu("Inputs", [NativeMenuItem.Disabled("waiting for status")]);
+            return NativeMenuItem.Menu("Inputs", [NativeMenuItem.Disabled("Waiting for status")]);
         }
 
         PhysicalControllerPumpStatus physical = status.Inputs.PhysicalControllers;
         List<NativeMenuItem> items =
         [
-            NativeMenuItem.Status("controllers", AppText.PhysicalSdl(physical)),
-            NativeMenuItem.Status("mouse", AppText.MouseInput(status.Inputs.Mouse), status.Inputs.Mouse.Running),
+            NativeMenuItem.Status("Controllers", AppText.PhysicalSdl(physical)),
+            NativeMenuItem.Status("Mouse", AppText.MouseInput(status.Inputs.Mouse), status.Inputs.Mouse.Running),
         ];
+
 
         if (!string.IsNullOrWhiteSpace(physical.LastError))
         {
-            items.Add(NativeMenuItem.Disabled($"controller error: {physical.LastError}"));
+            items.Add(NativeMenuItem.Separator);
+            items.Add(NativeMenuItem.Disabled($"Controller error: {physical.LastError}"));
         }
 
         if (!string.IsNullOrWhiteSpace(status.Inputs.Mouse.LastError))
         {
-            items.Add(NativeMenuItem.Disabled($"raw input error: {status.Inputs.Mouse.LastError}"));
+            items.Add(NativeMenuItem.Separator);
+            items.Add(NativeMenuItem.Disabled($"Raw input error: {status.Inputs.Mouse.LastError}"));
         }
 
+        items.Add(NativeMenuItem.Separator);
         foreach (string controller in physical.ControllerIds)
         {
             items.Add(NativeMenuItem.Disabled(controller));
@@ -185,36 +211,38 @@ internal sealed class AppMenu(
     {
         if (status is null)
         {
-            return NativeMenuItem.Menu("Outputs", [NativeMenuItem.Disabled("waiting for status")]);
+            return NativeMenuItem.Menu("Outputs", [NativeMenuItem.Disabled("Waiting for status")]);
         }
 
         List<NativeMenuItem> items =
         [
-            CreateBoolStatus("controller gate", status.Forwarding.ControllerOutputEnabled),
-            CreateBoolStatus("motion", status.Forwarding.PhysicalMotionEnabled),
             NativeMenuItem.Status(
-                "mouse device",
+                "Mouse Connected",
                 AppText.FormatMouseOutput(status.MouseForwarding),
                 status.MouseForwarding.OutputConnected),
-            CreateBoolStatus("mouse gate", status.MouseForwarding.MouseOutputEnabled),
-            CreateBoolStatus("pointer", status.MouseForwarding.PointerOutputEnabled),
+            CreateBoolStatus("Mouse Output", status.MouseForwarding.MouseOutputEnabled),
+            CreateBoolStatus("Pointer", status.MouseForwarding.PointerOutputEnabled),
+            NativeMenuItem.Separator,
+            CreateBoolStatus("Controller Output", status.Forwarding.ControllerOutputEnabled),
+            CreateBoolStatus("Motion", status.Forwarding.PhysicalMotionEnabled),
         ];
 
         if (status.Forwarding.Slots.Count == 0)
         {
-            items.Add(NativeMenuItem.Disabled("controller slots: none"));
+            items.Add(NativeMenuItem.Status("Controller slots", "None"));
             return NativeMenuItem.Menu("Outputs", items);
         }
 
+        items.Add(NativeMenuItem.Separator);
         foreach (ControllerSlotStatus slot in status.Forwarding.Slots)
         {
             items.Add(NativeMenuItem.Menu(
                 AppText.ControllerSlot(slot),
                 [
-                    NativeMenuItem.Status("output", AppText.Output(slot.Output), slot.OutputConnected),
-                    CreateBoolStatus("physical", slot.HasPhysicalEndpoint),
-                    NativeMenuItem.Status("client endpoints", slot.ClientEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                    CreateBoolStatus("active client", slot.HasActiveClientEndpoint),
+                    NativeMenuItem.Status("Output", AppText.Output(slot.Output), slot.OutputConnected),
+                    CreateBoolStatus("Physical", slot.HasPhysicalEndpoint),
+                    NativeMenuItem.Status("Client endpoints", slot.ClientEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    CreateBoolStatus("Active client", slot.HasActiveClientEndpoint),
                 ]));
         }
 
@@ -225,18 +253,19 @@ internal sealed class AppMenu(
     {
         if (status is null)
         {
-            return NativeMenuItem.Menu("Steam Input", [NativeMenuItem.Disabled("waiting for status")]);
+            return NativeMenuItem.Menu("Steam Input", [NativeMenuItem.Disabled("Waiting for status")]);
         }
 
         List<NativeMenuItem> items =
         [
-            CreateBoolStatus("forced", status.SteamInput.Forced),
-            NativeMenuItem.Status("app id", AppText.AppId(status.SteamInput.AppId)),
+            CreateBoolStatus("Forced", status.SteamInput.Forced),
+            NativeMenuItem.Status("App ID", AppText.AppId(status.SteamInput.AppId)),
         ];
 
         if (!string.IsNullOrWhiteSpace(status.SteamInput.LastError))
         {
-            items.Add(NativeMenuItem.Disabled($"error: {status.SteamInput.LastError}"));
+            items.Add(NativeMenuItem.Separator);
+            items.Add(NativeMenuItem.Disabled($"Error: {status.SteamInput.LastError}"));
         }
 
         return NativeMenuItem.Menu("Steam Input", items);
