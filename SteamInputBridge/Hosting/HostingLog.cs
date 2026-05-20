@@ -43,6 +43,14 @@ internal static partial class HostingLog
     [LoggerMessage(EventId = 12, Level = LogLevel.Information, Message = "Physical SDL controller pump restarting: {Message}")]
     public static partial void PhysicalControllerPumpRestarting(ILogger logger, string message);
 
+    [LoggerMessage(EventId = 41, Level = LogLevel.Information, Message = "Physical SDL controller scan: visible={VisibleCount} physical={PhysicalCount} forwardablePhysical={ForwardablePhysicalCount} controllers={Controllers}")]
+    public static partial void PhysicalControllerScan(
+        ILogger logger,
+        int visibleCount,
+        int physicalCount,
+        int forwardablePhysicalCount,
+        string controllers);
+
     [LoggerMessage(EventId = 13, Level = LogLevel.Information, Message = "Active client changed: previous={PreviousClientId} current={CurrentClientId}")]
     public static partial void ActiveClientChanged(ILogger logger, Guid? previousClientId, Guid? currentClientId);
 
@@ -102,6 +110,12 @@ internal static partial class HostingLog
 
     [LoggerMessage(EventId = 34, Level = LogLevel.Warning, Message = "HidHide update failed for client {ClientId}: {Message}")]
     public static partial void HidHideUpdateFailed(ILogger logger, Guid? clientId, string message);
+
+    [LoggerMessage(EventId = 39, Level = LogLevel.Information, Message = "Registered this process for HidHide device access.")]
+    public static partial void HidHideApplicationAccessRegistered(ILogger logger);
+
+    [LoggerMessage(EventId = 40, Level = LogLevel.Warning, Message = "HidHide application access registration failed: {Message}")]
+    public static partial void HidHideApplicationAccessFailed(ILogger logger, string message);
 
     [LoggerMessage(EventId = 35, Level = LogLevel.Information, Message = "Registered keyboard shortcuts: {Count}")]
     public static partial void ShortcutsRegistered(ILogger logger, int count);

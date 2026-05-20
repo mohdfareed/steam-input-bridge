@@ -33,15 +33,15 @@ internal sealed class AppMenu(
 
         items.AddRange(
         [
-            NativeMenuItem.Action("Restart server", restart),
-            CreateStartupItem(),
+            CreateClientsMenu(status, stopClient),
+            CreateDiagnosticsMenu(status),
+            NativeMenuItem.Separator,
             NativeMenuItem.Action("Open settings", () => OpenFile(settingsPath)),
             CreateOpenLogsItem(),
             NativeMenuItem.Action("Export SRM manifest", exportSrm),
             NativeMenuItem.Separator,
-            CreateClientsMenu(status, stopClient),
-            CreateDiagnosticsMenu(status),
-            NativeMenuItem.Separator,
+            CreateStartupItem(),
+            NativeMenuItem.Action("Restart", restart),
             NativeMenuItem.Action("Exit", exit),
         ]);
 
@@ -71,22 +71,21 @@ internal sealed class AppMenu(
             return NativeMenuItem.Menu("Clients", [NativeMenuItem.Disabled("none")]);
         }
 
-        List<NativeMenuItem> items =
-        [
-            NativeMenuItem.Disabled($"connected: {status.ConnectedClientCount}"),
-        ];
+        List<NativeMenuItem> items = [];
         foreach (ClientStatus client in status.Runtime.Clients)
         {
-            items.Add(NativeMenuItem.Menu(
-                $"{AppText.Active(client.IsActive)} {client.ProfileId}",
+            items.Add(NativeMenuItem.MenuStatus(
+                client.ProfileId,
+                client.IsActive ? "active" : "idle",
                 [
-                    NativeMenuItem.Action("Stop client", () => stopClient(client.ClientId)),
+                    NativeMenuItem.Status("pid", client.ClientProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    NativeMenuItem.Status("steam app", AppText.AppId(client.SteamAppId)),
+                    NativeMenuItem.Status("receivers", AppText.Processes(client.ObservedProcesses)),
+                    NativeMenuItem.Status("blocked", AppText.Processes(client.BlockedProcesses)),
                     NativeMenuItem.Separator,
-                    NativeMenuItem.Disabled($"pid: {client.ClientProcessId}"),
-                    NativeMenuItem.Disabled($"steam app: {AppText.AppId(client.SteamAppId)}"),
-                    NativeMenuItem.Disabled($"receivers: {AppText.Processes(client.ObservedProcesses)}"),
-                    NativeMenuItem.Disabled($"blocked: {AppText.Processes(client.BlockedProcesses)}"),
-                ]));
+                    NativeMenuItem.Action("Stop client", () => stopClient(client.ClientId)),
+                ],
+                isChecked: client.IsActive));
         }
 
         return NativeMenuItem.Menu("Clients", items);
@@ -99,8 +98,55 @@ internal sealed class AppMenu(
             [
                 CreateInputsMenu(status),
                 CreateOutputsMenu(status),
+                CreateHidHideMenu(status),
                 CreateSteamInputMenu(status),
             ]);
+    }
+
+    private static NativeMenuItem CreateHidHideMenu(ServerStatus? status)
+    {
+        if (status is null)
+        {
+            return NativeMenuItem.Menu("HidHide", [NativeMenuItem.Disabled("waiting for status")]);
+        }
+
+        ServerHidHideStatus hidHide = status.HidHide;
+        List<NativeMenuItem> items =
+        [
+            CreateBoolStatus("cloak", hidHide.CloakEnabled),
+            CreateBoolStatus("inverse", hidHide.InverseEnabled),
+            CreateBoolStatus("active scope", hidHide.Active),
+            CreateValueMenu("Hidden devices", hidHide.HiddenDevices),
+            CreateValueMenu("Allowed apps", hidHide.RegisteredApplications),
+        ];
+
+        if (!string.IsNullOrWhiteSpace(hidHide.LastError))
+        {
+            items.Add(NativeMenuItem.Disabled($"error: {hidHide.LastError}"));
+        }
+
+        return NativeMenuItem.Menu("HidHide", items);
+    }
+
+    private static NativeMenuItem CreateBoolStatus(string label, bool value)
+    {
+        return NativeMenuItem.Status(label, value ? "enabled" : "disabled", isChecked: value);
+    }
+
+    private static NativeMenuItem CreateValueMenu(string title, IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+        {
+            return NativeMenuItem.Menu(title, [NativeMenuItem.Disabled(AppText.None)]);
+        }
+
+        List<NativeMenuItem> items = [];
+        foreach (string value in values)
+        {
+            items.Add(NativeMenuItem.Disabled(value));
+        }
+
+        return NativeMenuItem.Menu(title, items);
     }
 
     private static NativeMenuItem CreateInputsMenu(ServerStatus? status)
@@ -113,8 +159,8 @@ internal sealed class AppMenu(
         PhysicalControllerPumpStatus physical = status.Inputs.PhysicalControllers;
         List<NativeMenuItem> items =
         [
-            NativeMenuItem.Disabled($"controllers: {AppText.PhysicalSdl(physical)}"),
-            NativeMenuItem.Disabled($"mouse: {AppText.MouseInput(status.Inputs.Mouse)}"),
+            NativeMenuItem.Status("controllers", AppText.PhysicalSdl(physical)),
+            NativeMenuItem.Status("mouse", AppText.MouseInput(status.Inputs.Mouse), status.Inputs.Mouse.Running),
         ];
 
         if (!string.IsNullOrWhiteSpace(physical.LastError))
@@ -144,10 +190,14 @@ internal sealed class AppMenu(
 
         List<NativeMenuItem> items =
         [
-            NativeMenuItem.Disabled($"controller output: {AppText.Enabled(status.Forwarding.ControllerOutputEnabled)}"),
-            NativeMenuItem.Disabled($"motion: {AppText.Enabled(status.Forwarding.PhysicalMotionEnabled)}"),
-            NativeMenuItem.Disabled($"mouse output: {AppText.FormatMouseOutput(status.MouseForwarding)}"),
-            NativeMenuItem.Disabled($"pointer: {AppText.Enabled(status.MouseForwarding.PointerOutputEnabled)}"),
+            CreateBoolStatus("controller gate", status.Forwarding.ControllerOutputEnabled),
+            CreateBoolStatus("motion", status.Forwarding.PhysicalMotionEnabled),
+            NativeMenuItem.Status(
+                "mouse device",
+                AppText.FormatMouseOutput(status.MouseForwarding),
+                status.MouseForwarding.OutputConnected),
+            CreateBoolStatus("mouse gate", status.MouseForwarding.MouseOutputEnabled),
+            CreateBoolStatus("pointer", status.MouseForwarding.PointerOutputEnabled),
         ];
 
         if (status.Forwarding.Slots.Count == 0)
@@ -161,10 +211,10 @@ internal sealed class AppMenu(
             items.Add(NativeMenuItem.Menu(
                 AppText.ControllerSlot(slot),
                 [
-                    NativeMenuItem.Disabled($"output: {AppText.Output(slot.Output)}"),
-                    NativeMenuItem.Disabled($"physical: {AppText.Connected(slot.HasPhysicalEndpoint)}"),
-                    NativeMenuItem.Disabled($"client endpoints: {slot.ClientEndpointCount}"),
-                    NativeMenuItem.Disabled($"active client: {AppText.YesNo(slot.HasActiveClientEndpoint)}"),
+                    NativeMenuItem.Status("output", AppText.Output(slot.Output), slot.OutputConnected),
+                    CreateBoolStatus("physical", slot.HasPhysicalEndpoint),
+                    NativeMenuItem.Status("client endpoints", slot.ClientEndpointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    CreateBoolStatus("active client", slot.HasActiveClientEndpoint),
                 ]));
         }
 
@@ -180,8 +230,8 @@ internal sealed class AppMenu(
 
         List<NativeMenuItem> items =
         [
-            NativeMenuItem.Disabled($"forced: {AppText.YesNo(status.SteamInput.Forced)}"),
-            NativeMenuItem.Disabled($"app id: {AppText.AppId(status.SteamInput.AppId)}"),
+            CreateBoolStatus("forced", status.SteamInput.Forced),
+            NativeMenuItem.Status("app id", AppText.AppId(status.SteamInput.AppId)),
         ];
 
         if (!string.IsNullOrWhiteSpace(status.SteamInput.LastError))

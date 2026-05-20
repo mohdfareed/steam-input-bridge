@@ -75,6 +75,24 @@ public sealed class HidHideProfileFirewall(
         _scope = null;
     }
 
+    /// <summary>Gets current HidHide state.</summary>
+    public HidHideFirewallStatus GetStatus()
+    {
+        ThrowIfDisposed();
+
+        string hiddenDevices = runner.Run(["--dev-list"]);
+        string registeredApps = runner.Run(["--app-list"]);
+        string cloakState = runner.Run(["--cloak-state"]);
+        string inverseState = runner.Run(["--inv-state"]);
+
+        return new HidHideFirewallStatus(
+            _scope is not null,
+            HidHideSnapshot.IsOn(cloakState),
+            HidHideSnapshot.IsOn(inverseState),
+            HidHideSnapshot.ReadCommandValues(hiddenDevices, "--dev-hide"),
+            HidHideSnapshot.ReadCommandValues(registeredApps, "--app-reg"));
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -91,6 +109,21 @@ public sealed class HidHideProfileFirewall(
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
     }
+}
+
+/// <summary>Current HidHide state.</summary>
+public sealed record HidHideFirewallStatus(
+    bool ScopeActive,
+    bool CloakEnabled,
+    bool InverseEnabled,
+    IReadOnlyList<string> HiddenDevices,
+    IReadOnlyList<string> RegisteredApplications)
+{
+    /// <summary>Current number of hidden devices.</summary>
+    public int HiddenDeviceCount => HiddenDevices.Count;
+
+    /// <summary>Current number of registered applications.</summary>
+    public int RegisteredApplicationCount => RegisteredApplications.Count;
 }
 
 internal sealed record HidHideSnapshot(
@@ -142,11 +175,27 @@ internal sealed record HidHideSnapshot(
         return output.Contains(value, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsOn(string value)
+    internal static bool IsOn(string value)
     {
         return value.Contains("yes", StringComparison.OrdinalIgnoreCase) ||
             value.Contains("true", StringComparison.OrdinalIgnoreCase) ||
             value.Contains("on", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static IReadOnlyList<string> ReadCommandValues(string output, string command)
+    {
+        List<string> values = [];
+        foreach (string line in output.Split(
+                ['\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string value = line.StartsWith(command, StringComparison.OrdinalIgnoreCase)
+                ? line[command.Length..].Trim()
+                : line.Trim();
+            values.Add(value.Trim('"'));
+        }
+
+        return values;
     }
 }
 

@@ -34,6 +34,7 @@ public sealed class ServerService : IAsyncDisposable
     private readonly PhysicalControllerPump _physicalControllers;
     private readonly MouseInputPump _mouseInput;
     private readonly HidHideProfileFirewall? _hidHide;
+    private readonly HidHideApplicationAccess? _hidHideAccess;
     private readonly HidHideDeviceCatalog? _hidHideDevices;
     private readonly ServerShortcutService? _shortcuts;
     private readonly Func<CancellationToken, Task> _startupCleanup;
@@ -61,6 +62,7 @@ public sealed class ServerService : IAsyncDisposable
         ControllerBroker? forwarding = null,
         MouseBroker? mouseForwarding = null,
         HidHideProfileFirewall? hidHide = null,
+        HidHideApplicationAccess? hidHideAccess = null,
         HidHideDeviceCatalog? hidHideDevices = null,
         ServerShortcutService? shortcuts = null,
         Func<CancellationToken, Task>? startupCleanup = null)
@@ -71,6 +73,7 @@ public sealed class ServerService : IAsyncDisposable
         _settingsFile = settingsFile;
         _startupCleanup = startupCleanup ?? (static _ => Task.CompletedTask);
         _hidHide = hidHide;
+        _hidHideAccess = hidHideAccess;
         _hidHideDevices = hidHideDevices;
         _shortcuts = shortcuts;
         _controllerBroker = forwarding ?? new ControllerBroker(new NoopControllerOutputFactory());
@@ -100,6 +103,7 @@ public sealed class ServerService : IAsyncDisposable
                 _physicalControllers.GetStatus(),
                 _mouseInput.GetStatus()),
             () => _activeClients.GetSteamInputStatus(),
+            () => _activeClients.GetHidHideStatus(),
             () => _activeClients.RefreshHidHide());
     }
 
@@ -124,6 +128,7 @@ public sealed class ServerService : IAsyncDisposable
         }
 
         await _startupCleanup(cancellationToken).ConfigureAwait(false);
+        RegisterHidHideApplicationAccess();
 
         using CancellationTokenSource orchestrationStop =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -256,6 +261,29 @@ public sealed class ServerService : IAsyncDisposable
         return physicalControllerId.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
             ? physicalControllerId[Prefix.Length..]
             : null;
+    }
+
+    private void RegisterHidHideApplicationAccess()
+    {
+        if (_hidHideAccess is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _hidHideAccess.AllowCurrentProcess();
+            HostingLog.HidHideApplicationAccessRegistered(_logger);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+                ArgumentException or
+                System.ComponentModel.Win32Exception or
+                System.IO.IOException or
+                UnauthorizedAccessException)
+        {
+            HostingLog.HidHideApplicationAccessFailed(_logger, exception.Message);
+        }
     }
 
     private void TrackConnection(ServerConnectionHandle connection)

@@ -25,4 +25,22 @@ public sealed class KeyboardShortcutTests
 
         StringAssert.Contains(exception.Message, "does not contain a key", StringComparison.Ordinal);
     }
+
+    [TestMethod]
+    public void ParsesNumpadKey()
+    {
+        KeyboardShortcutCombination shortcut = KeyboardShortcutParser.Parse("Numpad1");
+
+        Assert.AreEqual(KeyboardShortcutModifiers.None, shortcut.Modifiers);
+        Assert.AreEqual((ushort)0x61, shortcut.VirtualKey);
+    }
+
+    [TestMethod]
+    public void ParsesNumAlias()
+    {
+        KeyboardShortcutCombination shortcut = KeyboardShortcutParser.Parse("Num9");
+
+        Assert.AreEqual(KeyboardShortcutModifiers.None, shortcut.Modifiers);
+        Assert.AreEqual((ushort)0x69, shortcut.VirtualKey);
+    }
 }

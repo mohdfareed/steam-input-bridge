@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -27,6 +28,7 @@ internal sealed class PhysicalControllerPump(
     private readonly Lock _gate = new();
     private List<SdlGamepadSource> _sources = [];
     private Task? _task;
+    private string? _lastScanSignature;
     private string? _lastError;
     private bool _running;
     private bool _disposed;
@@ -110,33 +112,57 @@ internal sealed class PhysicalControllerPump(
             catch (Exception exception) when (
                 exception is SdlGamepadDisconnectedException or InvalidOperationException)
             {
-                lock (_gate)
-                {
-                    _running = false;
-                    _lastError = exception.Message;
-                }
-
-                HostingLog.PhysicalControllerPumpRestarting(logger, exception.Message);
-                await Task.Delay(RetryDelay, cancellationToken).ConfigureAwait(false);
+                await RestartAfterErrorAsync(exception, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await RestartAfterErrorAsync(exception, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private async Task RestartAfterErrorAsync(Exception exception, CancellationToken cancellationToken)
+    {
+        string message = exception.Message;
+        lock (_gate)
+        {
+            _running = false;
+            _lastError = message;
+        }
+
+        HostingLog.PhysicalControllerPumpRestarting(logger, message);
+        await Task.Delay(RetryDelay, cancellationToken).ConfigureAwait(false);
     }
 
     private IReadOnlyList<SdlGamepadSource> AddMissingSources()
     {
         HashSet<SdlControllerId> openIds = GetOpenSourceIds();
-        IReadOnlyList<SdlControllerInfo> controllers =
-            SdlControllerCatalog.GetControllers(SdlControllerFilters.IsForwardable);
+        IReadOnlyList<SdlControllerInfo> visibleControllers = SdlControllerCatalog.GetControllers();
         List<SdlControllerInfo> missingControllers = [];
+        int physicalCount = 0;
+        int forwardablePhysicalCount = 0;
 
-        foreach (SdlControllerInfo controller in controllers)
+        foreach (SdlControllerInfo controller in visibleControllers)
         {
-            if (controller.Source == SdlControllerSource.Physical &&
-                !openIds.Contains(controller.Id))
+            if (controller.Source != SdlControllerSource.Physical)
+            {
+                continue;
+            }
+
+            physicalCount++;
+            if (!SdlControllerFilters.IsForwardable(controller))
+            {
+                continue;
+            }
+
+            forwardablePhysicalCount++;
+            if (!openIds.Contains(controller.Id))
             {
                 missingControllers.Add(controller);
             }
         }
+
+        LogScanIfChanged(visibleControllers, physicalCount, forwardablePhysicalCount);
 
         IReadOnlyList<SdlGamepadSource> openedSources = OpenSources(missingControllers);
         lock (_gate)
@@ -144,6 +170,49 @@ internal sealed class PhysicalControllerPump(
             _sources.AddRange(openedSources);
             return [.. _sources];
         }
+    }
+
+    private void LogScanIfChanged(
+        IReadOnlyList<SdlControllerInfo> controllers,
+        int physicalCount,
+        int forwardablePhysicalCount)
+    {
+        if (!logger.IsEnabled(LogLevel.Information))
+        {
+            return;
+        }
+
+        string signature = CreateScanSignature(controllers);
+        if (signature == _lastScanSignature)
+        {
+            return;
+        }
+
+        _lastScanSignature = signature;
+        HostingLog.PhysicalControllerScan(
+            logger,
+            controllers.Count,
+            physicalCount,
+            forwardablePhysicalCount,
+            signature);
+    }
+
+    private static string CreateScanSignature(IReadOnlyList<SdlControllerInfo> controllers)
+    {
+        if (controllers.Count == 0)
+        {
+            return "none";
+        }
+
+        List<string> values = [];
+        foreach (SdlControllerInfo controller in controllers)
+        {
+            values.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{controller.Name} source={controller.Source} vid={controller.VendorId:x4} pid={controller.ProductId:x4} motion={controller.HasMotion}"));
+        }
+
+        return string.Join("; ", values);
     }
 
     private async Task RunLinkedAsync(CancellationToken cancellationToken)

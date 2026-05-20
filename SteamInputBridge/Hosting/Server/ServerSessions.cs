@@ -26,6 +26,7 @@ internal sealed class ServerSessions(
     ControllerPipeSessions controllerPipes,
     Func<ServerInputStatus>? getInputStatus = null,
     Func<ServerSteamInputStatus>? getSteamInputStatus = null,
+    Func<ServerHidHideStatus>? getHidHideStatus = null,
     Action? routeStateChanged = null)
 {
     private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
@@ -63,6 +64,7 @@ internal sealed class ServerSessions(
                     new PhysicalControllerPumpStatus(false, 0, [], null),
                     new MouseInputPumpStatus(false, false, null)),
             SteamInput = getSteamInputStatus?.Invoke() ?? new ServerSteamInputStatus(false, null, null, null),
+            HidHide = getHidHideStatus?.Invoke() ?? new ServerHidHideStatus(false, false, false, [], [], null, null),
             ControllerPipes = controllerPipes.GetStatus(),
         });
     }

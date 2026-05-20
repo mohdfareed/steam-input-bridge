@@ -28,7 +28,9 @@ internal sealed class ServerActiveClientLoop(
     MouseBroker? mouseForwarding = null)
 {
     private readonly Lock _steamStatusGate = new();
+    private readonly Lock _hidHideStatusGate = new();
     private ServerSteamInputStatus _steamStatus = new(false, null, null, null);
+    private ServerHidHideStatus _hidHideStatus = new(false, false, false, [], [], null, null);
 
     private static readonly TimeSpan ForegroundPollDelay = TimeSpan.FromMilliseconds(100);
 
@@ -60,6 +62,7 @@ internal sealed class ServerActiveClientLoop(
         clients.ActiveClientChanged += OnActiveClientChanged;
         try
         {
+            UpdateHidHide(null);
             int lastForegroundProcessId = -1;
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -86,6 +89,14 @@ internal sealed class ServerActiveClientLoop(
         lock (_steamStatusGate)
         {
             return _steamStatus;
+        }
+    }
+
+    public ServerHidHideStatus GetHidHideStatus()
+    {
+        lock (_hidHideStatusGate)
+        {
+            return _hidHideStatus;
         }
     }
 
@@ -171,6 +182,7 @@ internal sealed class ServerActiveClientLoop(
             if (!clientId.HasValue || profiles is null)
             {
                 hidHide.Clear();
+                SetHidHideStatus(ReadHidHideStatus(clientId, null));
                 return;
             }
 
@@ -179,6 +191,7 @@ internal sealed class ServerActiveClientLoop(
             if (client is null)
             {
                 hidHide.Clear();
+                SetHidHideStatus(ReadHidHideStatus(clientId, null));
                 return;
             }
 
@@ -188,13 +201,17 @@ internal sealed class ServerActiveClientLoop(
                 forwarding?.GetStatus().ControllerOutputEnabled == false)
             {
                 hidHide.Clear();
+                SetHidHideStatus(ReadHidHideStatus(clientId, null));
                 return;
             }
 
+            IReadOnlyList<string> devices = getHidHideDevices?.Invoke(status, clientId.Value) ?? [];
+            IReadOnlyList<string> applications = GetExecutablePaths(client.OwnedProcesses);
             HidHideScope scope = HidHideScope.Create(
-                getHidHideDevices?.Invoke(status, clientId.Value) ?? [],
-                GetExecutablePaths(client.OwnedProcesses));
+                devices,
+                applications);
             hidHide.Apply(scope);
+            SetHidHideStatus(ReadHidHideStatus(clientId, null));
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or
@@ -204,6 +221,7 @@ internal sealed class ServerActiveClientLoop(
                 UnauthorizedAccessException)
         {
             HostingLog.HidHideUpdateFailed(logger, clientId, exception.Message);
+            SetHidHideStatus(ReadHidHideStatus(clientId, exception.Message));
         }
     }
 
@@ -212,6 +230,44 @@ internal sealed class ServerActiveClientLoop(
         lock (_steamStatusGate)
         {
             _steamStatus = status;
+        }
+    }
+
+    private void SetHidHideStatus(ServerHidHideStatus status)
+    {
+        lock (_hidHideStatusGate)
+        {
+            _hidHideStatus = status;
+        }
+    }
+
+    private ServerHidHideStatus ReadHidHideStatus(Guid? clientId, string? error)
+    {
+        if (hidHide is null)
+        {
+            return new ServerHidHideStatus(false, false, false, [], [], clientId, error);
+        }
+
+        try
+        {
+            HidHideFirewallStatus status = hidHide.GetStatus();
+            return new ServerHidHideStatus(
+                status.ScopeActive,
+                status.CloakEnabled,
+                status.InverseEnabled,
+                status.HiddenDevices,
+                status.RegisteredApplications,
+                clientId,
+                error);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+                ArgumentException or
+                System.ComponentModel.Win32Exception or
+                System.IO.IOException or
+                UnauthorizedAccessException)
+        {
+            return new ServerHidHideStatus(false, false, false, [], [], clientId, error ?? exception.Message);
         }
     }
 

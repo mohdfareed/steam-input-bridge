@@ -46,7 +46,7 @@ internal static class Program
 
     private static void ReportUnhandledException(string[] args, Exception exception)
     {
-        if (args.Length == 0 || IsMode(args[0], "tray"))
+        if (args.Length == 0 || IsMode(args[0], "tray") || IsMode(args[0], "shortcut"))
         {
             _ = MessageBox.Show(
                 exception.Message,

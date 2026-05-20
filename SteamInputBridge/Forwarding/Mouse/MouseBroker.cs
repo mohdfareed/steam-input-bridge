@@ -156,7 +156,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
 
         lock (_gate)
         {
-            output = _pointerOutputEnabled ? _output : null;
+            output = _pointerOutputEnabled && HasActiveOutput() ? _output : null;
         }
 
         if (output is not null && !input.Report.IsEmpty && !output.FilterInput(in input))
@@ -220,7 +220,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
 
     private IMouseOutput? RefreshOutput()
     {
-        MouseOutput outputKind = GetActiveOutputKind();
+        MouseOutput outputKind = GetOutputKind();
         bool shouldConnect = _mouseOutputEnabled && outputKind != MouseOutput.None;
 
         if (!shouldConnect)
@@ -247,12 +247,31 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         return output;
     }
 
-    private MouseOutput GetActiveOutputKind()
+    private MouseOutput GetOutputKind()
+    {
+        if (_activeClientId.HasValue &&
+            _clients.TryGetValue(_activeClientId.Value, out MouseOutput activeOutput) &&
+            activeOutput != MouseOutput.None)
+        {
+            return activeOutput;
+        }
+
+        foreach (MouseOutput output in _clients.Values)
+        {
+            if (output != MouseOutput.None)
+            {
+                return output;
+            }
+        }
+
+        return MouseOutput.None;
+    }
+
+    private bool HasActiveOutput()
     {
         return _activeClientId.HasValue &&
-            _clients.TryGetValue(_activeClientId.Value, out MouseOutput output)
-            ? output
-            : MouseOutput.None;
+            _clients.TryGetValue(_activeClientId.Value, out MouseOutput activeOutput) &&
+            activeOutput != MouseOutput.None;
     }
 
     private static async Task ObserveSendAsync(ValueTask send)

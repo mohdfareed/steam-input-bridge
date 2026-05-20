@@ -28,6 +28,7 @@ public sealed class HidHideCliRunner(string cliPath) : IHidHideCommandRunner
         ProcessStartInfo start = new()
         {
             FileName = cliPath,
+            CreateNoWindow = true,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

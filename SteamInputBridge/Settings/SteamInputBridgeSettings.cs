@@ -59,6 +59,15 @@ public enum ShortcutValue
 
     /// <summary>Disable the target.</summary>
     Disabled,
+
+    /// <summary>Enable the target while the shortcut is held.</summary>
+    HoldEnabled,
+
+    /// <summary>Disable the target while the shortcut is held.</summary>
+    HoldDisabled,
+
+    /// <summary>Toggle the target between enabled and disabled.</summary>
+    Toggle,
 }
 
 /// <summary>Global shortcut binding.</summary>

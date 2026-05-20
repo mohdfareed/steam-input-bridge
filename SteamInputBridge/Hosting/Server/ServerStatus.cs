@@ -27,6 +27,10 @@ public sealed record ServerStatus(int ConnectedClientCount)
             new PhysicalControllerPumpStatus(false, 0, [], null),
             new MouseInputPumpStatus(false, false, null));
 
+    /// <summary>HidHide scope currently applied by this server.</summary>
+    public ServerHidHideStatus HidHide { get; init; } =
+        new(false, false, false, [], [], null, null);
+
     /// <summary>Steam Input forcing status tracked by this server.</summary>
     public ServerSteamInputStatus SteamInput { get; init; } =
         new(false, null, null, null);
@@ -56,6 +60,23 @@ public sealed record ServerSteamInputStatus(
     uint? AppId,
     Guid? ClientId,
     string? LastError);
+
+/// <summary>Current HidHide activation status.</summary>
+public sealed record ServerHidHideStatus(
+    bool Active,
+    bool CloakEnabled,
+    bool InverseEnabled,
+    IReadOnlyList<string> HiddenDevices,
+    IReadOnlyList<string> RegisteredApplications,
+    Guid? ClientId,
+    string? LastError)
+{
+    /// <summary>Current number of hidden devices.</summary>
+    public int DeviceCount => HiddenDevices.Count;
+
+    /// <summary>Current number of registered applications.</summary>
+    public int ApplicationCount => RegisteredApplications.Count;
+}
 
 /// <summary>Controller pipe status for one connected client.</summary>
 public sealed record ControllerPipeStatus(

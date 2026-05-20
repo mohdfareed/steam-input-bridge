@@ -24,6 +24,7 @@ public static class ServerServices
         _ = services.AddSingleton<ActiveClientRegistry>();
         _ = services.AddSingleton<IHidHideCommandRunner>(static services =>
             new HidHideCliRunner(services.GetRequiredService<IOptions<HidHideSettings>>().Value.CliPath));
+        _ = services.AddSingleton<HidHideApplicationAccess>();
         _ = services.AddSingleton<HidHideDeviceCatalog>();
         _ = services.AddSingleton(static services =>
             new HidHideProfileFirewall(
@@ -62,6 +63,7 @@ public static class ServerServices
                 services.GetRequiredService<ControllerBroker>(),
                 services.GetRequiredService<MouseBroker>(),
                 services.GetRequiredService<HidHideProfileFirewall>(),
+                services.GetRequiredService<HidHideApplicationAccess>(),
                 services.GetRequiredService<HidHideDeviceCatalog>(),
                 services.GetRequiredService<ServerShortcutService>(),
                 viiper.ReclaimDevicesAsync);

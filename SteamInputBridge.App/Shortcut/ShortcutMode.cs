@@ -18,7 +18,7 @@ internal static class ShortcutMode
     {
         if (args.Length is 0 or > 4)
         {
-            return 2;
+            throw new InvalidOperationException("Shortcut mode requires a profile id.");
         }
 
         string profileId = args[0];
@@ -42,7 +42,7 @@ internal static class ShortcutMode
                 continue;
             }
 
-            return 2;
+            throw new InvalidOperationException($"Invalid shortcut argument: {args[i]}");
         }
 
         using IHost app = CreateApp();

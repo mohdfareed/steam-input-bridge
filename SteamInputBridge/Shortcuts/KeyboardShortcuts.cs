@@ -170,6 +170,16 @@ public static class KeyboardShortcutParser
             ? checked((ushort)(0x70 + functionKey - 1))
             : value.ToUpperInvariant() switch
             {
+                "NUM0" or "NUMPAD0" => (ushort)0x60,
+                "NUM1" or "NUMPAD1" => (ushort)0x61,
+                "NUM2" or "NUMPAD2" => (ushort)0x62,
+                "NUM3" or "NUMPAD3" => (ushort)0x63,
+                "NUM4" or "NUMPAD4" => (ushort)0x64,
+                "NUM5" or "NUMPAD5" => (ushort)0x65,
+                "NUM6" or "NUMPAD6" => (ushort)0x66,
+                "NUM7" or "NUMPAD7" => (ushort)0x67,
+                "NUM8" or "NUMPAD8" => (ushort)0x68,
+                "NUM9" or "NUMPAD9" => (ushort)0x69,
                 "ENTER" => (ushort)0x0D,
                 "ESC" or "ESCAPE" => (ushort)0x1B,
                 "SPACE" => (ushort)0x20,

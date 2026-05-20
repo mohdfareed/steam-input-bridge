@@ -131,6 +131,8 @@ Do not set `LangVersion=latest`.
 ## HidHide
 
 - Keep HidHide integration in `SteamInputBridge/HidHide`.
+- On server startup, register the current server executable with HidHide's
+  allowed applications before scanning physical controllers.
 - Profiles should select output behavior, not store HidHide device paths.
 - HidHide firewall behavior should derive hidden physical devices from active
   forwarded routes.

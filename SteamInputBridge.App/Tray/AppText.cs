@@ -9,6 +9,8 @@ namespace SteamInputBridge.App.Tray;
 
 internal static class AppText
 {
+    public static string None => "none";
+
     public static string TrayStarting => "Steam Input Bridge Server starting";
 
     public static string Header(string? serverError)
@@ -25,14 +27,9 @@ internal static class AppText
             : $"Steam Input Bridge Server ({status.ConnectedClientCount} clients)";
     }
 
-    public static string Active(bool active)
-    {
-        return active ? "[active]" : "[idle]";
-    }
-
     public static string AppId(uint? appId)
     {
-        return appId.HasValue ? appId.Value.ToString(CultureInfo.InvariantCulture) : "none";
+        return appId.HasValue ? appId.Value.ToString(CultureInfo.InvariantCulture) : None;
     }
 
     public static string Connected(bool connected)
@@ -59,7 +56,7 @@ internal static class AppText
     {
         return output switch
         {
-            SteamInputBridge.Forwarding.Mouse.MouseOutput.None => "none",
+            SteamInputBridge.Forwarding.Mouse.MouseOutput.None => None,
             SteamInputBridge.Forwarding.Mouse.MouseOutput.Viiper => "viiper",
             SteamInputBridge.Forwarding.Mouse.MouseOutput.Teensy => "teensy",
             _ => output.ToString(),
@@ -70,7 +67,7 @@ internal static class AppText
     {
         return output switch
         {
-            ControllerOutput.None => "none",
+            ControllerOutput.None => None,
             ControllerOutput.Xbox360 => "xbox360",
             ControllerOutput.Ds4 => "ds4",
             _ => output.ToString(),
@@ -84,7 +81,7 @@ internal static class AppText
                 ? "retrying"
                 : $"retrying ({status.ControllerCount})"
             : status.ControllerCount == 0
-            ? "none"
+            ? None
             : $"{status.ControllerCount}";
     }
 
@@ -108,7 +105,7 @@ internal static class AppText
     {
         if (processes.Count == 0)
         {
-            return "none";
+            return None;
         }
 
         List<string> values = [];

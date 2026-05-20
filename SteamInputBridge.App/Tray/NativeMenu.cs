@@ -57,9 +57,25 @@ internal sealed class NativeMenuItem
         return new NativeMenuItem(text, null, enabled: false, isChecked: false, isSeparator: false, []);
     }
 
+    public static NativeMenuItem Status(string label, string value, bool isChecked = false)
+    {
+        return new NativeMenuItem(
+            $"{label}\t{value}",
+            null,
+            enabled: false,
+            isChecked,
+            isSeparator: false,
+            []);
+    }
+
     public static NativeMenuItem Menu(string text, IReadOnlyList<NativeMenuItem> children)
     {
         return new NativeMenuItem(text, null, enabled: true, isChecked: false, isSeparator: false, children);
+    }
+
+    public static NativeMenuItem MenuStatus(string label, string value, IReadOnlyList<NativeMenuItem> children, bool isChecked = false)
+    {
+        return new NativeMenuItem($"{label}\t{value}", null, enabled: true, isChecked: isChecked, isSeparator: false, children);
     }
 }
 
