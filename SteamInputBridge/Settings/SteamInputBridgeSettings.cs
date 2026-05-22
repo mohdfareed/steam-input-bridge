@@ -102,6 +102,9 @@ public sealed class HidHideSettings
     /// <summary>Configuration section name for HidHide settings.</summary>
     public const string SectionName = SteamInputBridgeSettings.SectionName + ":HidHide";
 
+    /// <summary>Whether the server should manage HidHide state.</summary>
+    public bool Enabled { get; set; }
+
     /// <summary>HidHide command-line executable path.</summary>
     public string CliPath { get; set; } =
         @"C:\Program Files\Nefarius Software Solutions\HidHide\x64\HidHideCLI.exe";

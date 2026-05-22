@@ -54,6 +54,7 @@ public static class ServerServices
         _ = services.AddSingleton(static services =>
         {
             ViiperOutputFactory viiper = services.GetRequiredService<ViiperOutputFactory>();
+            HidHideSettings hidHideSettings = services.GetRequiredService<IOptions<HidHideSettings>>().Value;
             return new ServerService(
                 services.GetRequiredService<ILogger<ServerService>>(),
                 services.GetService<SettingsFile>(),
@@ -62,9 +63,9 @@ public static class ServerServices
                 activeClients: null,
                 services.GetRequiredService<ControllerBroker>(),
                 services.GetRequiredService<MouseBroker>(),
-                services.GetRequiredService<HidHideProfileFirewall>(),
-                services.GetRequiredService<HidHideApplicationAccess>(),
-                services.GetRequiredService<HidHideDeviceCatalog>(),
+                hidHideSettings.Enabled ? services.GetRequiredService<HidHideProfileFirewall>() : null,
+                hidHideSettings.Enabled ? services.GetRequiredService<HidHideApplicationAccess>() : null,
+                hidHideSettings.Enabled ? services.GetRequiredService<HidHideDeviceCatalog>() : null,
                 services.GetRequiredService<ServerShortcutService>(),
                 viiper.ReclaimDevicesAsync);
         });

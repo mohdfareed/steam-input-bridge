@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace SteamInputBridge.App;
 
-internal static class WindowsConsole
+internal static partial class WindowsConsole
 {
     private const int AttachParentProcess = -1;
     private static StreamWriter? _output;
@@ -15,7 +15,7 @@ internal static class WindowsConsole
     {
         if (!AttachConsole(AttachParentProcess))
         {
-            return;
+            _ = AllocConsole();
         }
 
         _output = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
@@ -27,7 +27,13 @@ internal static class WindowsConsole
         Console.SetIn(_input);
     }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern bool AttachConsole(int processId);
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AttachConsole(int processId);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AllocConsole();
 }

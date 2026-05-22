@@ -106,6 +106,11 @@ Do not set `LangVersion=latest`.
   controller and only to recover missing features such as motion.
 - Match physical fallback controllers generically, such as exact VID/PID
   matching. Do not hardcode controller model VID/PID mappings in `src`.
+- Do not treat Steam-routed `XInput#N` paths as physical controller identity.
+  Use a strict matched physical counterpart when available; otherwise use the
+  Steam controller handle or a client-local route id.
+- Keep controller route planning as pure policy code separate from SDL stream
+  lifetime, pipe I/O, foreground activation, and VIIPER output ownership.
 - Physical companions are route-local, not a global controller slot registry.
 - Each open `SdlGamepadSource` owns its own SDL runtime lease.
 
@@ -131,8 +136,11 @@ Do not set `LangVersion=latest`.
 ## HidHide
 
 - Keep HidHide integration in `SteamInputBridge/HidHide`.
-- On server startup, register the current server executable with HidHide's
-  allowed applications before scanning physical controllers.
+- Keep HidHide disabled by default. When it is disabled, the server must not
+  mutate HidHide state, register itself in the allow list, or read HidHide
+  status.
+- When HidHide is explicitly enabled, register the current server executable
+  with HidHide's allowed applications before applying profile scopes.
 - Profiles should select output behavior, not store HidHide device paths.
 - HidHide firewall behavior should derive hidden physical devices from active
   forwarded routes.

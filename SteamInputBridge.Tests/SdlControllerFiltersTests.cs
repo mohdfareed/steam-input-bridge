@@ -1,4 +1,4 @@
-using SteamInputBridge.Hosting.Server.Inputs;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Inputs.Sdl;
 
 namespace SteamInputBridge.Tests;

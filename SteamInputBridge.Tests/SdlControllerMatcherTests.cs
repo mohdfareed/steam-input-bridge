@@ -86,9 +86,52 @@ public sealed class SdlControllerMatcherTests
         SdlControllerInfo other = Controller(SdlControllerSource.Physical, 0xabcd, 0xef01, "other");
 
         IReadOnlyList<SdlControllerInfo> selected =
-            ClientControllerStreams.SelectClientControllers([steam, physical, other]);
+            ClientControllerRoutePlanner.SelectClientControllers([steam, physical, other]);
 
         CollectionAssert.AreEqual(new[] { steam, other }, selected.ToArray());
+    }
+
+    /// <summary>Steam-routed XInput paths are not treated as physical route identity.</summary>
+    [TestMethod]
+    public void SteamRouteUsesSteamHandleBeforeXInputPath()
+    {
+        SdlControllerInfo steam = Controller(
+            SdlControllerSource.Steam,
+            0x054c,
+            0x0df2,
+            "XInput#0",
+            id: "steam:05de143a9a0d5235",
+            steamHandle: 0x05de143a9a0d5235);
+
+        string routeId = ClientControllerRoutePlanner.GetRouteId(0, steam, physical: null);
+        string? physicalDeviceId = ClientControllerRoutePlanner.GetPhysicalDeviceId(steam, physical: null);
+
+        Assert.AreEqual("steam:05de143a9a0d5235", routeId);
+        Assert.IsNull(physicalDeviceId);
+    }
+
+    /// <summary>Strict physical matches still own route and physical device identity.</summary>
+    [TestMethod]
+    public void SteamRouteUsesStrictPhysicalMatchWhenAvailable()
+    {
+        SdlControllerInfo steam = Controller(
+            SdlControllerSource.Steam,
+            0x054c,
+            0x0df2,
+            "XInput#0",
+            id: "steam:05de143a9a0d5235",
+            steamHandle: 0x05de143a9a0d5235);
+        SdlControllerInfo physical = Controller(
+            SdlControllerSource.Physical,
+            0x054c,
+            0x0df2,
+            @"\\?\hid#vid_054c&pid_0df2");
+
+        string routeId = ClientControllerRoutePlanner.GetRouteId(0, steam, physical);
+        string? physicalDeviceId = ClientControllerRoutePlanner.GetPhysicalDeviceId(steam, physical);
+
+        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", routeId);
+        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", physicalDeviceId);
     }
 
     private static SdlControllerInfo Controller(
@@ -96,14 +139,16 @@ public sealed class SdlControllerMatcherTests
         ushort vendorId,
         ushort productId,
         string path,
-        string name = "Controller")
+        string name = "Controller",
+        string? id = null,
+        ulong? steamHandle = null)
     {
         return new SdlControllerInfo(
-            new SdlControllerId(path),
+            new SdlControllerId(id ?? path),
             InstanceId: 1,
             name,
             source,
-            source == SdlControllerSource.Steam ? 1u : 0u,
+            steamHandle ?? (source == SdlControllerSource.Steam ? 1u : 0u),
             vendorId,
             productId,
             path,

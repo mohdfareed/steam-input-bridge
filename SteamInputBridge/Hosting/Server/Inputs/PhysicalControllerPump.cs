@@ -6,17 +6,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Inputs.Sdl;
-using SteamInputBridge.Outputs.Viiper;
 
 namespace SteamInputBridge.Hosting.Server.Inputs;
-
-internal static class SdlControllerFilters
-{
-    public static bool IsForwardable(SdlControllerInfo controller)
-    {
-        return !ViiperDevices.IsController(controller.VendorId, controller.ProductId);
-    }
-}
 
 internal sealed class PhysicalControllerPump(
     ControllerBroker broker,

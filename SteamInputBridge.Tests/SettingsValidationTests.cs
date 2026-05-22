@@ -93,6 +93,54 @@ public sealed class SettingsValidationTests
         }
     }
 
+    /// <summary>Checks that disabled HidHide settings do not require the CLI path.</summary>
+    [TestMethod]
+    public void DisabledHidHideDoesNotRequireCliPath()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithDisabledHidHide());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
+
+            Assert.IsFalse(settings.Current.HidHide.Enabled);
+            Assert.AreEqual("", settings.Current.HidHide.CliPath);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>Checks that enabled HidHide settings require the CLI path.</summary>
+    [TestMethod]
+    public void EnabledHidHideRequiresCliPath()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithEnabledHidHideMissingCli());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
+                services.GetRequiredService<ApplicationSettingsService>);
+
+            StringAssert.Contains(exception.Message, "hidhide:cliPath", StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     /// <summary>Checks that receiver-only profiles are valid.</summary>
     [TestMethod]
     public void AttachOnlyProfileIsAllowed()
@@ -222,6 +270,44 @@ public sealed class SettingsValidationTests
                 "Executable": "C:\\Games\\Nulls\\game.exe",
                 "ControllerOutput": null,
                 "MouseOutput": null
+              }
+            }
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithDisabledHidHide()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "HidHide": {
+              "Enabled": false,
+              "CliPath": ""
+            },
+            "Games": {
+              "game": {
+                "Executable": "C:\\Games\\Game\\game.exe"
+              }
+            }
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithEnabledHidHideMissingCli()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "HidHide": {
+              "Enabled": true,
+              "CliPath": ""
+            },
+            "Games": {
+              "game": {
+                "Executable": "C:\\Games\\Game\\game.exe"
               }
             }
           }

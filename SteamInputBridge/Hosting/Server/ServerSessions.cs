@@ -115,7 +115,16 @@ internal sealed class ServerSessions(
     {
         _ = GetClient(clientId);
         controllerPipes.RegisterControllers(clientId, controllers);
-        HostingLog.ClientControllersRegistered(logger, clientId, controllers.Count);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            string routes = FormatControllerRegistrations(controllers);
+            HostingLog.ClientControllersRegistered(
+                logger,
+                clientId,
+                controllers.Count,
+                routes);
+        }
+
         routeStateChanged?.Invoke();
         return Task.CompletedTask;
     }
@@ -166,6 +175,23 @@ internal sealed class ServerSessions(
         return _clients.TryGetValue(clientId, out ConnectedClient? client)
             ? client
             : throw new InvalidOperationException($"Client {clientId} is not connected.");
+    }
+
+    private static string FormatControllerRegistrations(IReadOnlyList<ClientControllerInfo> controllers)
+    {
+        if (controllers.Count == 0)
+        {
+            return "none";
+        }
+
+        List<string> values = [];
+        foreach (ClientControllerInfo controller in controllers)
+        {
+            values.Add(
+                $"idx={controller.ControllerIndex} route=\"{controller.PhysicalControllerId}\" physical=\"{controller.PhysicalDeviceId ?? "none"}\" label=\"{controller.Label}\" features={controller.Features}");
+        }
+
+        return string.Join("; ", values);
     }
 
     private static ForwardingControllerOutput MapControllerOutput(ProfileControllerOutput output)

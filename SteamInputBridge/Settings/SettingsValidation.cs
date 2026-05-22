@@ -39,6 +39,11 @@ internal static class SettingsValidation
 
     private static void ValidateHidHide(HidHideSettings settings, List<string> failures)
     {
+        if (!settings.Enabled)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(settings.CliPath))
         {
             failures.Add("hidhide:cliPath is required.");

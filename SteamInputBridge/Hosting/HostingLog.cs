@@ -59,8 +59,23 @@ internal static partial class HostingLog
         int openedCount,
         string controllers);
 
-    [LoggerMessage(EventId = 43, Level = LogLevel.Information, Message = "Registered client controllers: client={ClientId} count={Count}")]
-    public static partial void ClientControllersRegistered(ILogger logger, Guid clientId, int count);
+    [LoggerMessage(
+        EventId = 43,
+        Level = LogLevel.Information,
+        Message = "Registered client controllers: client={ClientId} count={Count} routes={Routes}",
+        SkipEnabledCheck = true)]
+    public static partial void ClientControllersRegistered(
+        ILogger logger,
+        Guid clientId,
+        int count,
+        string routes);
+
+    [LoggerMessage(EventId = 44, Level = LogLevel.Information, Message = "Client controller routes: client={ClientId} profile={ProfileId} routes={Routes}")]
+    public static partial void ClientControllerRoutes(
+        ILogger logger,
+        Guid? clientId,
+        string profileId,
+        string routes);
 
     [LoggerMessage(EventId = 13, Level = LogLevel.Information, Message = "Active client changed: previous={PreviousClientId} current={CurrentClientId}")]
     public static partial void ActiveClientChanged(ILogger logger, Guid? previousClientId, Guid? currentClientId);

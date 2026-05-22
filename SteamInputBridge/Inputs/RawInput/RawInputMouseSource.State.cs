@@ -25,8 +25,13 @@ public sealed partial class RawInputMouseSource
 
         public CancellationToken CancellationToken { get; } = cancellationToken;
 
-        public void HandleRawInput(nint rawInputHandle)
+        internal void HandleRawInput(nint rawInputHandle)
         {
+            // Microsoft's buffered Raw Input pattern:
+            // read the current WM_INPUT lParam with GetRawInputData, then drain
+            // accumulated high-frequency mouse events with GetRawInputBuffer.
+            // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-raw-input#reading-raw-input
+            // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getrawinputbuffer
             CancellationToken.ThrowIfCancellationRequested();
 
             if (TryReadRawInputData(rawInputHandle, out RawInput rawInput))

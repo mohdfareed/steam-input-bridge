@@ -217,13 +217,13 @@ internal sealed class AppMenu(
         List<NativeMenuItem> items =
         [
             NativeMenuItem.Status(
-                "Mouse Connected",
+                "Mouse connection",
                 AppText.FormatMouseOutput(status.MouseForwarding),
                 status.MouseForwarding.OutputConnected),
-            CreateBoolStatus("Mouse Output", status.MouseForwarding.MouseOutputEnabled),
+            CreateBoolStatus("Mouse output", status.MouseForwarding.MouseOutputEnabled),
             CreateBoolStatus("Pointer", status.MouseForwarding.PointerOutputEnabled),
             NativeMenuItem.Separator,
-            CreateBoolStatus("Controller Output", status.Forwarding.ControllerOutputEnabled),
+            CreateBoolStatus("Controller output", status.Forwarding.ControllerOutputEnabled),
             CreateBoolStatus("Motion", status.Forwarding.PhysicalMotionEnabled),
         ];
 
@@ -253,7 +253,7 @@ internal sealed class AppMenu(
     {
         if (status is null)
         {
-            return NativeMenuItem.Menu("Steam Input", [NativeMenuItem.Disabled("Waiting for status")]);
+            return NativeMenuItem.Menu("Steam input", [NativeMenuItem.Disabled("Waiting for status")]);
         }
 
         List<NativeMenuItem> items =
@@ -268,7 +268,7 @@ internal sealed class AppMenu(
             items.Add(NativeMenuItem.Disabled($"Error: {status.SteamInput.LastError}"));
         }
 
-        return NativeMenuItem.Menu("Steam Input", items);
+        return NativeMenuItem.Menu("Steam input", items);
     }
 
     private static void OpenFile(string path)

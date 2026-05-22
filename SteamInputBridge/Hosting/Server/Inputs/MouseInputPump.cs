@@ -84,6 +84,10 @@ internal sealed class MouseInputPump(
 
     internal static bool ShouldForwardRawInputMouse(in MouseInput input)
     {
+        // Steam Input-generated virtual mouse events arrive through Raw Input
+        // without a source device handle/name. Physical and VIIPER loopback
+        // events include source metadata, so the mouse route keeps only the
+        // metadata-less events as the Steam mouse stream.
         return input.DeviceHandle == nint.Zero && string.IsNullOrWhiteSpace(input.DeviceName);
     }
 

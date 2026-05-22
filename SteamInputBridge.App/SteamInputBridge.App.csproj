@@ -6,6 +6,7 @@
     <AssemblyName>SteamInputBridge</AssemblyName>
     <ApplicationIcon>Assets\Controller.ico</ApplicationIcon>
     <AllowedReferenceRelatedFileExtensions>.pdb;.pri</AllowedReferenceRelatedFileExtensions>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
@@ -23,8 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Cli\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="Always" />
-    <None Include="Cli\appsettings.example.json" Link="appsettings.example.json" CopyToPublishDirectory="Always" />
+    <None Include="appsettings.json" Link="appsettings.json" CopyToOutputDirectory="Always" />
+    <None Include="appsettings.example.json" Link="appsettings.example.json" CopyToPublishDirectory="Always" />
   </ItemGroup>
 
 </Project>
