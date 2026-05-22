@@ -3,8 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.HidHide;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 using SteamInputBridge.Outputs.Teensy;
 using SteamInputBridge.Outputs.Viiper;
 using SteamInputBridge.Runtime;
@@ -24,12 +26,11 @@ public static class ServerServices
         _ = services.AddSingleton<ActiveClientRegistry>();
         _ = services.AddSingleton<IHidHideCommandRunner>(static services =>
             new HidHideCliRunner(services.GetRequiredService<IOptions<HidHideSettings>>().Value.CliPath));
-        _ = services.AddSingleton<HidHideApplicationAccess>();
         _ = services.AddSingleton<HidHideDeviceCatalog>();
         _ = services.AddSingleton(static services =>
-            new HidHideProfileFirewall(
+            new HidHideService(
                 services.GetRequiredService<IHidHideCommandRunner>(),
-                services.GetRequiredService<ILogger<HidHideProfileFirewall>>()));
+                services.GetRequiredService<ILogger<HidHideService>>()));
         _ = services.AddSingleton<IKeyboardShortcutListener, GlobalKeyboardShortcutListener>();
         _ = services.AddSingleton(static services =>
         {
@@ -63,8 +64,7 @@ public static class ServerServices
                 activeClients: null,
                 services.GetRequiredService<ControllerBroker>(),
                 services.GetRequiredService<MouseBroker>(),
-                hidHideSettings.Enabled ? services.GetRequiredService<HidHideProfileFirewall>() : null,
-                hidHideSettings.Enabled ? services.GetRequiredService<HidHideApplicationAccess>() : null,
+                hidHideSettings.Enabled ? services.GetRequiredService<HidHideService>() : null,
                 hidHideSettings.Enabled ? services.GetRequiredService<HidHideDeviceCatalog>() : null,
                 services.GetRequiredService<ServerShortcutService>(),
                 viiper.ReclaimDevicesAsync);

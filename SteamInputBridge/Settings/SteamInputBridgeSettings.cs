@@ -79,8 +79,8 @@ public sealed class ShortcutEntry
     /// <summary>Keyboard combination such as Ctrl+Alt+F13.</summary>
     public string Keys { get; set; } = "";
 
-    /// <summary>Target controlled by this shortcut.</summary>
-    public ShortcutTarget? Target { get; set; }
+    /// <summary>Targets controlled by this shortcut.</summary>
+    public Collection<ShortcutTarget> Targets { get; } = [];
 
     /// <summary>State applied when the shortcut is pressed.</summary>
     public ShortcutValue? Value { get; set; }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using SteamInputBridge.Forwarding.Mouse;
-using SteamInputBridge.Hosting.Server.Inputs;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
 namespace SteamInputBridge.Tests;
 
@@ -96,14 +96,14 @@ public sealed class MouseBrokerTests
 
     /// <summary>Raw Input mouse forwarding accepts only Steam Input-style mouse packets.</summary>
     [TestMethod]
-    public void RawInputMouseFilterAcceptsOnlyUnnamedHandleZeroInput()
+    public void SteamMouseFilterAcceptsOnlyUnnamedHandleZeroInput()
     {
         MouseReport report = new(MouseButtons.None, 1, 0, 0);
 
-        Assert.IsTrue(MouseInputPump.ShouldForwardRawInputMouse(new MouseInput(report, null, nint.Zero)));
-        Assert.IsTrue(MouseInputPump.ShouldForwardRawInputMouse(new MouseInput(report, "", nint.Zero)));
-        Assert.IsFalse(MouseInputPump.ShouldForwardRawInputMouse(new MouseInput(report, "mouse", nint.Zero)));
-        Assert.IsFalse(MouseInputPump.ShouldForwardRawInputMouse(new MouseInput(report, null, 123)));
+        Assert.IsTrue(MouseInputPump.ShouldForwardSteamMouseInput(new MouseInput(report, null, nint.Zero)));
+        Assert.IsTrue(MouseInputPump.ShouldForwardSteamMouseInput(new MouseInput(report, "", nint.Zero)));
+        Assert.IsFalse(MouseInputPump.ShouldForwardSteamMouseInput(new MouseInput(report, "mouse", nint.Zero)));
+        Assert.IsFalse(MouseInputPump.ShouldForwardSteamMouseInput(new MouseInput(report, null, 123)));
     }
 
     private sealed class FakeMouseOutputFactory : IMouseOutputFactory

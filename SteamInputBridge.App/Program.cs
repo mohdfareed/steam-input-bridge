@@ -2,8 +2,7 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using SteamInputBridge.App.Cli;
-using SteamInputBridge.App.Shortcut;
-using SteamInputBridge.App.Tray;
+using SteamInputBridge.App.Tray.Core;
 
 namespace SteamInputBridge.App;
 
@@ -32,7 +31,7 @@ internal static class Program
 
         if (IsMode(args[0], "shortcut"))
         {
-            return await ShortcutMode.RunAsync(args[1..]).ConfigureAwait(false);
+            return await CliMode.RunAsync(args).ConfigureAwait(false);
         }
 
         WindowsConsole.AttachForCli();

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using PolyType;
 using SteamInputBridge.Forwarding.Controller;
-using SteamInputBridge.Hosting.Server;
+using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Runtime;
 using StreamJsonRpc;
 using ProfileControllerOutput = SteamInputBridge.Settings.Profiles.ControllerOutput;

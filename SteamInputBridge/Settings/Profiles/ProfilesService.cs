@@ -10,7 +10,7 @@ namespace SteamInputBridge.Settings.Profiles;
 // ============================================================================
 
 /// <summary>Dependency injection registration for profile settings.</summary>
-public static class ProfilesServices
+public static class ProfileServices
 {
     /// <summary>Adds reload-able profile settings services.</summary>
     public static IServiceCollection AddProfiles(this IServiceCollection services)

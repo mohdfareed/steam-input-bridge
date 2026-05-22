@@ -69,13 +69,22 @@ internal static class SettingsValidation
                 keys = shortcut.Keys.Trim();
             }
 
-            if (!shortcut.Target.HasValue)
+            if (shortcut.Targets.Count == 0)
             {
-                failures.Add($"{prefix}:target is required.");
+                failures.Add($"{prefix}:targets is required.");
             }
-            else if (keys is not null && !targetsByKey.Add($"{keys}\0{shortcut.Target.Value}"))
+
+            HashSet<ShortcutTarget> entryTargets = [];
+            foreach (ShortcutTarget target in shortcut.Targets)
             {
-                failures.Add($"{prefix}:target duplicates another shortcut target for the same keys.");
+                if (!entryTargets.Add(target))
+                {
+                    failures.Add($"{prefix}:targets duplicates {target}.");
+                }
+                else if (keys is not null && !targetsByKey.Add($"{keys}\0{target}"))
+                {
+                    failures.Add($"{prefix}:targets duplicates another shortcut target for the same keys.");
+                }
             }
 
             if (!shortcut.Value.HasValue)

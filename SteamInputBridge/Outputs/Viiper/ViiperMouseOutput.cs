@@ -16,15 +16,15 @@ public sealed class ViiperMouseOutput : IMouseOutput, IDisposable
     internal const ushort OwnedProductId = 0x5050;
     internal const string OwnedProductName = "PID_5050";
 
-    private static readonly ViiperOutputDeviceDefinition DeviceDefinition = new(
+    private static readonly ViiperDeviceDefinition DeviceDefinition = new(
         "mouse",
         OwnedVendorId,
         OwnedProductId,
-        "Steam Input Bridge - Steam Input");
+        ViiperDeviceDefinition.FormatOwnedDisplayName("Steam Input"));
 
-    private readonly ViiperOutputDevice _device;
+    private readonly ViiperCreatedDevice _device;
 
-    private ViiperMouseOutput(ViiperOutputDevice device)
+    private ViiperMouseOutput(ViiperCreatedDevice device)
     {
         _device = device;
     }
@@ -66,7 +66,7 @@ public sealed class ViiperMouseOutput : IMouseOutput, IDisposable
 
     internal static Task<ViiperMouseOutput> ConnectAsync(ViiperOptions options, CancellationToken cancellationToken = default)
     {
-        return ViiperOutputConnector.ConnectAsync(
+        return ViiperDeviceLifecycle.ConnectAsync(
             options,
             DeviceDefinition,
             device => new ViiperMouseOutput(device),
@@ -75,7 +75,7 @@ public sealed class ViiperMouseOutput : IMouseOutput, IDisposable
 
     internal static Task ReclaimDevicesAsync(ViiperOptions options, CancellationToken cancellationToken = default)
     {
-        return ViiperOutputConnector.ReclaimDevicesAsync(options, DeviceDefinition, cancellationToken);
+        return ViiperDeviceLifecycle.ReclaimDevicesAsync(options, DeviceDefinition, cancellationToken);
     }
 
     internal static ViiperMouseInput MapReport(MouseReport report)

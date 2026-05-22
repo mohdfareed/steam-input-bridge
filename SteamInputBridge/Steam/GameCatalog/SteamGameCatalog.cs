@@ -140,12 +140,12 @@ internal sealed class SteamGameCatalog(string steamPath)
 
     private static SteamGame? CreateNonSteamShortcutGame(SteamKeyValue shortcut)
     {
-        string? _id = shortcut.GetValue("appid");
-        string? _dir = shortcut.GetValue("StartDir");
-        string? _exe = shortcut.GetValue("Exe");
+        string? appIdText = shortcut.GetValue("appid");
+        string? startDirectoryText = shortcut.GetValue("StartDir");
+        string? executableText = shortcut.GetValue("Exe");
         string? name = shortcut.GetValue("AppName");
 
-        if (!TryGetUInt32(_id, out uint appId))
+        if (!TryGetUInt32(appIdText, out uint appId))
         {
             return null;
         }
@@ -155,8 +155,8 @@ internal sealed class SteamGameCatalog(string steamPath)
             return null;
         }
 
-        string? startDirectory = string.IsNullOrWhiteSpace(_dir) ? null : _dir;
-        string? executablePath = string.IsNullOrWhiteSpace(_exe) ? null : _exe;
+        string? startDirectory = string.IsNullOrWhiteSpace(startDirectoryText) ? null : startDirectoryText;
+        string? executablePath = string.IsNullOrWhiteSpace(executableText) ? null : executableText;
 
         return new SteamGame
         {

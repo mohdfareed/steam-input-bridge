@@ -105,33 +105,6 @@ public static class SdlControllerCatalog
         });
     }
 
-    /// <summary>Opens all client-visible controllers except VIIPER loopback devices.</summary>
-    public static IReadOnlyList<SdlGamepadSource> OpenClientControllers(
-        Func<SdlControllerInfo, bool>? shouldInclude = null)
-    {
-        return OpenControllers(
-            static controller => controller.Source is SdlControllerSource.Steam or SdlControllerSource.Physical,
-            shouldInclude);
-    }
-
-    /// <summary>Opens physical controllers visible to the server process.</summary>
-    public static IReadOnlyList<SdlGamepadSource> OpenPhysicalControllers(
-        Func<SdlControllerInfo, bool>? shouldInclude = null)
-    {
-        return OpenControllers(
-            static controller => controller.Source == SdlControllerSource.Physical,
-            shouldInclude);
-    }
-
-    /// <summary>Gets the physical slot id used by forwarding.</summary>
-    public static string GetPhysicalControllerId(SdlControllerInfo controller)
-    {
-        ArgumentNullException.ThrowIfNull(controller);
-        return !string.IsNullOrWhiteSpace(controller.Path)
-            ? $"path:{controller.Path}"
-            : $"vidpid:{controller.VendorId:x4}:{controller.ProductId:x4}";
-    }
-
     // MARK: Internals
     // ========================================================================
 
@@ -176,40 +149,6 @@ public static class SdlControllerCatalog
 
     // MARK: Privates
     // ========================================================================
-
-    private static IReadOnlyList<SdlGamepadSource> OpenControllers(
-        Func<SdlControllerInfo, bool> shouldOpen,
-        Func<SdlControllerInfo, bool>? shouldInclude)
-    {
-        return WithSdlErrors<IReadOnlyList<SdlGamepadSource>>(() =>
-        {
-            using SdlGamepadRuntime.Lease lease = SdlGamepadRuntime.Acquire();
-            uint[] gamepadIds = SDL.GetGamepads(out int count) ?? [];
-            List<SdlGamepadSource> sources = [];
-
-            try
-            {
-                foreach (SdlControllerInfo controller in CreateControllerInfos(gamepadIds, count))
-                {
-                    if (shouldOpen(controller) && (shouldInclude?.Invoke(controller) ?? true))
-                    {
-                        sources.Add(SdlGamepadSource.Connect(controller));
-                    }
-                }
-
-                return [.. sources];
-            }
-            catch
-            {
-                foreach (SdlGamepadSource source in sources)
-                {
-                    source.Dispose();
-                }
-
-                throw;
-            }
-        });
-    }
 
     private static IReadOnlyList<SdlControllerInfo> Filter(
         IReadOnlyList<SdlControllerInfo> controllers,

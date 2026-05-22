@@ -3,8 +3,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
-using SteamInputBridge.Hosting.Client;
-using SteamInputBridge.Hosting.Server;
+using SteamInputBridge.Hosting.Client.Connection;
+using SteamInputBridge.Hosting.Server.Orchestration;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
 namespace SteamInputBridge.Tests;
 
@@ -16,11 +17,12 @@ public sealed class ServerClientTests
     [TestMethod]
     public async Task ClientConnectRegistersWithServer()
     {
+        string pipeName = NewPipeName();
         using CancellationTokenSource serverStop = new();
-        await using ServerService server = CreateServer();
+        await using ServerService server = CreateServer(pipeName);
         Task serverTask = server.RunAsync(serverStop.Token);
 
-        await using ClientService client = CreateClient();
+        await using ClientService client = CreateClient(pipeName);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
 
         await WaitUntilAsync(() => server.Clients.Count == 1).ConfigureAwait(false);
@@ -38,11 +40,12 @@ public sealed class ServerClientTests
     [TestMethod]
     public async Task ClientReconnectsAfterServerRestart()
     {
+        string pipeName = NewPipeName();
         using CancellationTokenSource serverOneStop = new();
-        await using ServerService serverOne = CreateServer();
+        await using ServerService serverOne = CreateServer(pipeName);
         Task serverOneTask = serverOne.RunAsync(serverOneStop.Token);
 
-        await using ClientService client = CreateClient();
+        await using ClientService client = CreateClient(pipeName);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
         Guid firstClientId = client.ClientId.GetValueOrDefault();
         await WaitUntilAsync(() => serverOne.Clients.Count == 1).ConfigureAwait(false);
@@ -53,7 +56,7 @@ public sealed class ServerClientTests
         await StopServerAsync(serverOneStop, serverOneTask).ConfigureAwait(false);
 
         using CancellationTokenSource serverTwoStop = new();
-        await using ServerService serverTwo = CreateServer();
+        await using ServerService serverTwo = CreateServer(pipeName);
         Task serverTwoTask = serverTwo.RunAsync(serverTwoStop.Token);
 
         await WaitUntilAsync(() => serverTwo.Clients.Count == 1).ConfigureAwait(false);
@@ -68,11 +71,12 @@ public sealed class ServerClientTests
     [TestMethod]
     public async Task ClientCanReadServerStatus()
     {
+        string pipeName = NewPipeName();
         using CancellationTokenSource serverStop = new();
-        await using ServerService server = CreateServer();
+        await using ServerService server = CreateServer(pipeName);
         Task serverTask = server.RunAsync(serverStop.Token);
 
-        await using ClientService client = CreateClient();
+        await using ClientService client = CreateClient(pipeName);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
 
         ServerStatus status = await client.GetStatusAsync(CancellationToken.None).ConfigureAwait(false);
@@ -85,11 +89,12 @@ public sealed class ServerClientTests
     [TestMethod]
     public async Task ServerStopReleasesConnectedClients()
     {
+        string pipeName = NewPipeName();
         using CancellationTokenSource serverStop = new();
-        await using ServerService server = CreateServer();
+        await using ServerService server = CreateServer(pipeName);
         Task serverTask = server.RunAsync(serverStop.Token);
 
-        await using ClientService client = CreateClient();
+        await using ClientService client = CreateClient(pipeName);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
         await WaitUntilAsync(() => server.Clients.Count == 1).ConfigureAwait(false);
 
@@ -102,11 +107,12 @@ public sealed class ServerClientTests
     [TestMethod]
     public async Task ClientDisposeIsIdempotent()
     {
+        string pipeName = NewPipeName();
         using CancellationTokenSource serverStop = new();
-        await using ServerService server = CreateServer();
+        await using ServerService server = CreateServer(pipeName);
         Task serverTask = server.RunAsync(serverStop.Token);
 
-        await using ClientService client = CreateClient();
+        await using ClientService client = CreateClient(pipeName);
         await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
         await WaitUntilAsync(() => server.Clients.Count == 1).ConfigureAwait(false);
 
@@ -117,14 +123,25 @@ public sealed class ServerClientTests
         await StopServerAsync(serverStop, serverTask).ConfigureAwait(false);
     }
 
-    private static ClientService CreateClient()
+    private static ClientService CreateClient(string pipeName)
     {
-        return new ClientService(NullLoggerFactory.Instance);
+        return new ClientService(NullLoggerFactory.Instance, pipeName);
     }
 
-    private static ServerService CreateServer()
+    private static ServerService CreateServer(string pipeName)
     {
-        return new ServerService(NullLogger<ServerService>.Instance);
+        return new ServerService(
+            NullLogger<ServerService>.Instance,
+            settingsFile: null,
+            profiles: null,
+            runtime: null,
+            activeClients: null,
+            pipeName: pipeName);
+    }
+
+    private static string NewPipeName()
+    {
+        return $"SteamInputBridge.Tests.{Guid.NewGuid():N}";
     }
 
     private static async Task StopServerAsync(CancellationTokenSource stop, Task serverTask)

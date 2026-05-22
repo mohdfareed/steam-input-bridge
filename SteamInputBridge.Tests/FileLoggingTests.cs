@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using Microsoft.Extensions.Logging;
-using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Tests;
 

@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
-using SteamInputBridge.Hosting.Server;
+using SteamInputBridge.Hosting.Server.Orchestration;
+using SteamInputBridge.Hosting.Server.Orchestration.Active;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 using SteamInputBridge.Runtime;
 using SteamInputBridge.Steam;
 

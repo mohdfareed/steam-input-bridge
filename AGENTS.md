@@ -47,6 +47,24 @@ Do not set `LangVersion=latest`.
 ## Architecture
 
 - Keep the API small and build only the MVP for this repository.
+- Delete abandoned ideas. For useful but unstable features, isolate the code and
+  keep it unwired from the default route behind one explicit integration point;
+  do not comment out integration code.
+- Do not make architecture-scale calls implicitly. Any change that decides
+  which process owns an input source, output device, route lifecycle, HidHide
+  policy, Steam visibility, or controller identity must be confirmed first.
+- Treat "already there, just inactive" as a hypothesis to prove from code. If
+  the live reader, writer, route, or integration point is missing, stop and ask
+  before adding it.
+- When a fix would cross server/client, input/output, hosting/runtime, or
+  settings/runtime boundaries, first state the intended owner, affected files,
+  and expected behavior. Wait for confirmation before editing.
+- Do not create broad infrastructure to enable a feature unless that exact
+  architecture has already been agreed. Prefer the smallest reversible wiring
+  around existing code, and ask when the existing code does not support it.
+- Before finalizing cleanup after a mistaken implementation, verify both the
+  working tree and staged diff for leftover concept names and behavior. Removing
+  only the obvious call site is not enough.
 - Prefer direct pass-through over abstraction layers.
 - Prefer maintained first-party or popular libraries when they reduce repo
   complexity.
@@ -62,6 +80,9 @@ Do not set `LangVersion=latest`.
   design targets.
 - Keep hot paths free of avoidable allocations, logging, JSON, and RPC.
 - Use `SteamInputBridge` as the root settings section and named-pipe identity.
+- Profile `ControllerOutput` and `MouseOutput` treat missing, JSON `null`, and
+  explicit `None` as no output. Keep profile JSON clean by omitting no-output
+  entries in normal settings files.
 - Treat `ARCHITECTURE.md` as reference material, not binding design, when it
   conflicts with this file.
 
@@ -73,6 +94,12 @@ Do not set `LangVersion=latest`.
 - Clients launch or attach one profile run, read client-visible SDL controllers,
   stream controller reports to the host, handle route-local feedback, and
   release their run normally.
+- Steam-launched clients can only read what Steam exposes to that process. Do
+  not assume they can read the hidden physical controller.
+- If physical controller data is needed while Steam hides the device from the
+  client, the reader must be in a process that can see the physical device, such
+  as the host or another explicitly designed companion. Choosing that process is
+  an architecture decision that requires confirmation.
 - Host IPC is control-only except for client-to-host controller report pipes.
   Do not forward mouse report traffic over IPC unless explicitly revisited.
 - Support multiple client runs. Only the foreground/needed run should drive
@@ -81,6 +108,9 @@ Do not set `LangVersion=latest`.
 - Separate durable configuration from runtime state. Profiles, controllers,
   games, and global settings are configuration; client runs, controller routes,
   process ids, and created device ids are state.
+- Keep settings shapes easy to navigate in IDEs. Prefer one central settings
+  model file for small settings records/enums; if a settings type must move,
+  keep one obvious F12 path from the root settings object to that type.
 - Treat receiver processes as the primary game lifetime signal. A profile
   executable is only a startup hint and may exit immediately.
 - Only stop processes this repository launched or explicitly owns.
@@ -109,9 +139,18 @@ Do not set `LangVersion=latest`.
 - Do not treat Steam-routed `XInput#N` paths as physical controller identity.
   Use a strict matched physical counterpart when available; otherwise use the
   Steam controller handle or a client-local route id.
+- SDL controller instance ids are runtime/lease-local. Do not list controllers
+  under one SDL lease and open those instance ids under another lease; select
+  from the fresh list inside `SdlControllerCatalog.OpenControllers`.
 - Keep controller route planning as pure policy code separate from SDL stream
   lifetime, pipe I/O, foreground activation, and VIIPER output ownership.
 - Physical companions are route-local, not a global controller slot registry.
+- Do not treat a Steam-launched client as able to read Steam-hidden physical
+  controllers. If missing physical features are needed while Steam hides the
+  device, solve that outside the Steam-hidden client path.
+- Do not start server-side physical controller pumping in the default route.
+  Physical companion readers must be explicitly wired by a route that needs
+  missing native features.
 - Each open `SdlGamepadSource` owns its own SDL runtime lease.
 
 ## Outputs
@@ -125,6 +164,13 @@ Do not set `LangVersion=latest`.
 - Enforce one active VIIPER owner with an async-safe named ownership primitive.
 - Remove VIIPER devices and buses before waiting on connected streams to
   dispose.
+- VIIPER `DevId` values are bus-local. Use `BusID + DevId` when identifying a
+  created VIIPER device.
+- VIIPER list responses do not expose the display name passed during device
+  creation. Do not rely on display name as a reclaim/ownership marker.
+- Rapid VIIPER device recreation can transiently fail with auto-attach conflict
+  or immediate bus-not-found responses. Retry the whole bus/device creation
+  attempt narrowly; do not retry by adding another device to the same bus.
 - Xbox 360 output uses Microsoft `045E:028E`; DS4 output should use Sony
   `054C:05C4` unless a newer DS4 profile specifically needs `054C:09CC`.
 - Fail on unsupported output ranges rather than silently clamping.
@@ -160,8 +206,11 @@ Do not set `LangVersion=latest`.
   open controller config, list games, and export shortcuts.
 - Steam shortcut targets use `SteamInputBridge.exe shortcut <profile>`.
 - Keyboard shortcuts are global server settings, not per-game behavior.
-- Shortcuts only set direct gates such as `Motion` and `Pointer` to
-  `Enabled` or `Disabled`. Steam Input owns hold/toggle/action-layer behavior.
+- Shortcut `Name` is optional; omit it in normal settings unless diagnostics
+  need a display label.
+- Shortcut entries use `Targets` as an array, even for one target.
+- Shortcuts only set direct gates such as `Motion` and `Pointer` through
+  `Enabled`, `Disabled`, `HoldEnabled`, `HoldDisabled`, or `Toggle`.
 
 ## CLI And Scripts
 
@@ -172,10 +221,10 @@ Do not set `LangVersion=latest`.
   under `test`, not product-facing command groups.
 - Do not add alternate CLI aliases before a release.
 - CLI output should be concise, aligned, and value-first.
-- `scripts/Build-Solution.ps1`: format and build `SteamInputBridge.slnx`
-- `scripts/Test-Solution.ps1`: run `SteamInputBridge.Tests/SteamInputBridge.Tests.csproj`
-- `scripts/CLI.ps1`: run the SteamInputBridge CLI mode
-- `scripts/Deploy-App.ps1`: publish `SteamInputBridge.App/SteamInputBridge.App.csproj`
+- `Scripts/Build-Solution.ps1`: format and build `SteamInputBridge.slnx`
+- `Scripts/Test-Solution.ps1`: run `SteamInputBridge.Tests/SteamInputBridge.Tests.csproj`
+- `Scripts/CLI.ps1`: run the SteamInputBridge CLI mode
+- `Scripts/Deploy-App.ps1`: publish `SteamInputBridge.App/SteamInputBridge.App.csproj`
 
 ## Testing
 
@@ -183,6 +232,11 @@ Do not set `LangVersion=latest`.
 - Use tests while developing, not only at the end.
 - Keep tests focused on behavior and mapping, not internal structure.
 - Keep all tests in `SteamInputBridge.Tests/SteamInputBridge.Tests.csproj`.
+- Keep tests in three tiers:
+  - Normal tests are untagged, deterministic, local/fake-output tests suitable for regular development and CI.
+  - Dependency tests use MSTest `TestCategory("Dependency")` and require explicit external services or drivers such as VIIPER.
+  - Manual tests use MSTest `TestCategory("Manual")` and require prepared user action or machine state such as connected controllers, Steam launch context, or a running receiver process.
+- The default test script runs only normal tests. Explicit dependency/manual tests are opt-in and should report `Assert.Inconclusive` when required environment variables or hardware state are missing.
 
 ## Logging
 
@@ -200,6 +254,9 @@ Do not set `LangVersion=latest`.
 - Prefer clear names over over-general names.
 - Prefer a small number of coherent files over many tiny files when types are
   tightly related.
+- When splitting code, keep related files under balanced folders. Avoid folders
+  with 10+ loose files, and avoid folders with only 1-2 files unless they are
+  placeholders.
 - Avoid single-model-per-file layouts for small related contracts, options,
   status records, log helpers, or leases.
 - Do not leave near-empty migration artifact files.

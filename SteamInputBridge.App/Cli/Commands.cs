@@ -4,8 +4,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SteamInputBridge.Hosting.Client;
-using SteamInputBridge.Hosting.Server;
+using SteamInputBridge.Hosting.Client.Run;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
+using AppHostSetup = SteamInputBridge.App.AppSetup;
 
 namespace SteamInputBridge.App.Cli;
 
@@ -35,10 +36,35 @@ internal static class Commands
         run.Arguments.Add(profile);
         run.Options.Add(steamAppId);
         run.Options.Add(kill);
-        run.SetAction(RunClientAsync);
+        run.SetAction((parseResult, cancellationToken) =>
+            RunClientAsync(parseResult, AppHostSetup.CreateCli, cancellationToken));
         client.Subcommands.Add(run);
 
         return client;
+    }
+
+    public static Command CreateShortcutCommand()
+    {
+        Command shortcut = new("shortcut", "Run a profile from a Steam shortcut.");
+        Argument<string> profile = new("profile")
+        {
+            Description = "Profile id to launch.",
+        };
+        Option<uint?> steamAppId = new("--app-id")
+        {
+            Description = "Steam app id to report for this client run.",
+        };
+        Option<bool> kill = new("--kill")
+        {
+            Description = "Kill matching receiver processes when the client is stopped.",
+        };
+
+        shortcut.Arguments.Add(profile);
+        shortcut.Options.Add(steamAppId);
+        shortcut.Options.Add(kill);
+        shortcut.SetAction((parseResult, cancellationToken) =>
+            RunClientAsync(parseResult, AppHostSetup.CreateShortcut, cancellationToken));
+        return shortcut;
     }
 
     public static Command CreateServerCommand()
@@ -56,14 +82,17 @@ internal static class Commands
     // MARK: Handlers
     // ========================================================================
 
-    private static async Task RunClientAsync(ParseResult parseResult, CancellationToken cancellationToken)
+    private static async Task RunClientAsync(
+        ParseResult parseResult,
+        Func<IHost> createHost,
+        CancellationToken cancellationToken)
     {
         string? profileId = parseResult.GetValue<string>("profile");
         ArgumentException.ThrowIfNullOrEmpty(profileId, nameof(profileId));
         uint? steamAppId = parseResult.GetValue<uint?>("--app-id");
         bool kill = parseResult.GetValue<bool>("--kill");
 
-        using IHost app = AppSetup.Create();
+        using IHost app = createHost();
         GameClient game = app.Services.GetRequiredService<GameClient>();
         await using (game.ConfigureAwait(false))
         {
@@ -75,7 +104,7 @@ internal static class Commands
     {
         _ = parseResult;
 
-        using IHost app = AppSetup.Create();
+        using IHost app = AppHostSetup.CreateCli();
         ServerService server = app.Services.GetRequiredService<ServerService>();
         await using (server.ConfigureAwait(false))
         {

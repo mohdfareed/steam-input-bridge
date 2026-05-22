@@ -10,6 +10,7 @@ internal static class CliMode
         RootCommand root = new("Steam Input Bridge");
         root.Subcommands.Add(Commands.CreateServerCommand());
         root.Subcommands.Add(Commands.CreateClientCommand());
+        root.Subcommands.Add(Commands.CreateShortcutCommand());
         root.Subcommands.Add(SteamCommands.Create());
 
         return root.Parse(args).InvokeAsync();

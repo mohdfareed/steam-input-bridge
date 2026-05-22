@@ -8,10 +8,11 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding;
 using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Controller.Routing;
 
 namespace SteamInputBridge.Hosting.Server.Pipes;
 
-internal sealed class ClientControllerPipe(
+internal sealed partial class ClientControllerPipe(
     Guid clientId,
     string pipeName,
     ControllerBroker broker,
@@ -19,6 +20,7 @@ internal sealed class ClientControllerPipe(
 {
     private readonly CancellationTokenSource _stop = new();
     private readonly Dictionary<ushort, ClientControllerInfo> _controllers = [];
+    private readonly Dictionary<ushort, long> _inputFrameCounts = [];
     private readonly Channel<ControllerFeedbackFrame> _feedbackWrites =
         Channel.CreateBounded<ControllerFeedbackFrame>(
             new BoundedChannelOptions(capacity: 32)
@@ -37,44 +39,6 @@ internal sealed class ClientControllerPipe(
     public void Start()
     {
         _task = Task.Run(RunAsync, CancellationToken.None);
-    }
-
-    public void RegisterControllers(IReadOnlyList<ClientControllerInfo> controllers)
-    {
-        ArgumentNullException.ThrowIfNull(controllers);
-        broker.RemoveClientControllers(clientId);
-
-        lock (_controllers)
-        {
-            _controllers.Clear();
-            foreach (ClientControllerInfo controller in controllers)
-            {
-                _controllers[controller.ControllerIndex] = controller;
-            }
-        }
-    }
-
-    public ControllerPipeStatus GetStatus(Guid clientId)
-    {
-        List<ClientControllerStatus> controllers = [];
-        lock (_controllers)
-        {
-            foreach (ClientControllerInfo controller in _controllers.Values)
-            {
-                controllers.Add(new ClientControllerStatus(
-                    controller.ControllerIndex,
-                    controller.PhysicalControllerId,
-                    controller.Label,
-                    controller.Features,
-                    controller.PhysicalDeviceId));
-            }
-        }
-
-        return new ControllerPipeStatus(
-            clientId,
-            PipeName,
-            _pipe?.IsConnected == true,
-            controllers);
     }
 
     public async ValueTask DisposeAsync()
@@ -122,6 +86,7 @@ internal sealed class ClientControllerPipe(
                         TryGetController(message.Input.ControllerIndex, out ClientControllerInfo? controller) &&
                         controller is not null)
                     {
+                        IncrementInputFrameCount(message.Input.ControllerIndex);
                         broker.UpdateClientController(
                             clientId,
                             message.Input.ControllerIndex,
@@ -152,29 +117,12 @@ internal sealed class ClientControllerPipe(
         }
     }
 
-    private async Task RunFeedbackWriteLoopAsync(NamedPipeServerStream pipe)
-    {
-        ControllerPipeWriter writer = _writer ??
-            throw new InvalidOperationException("Controller pipe writer is not connected.");
-
-        await foreach (ControllerFeedbackFrame frame in _feedbackWrites.Reader.ReadAllAsync(_stop.Token)
-            .ConfigureAwait(false))
-        {
-            if (!pipe.IsConnected)
-            {
-                return;
-            }
-
-            await writer.WriteFeedbackAsync(frame, _stop.Token).ConfigureAwait(false);
-            await pipe.FlushAsync(_stop.Token).ConfigureAwait(false);
-        }
-    }
-
-    private bool TryGetController(ushort controllerIndex, out ClientControllerInfo? controller)
+    private void IncrementInputFrameCount(ushort controllerIndex)
     {
         lock (_controllers)
         {
-            return _controllers.TryGetValue(controllerIndex, out controller);
+            _ = _inputFrameCounts.TryGetValue(controllerIndex, out long count);
+            _inputFrameCounts[controllerIndex] = count + 1;
         }
     }
 
@@ -187,14 +135,6 @@ internal sealed class ClientControllerPipe(
 
         HostingLog.ControllerPipeClosed(logger, clientId, exception.Message);
         return false;
-    }
-
-    private bool QueueFeedback(ushort controllerIndex, ControllerFeedback feedback)
-    {
-        return _writer is not null &&
-            _pipe is not null &&
-            _pipe.IsConnected &&
-            _feedbackWrites.Writer.TryWrite(new ControllerFeedbackFrame(controllerIndex, feedback));
     }
 
     private static async Task IgnoreExpectedStopAsync(Task? task)
@@ -211,16 +151,6 @@ internal sealed class ClientControllerPipe(
         catch (Exception exception) when (
             exception is OperationCanceledException or IOException or ObjectDisposedException)
         {
-        }
-    }
-
-    private sealed class PipeFeedbackSink(
-        ClientControllerPipe pipe,
-        ushort controllerIndex) : IControllerFeedbackSink
-    {
-        public bool TrySendFeedback(ControllerFeedback feedback)
-        {
-            return pipe.QueueFeedback(controllerIndex, feedback);
         }
     }
 }

@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
@@ -21,8 +18,10 @@ internal sealed class ServerShortcutService(
     ILogger<ServerShortcutService> logger) : IDisposable
 {
     private readonly Lock _gate = new();
-    private Dictionary<int, IReadOnlyList<ShortcutEntry>> _shortcuts = [];
-    private Dictionary<int, KeyboardShortcutCombination> _combinations = [];
+    private IReadOnlyDictionary<int, IReadOnlyList<ShortcutEntry>> _shortcuts =
+        new Dictionary<int, IReadOnlyList<ShortcutEntry>>();
+    private IReadOnlyDictionary<int, KeyboardShortcutCombination> _combinations =
+        new Dictionary<int, KeyboardShortcutCombination>();
     private Dictionary<ShortcutTarget, CancellationTokenSource> _holds = [];
     private bool _started;
     private bool _disposed;
@@ -59,51 +58,24 @@ internal sealed class ServerShortcutService(
         Apply(args.Settings.Shortcuts);
     }
 
-    private void Apply(Collection<ShortcutEntry> entries)
+    private void Apply(IEnumerable<ShortcutEntry> entries)
     {
-        Dictionary<int, List<ShortcutEntry>> shortcuts = [];
-        List<KeyboardShortcutRegistration> registrations = [];
-        Dictionary<KeyboardShortcutCombination, int> idsByCombination = [];
-        for (int i = 0; i < entries.Count; i++)
-        {
-            ShortcutEntry entry = entries[i];
-            KeyboardShortcutCombination combination;
-            try
-            {
-                combination = KeyboardShortcutParser.Parse(entry.Keys);
-            }
-            catch (FormatException exception)
-            {
-                HostingLog.ShortcutSkipped(logger, ShortcutName(entry, i), exception.Message);
-                continue;
-            }
-
-            if (!idsByCombination.TryGetValue(combination, out int id))
-            {
-                id = idsByCombination.Count + 1;
-                idsByCombination[combination] = id;
-                shortcuts[id] = [];
-                registrations.Add(new KeyboardShortcutRegistration(id, combination));
-            }
-
-            shortcuts[id].Add(entry);
-        }
+        KeyboardShortcutBindingSet bindings = KeyboardShortcutBindingSet.Create(
+            entries,
+            (entry, index, exception) =>
+                HostingLog.ShortcutSkipped(logger, ShortcutName(entry, index), exception.Message));
 
         lock (_gate)
         {
-            _shortcuts = shortcuts.ToDictionary(
-                static item => item.Key,
-                static item => (IReadOnlyList<ShortcutEntry>)item.Value);
-            _combinations = idsByCombination.ToDictionary(
-                static item => item.Value,
-                static item => item.Key);
+            _shortcuts = bindings.Shortcuts;
+            _combinations = bindings.Combinations;
             CancelHolds();
         }
 
         try
         {
-            listener.Update(registrations, OnShortcutPressed);
-            HostingLog.ShortcutsRegistered(logger, registrations.Count);
+            listener.Update(bindings.Registrations, OnShortcutPressed);
+            HostingLog.ShortcutsRegistered(logger, bindings.Registrations.Count);
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
@@ -126,7 +98,7 @@ internal sealed class ServerShortcutService(
 
         foreach (ShortcutEntry shortcut in shortcuts)
         {
-            if (!shortcut.Target.HasValue || !shortcut.Value.HasValue)
+            if (shortcut.Targets.Count == 0 || !shortcut.Value.HasValue)
             {
                 continue;
             }
@@ -146,35 +118,37 @@ internal sealed class ServerShortcutService(
         int id,
         KeyboardShortcutCombination combination)
     {
-        ShortcutTarget target = shortcut.Target.GetValueOrDefault();
         ShortcutValue value = shortcut.Value.GetValueOrDefault();
-        switch (value)
+        foreach (ShortcutTarget target in shortcut.Targets)
         {
-            case ShortcutValue.Enabled:
-                SetTarget(target, enabled: true);
-                CancelHold(target);
-                break;
-            case ShortcutValue.Disabled:
-                SetTarget(target, enabled: false);
-                CancelHold(target);
-                break;
-            case ShortcutValue.Toggle:
-                SetTarget(target, !GetTargetEnabled(target));
-                CancelHold(target);
-                break;
-            case ShortcutValue.HoldEnabled:
-                StartHold(shortcut, id, combination, enabledWhileHeld: true);
-                break;
-            case ShortcutValue.HoldDisabled:
-                StartHold(shortcut, id, combination, enabledWhileHeld: false);
-                break;
-            default:
-                return;
-        }
+            switch (value)
+            {
+                case ShortcutValue.Enabled:
+                    SetTarget(target, enabled: true);
+                    CancelHold(target);
+                    break;
+                case ShortcutValue.Disabled:
+                    SetTarget(target, enabled: false);
+                    CancelHold(target);
+                    break;
+                case ShortcutValue.Toggle:
+                    SetTarget(target, !GetTargetEnabled(target));
+                    CancelHold(target);
+                    break;
+                case ShortcutValue.HoldEnabled:
+                    StartHold(shortcut, id, combination, target, enabledWhileHeld: true);
+                    break;
+                case ShortcutValue.HoldDisabled:
+                    StartHold(shortcut, id, combination, target, enabledWhileHeld: false);
+                    break;
+                default:
+                    return;
+            }
 
-        if (value is ShortcutValue.Enabled or ShortcutValue.Disabled or ShortcutValue.Toggle)
-        {
-            LogShortcut(shortcut, id);
+            if (value is ShortcutValue.Enabled or ShortcutValue.Disabled or ShortcutValue.Toggle)
+            {
+                LogShortcut(shortcut, id, target);
+            }
         }
     }
 
@@ -182,9 +156,9 @@ internal sealed class ServerShortcutService(
         ShortcutEntry shortcut,
         int id,
         KeyboardShortcutCombination combination,
+        ShortcutTarget target,
         bool enabledWhileHeld)
     {
-        ShortcutTarget target = shortcut.Target.GetValueOrDefault();
         CancellationTokenSource hold = new();
         CancellationTokenSource? previous;
         lock (_gate)
@@ -197,7 +171,7 @@ internal sealed class ServerShortcutService(
         previous?.Dispose();
 
         SetTarget(target, enabledWhileHeld);
-        LogShortcut(shortcut, id);
+        LogShortcut(shortcut, id, target);
         _ = ReleaseWhenShortcutUpAsync(
             target,
             combination,
@@ -213,7 +187,7 @@ internal sealed class ServerShortcutService(
     {
         try
         {
-            while (!hold.IsCancellationRequested && IsCombinationDown(combination))
+            while (!hold.IsCancellationRequested && KeyboardShortcutState.IsDown(combination))
             {
                 await Task.Delay(25, hold.Token).ConfigureAwait(false);
             }
@@ -292,42 +266,16 @@ internal sealed class ServerShortcutService(
         _holds = [];
     }
 
-    private void LogShortcut(ShortcutEntry shortcut, int id)
+    private void LogShortcut(ShortcutEntry shortcut, int id, ShortcutTarget target)
     {
         if (!logger.IsEnabled(LogLevel.Information) ||
-            !shortcut.Target.HasValue ||
             !shortcut.Value.HasValue)
         {
             return;
         }
 
         string name = ShortcutName(shortcut, id - 1);
-        HostingLog.ShortcutApplied(logger, name, shortcut.Target.Value, shortcut.Value.Value);
-    }
-
-    private static bool IsCombinationDown(KeyboardShortcutCombination combination)
-    {
-        return IsKeyDown(combination.VirtualKey) &&
-            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Control, 0x11) &&
-            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Alt, 0x12) &&
-            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Shift, 0x10) &&
-            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Windows, 0x5B, 0x5C);
-    }
-
-    private static bool HasModifierState(
-        KeyboardShortcutModifiers actual,
-        KeyboardShortcutModifiers expected,
-        ushort virtualKey,
-        ushort? alternateVirtualKey = null)
-    {
-        return (actual & expected) == 0 ||
-            IsKeyDown(virtualKey) ||
-            (alternateVirtualKey.HasValue && IsKeyDown(alternateVirtualKey.Value));
-    }
-
-    private static bool IsKeyDown(ushort virtualKey)
-    {
-        return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+        HostingLog.ShortcutApplied(logger, name, target, shortcut.Value.Value);
     }
 
     private static string ShortcutName(ShortcutEntry entry, int index)
@@ -336,8 +284,4 @@ internal sealed class ServerShortcutService(
             ? $"#{index}"
             : entry.Name;
     }
-
-    [DllImport("user32.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern short GetAsyncKeyState(int vKey);
 }

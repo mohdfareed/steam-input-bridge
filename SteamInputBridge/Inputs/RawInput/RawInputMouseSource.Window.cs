@@ -29,7 +29,7 @@ public sealed partial class RawInputMouseSource
         {
             try
             {
-                CurrentState?.HandleRawInput(lParam);
+                CurrentState?.HandleWindowInput(lParam);
             }
             catch (OperationCanceledException) when (CurrentState?.CancellationToken.IsCancellationRequested == true)
             {

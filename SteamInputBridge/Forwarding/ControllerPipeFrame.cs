@@ -12,7 +12,18 @@ internal static class ControllerPipeFrame
 {
     public const int Size = 65;
 
-    private struct FrameDefinition
+    private const byte Present = 1;
+
+    [Flags]
+    private enum FeedbackFields : byte
+    {
+        None = 0,
+        Rumble = 1,
+        Light = 2,
+        AdaptiveTriggers = 4,
+    }
+
+    private static class Layout
     {
         public const int TypeOffset = 0;
         public const int ControllerIndexOffset = 1;
@@ -48,29 +59,29 @@ internal static class ControllerPipeFrame
     // MARK: Frames
     // =========================================================================
 
-    public static void WriteInput(Span<byte> buffer, ControllerInputFrame frame)
+    internal static void WriteInput(Span<byte> buffer, ControllerInputFrame frame)
     {
         Validate(buffer);
         buffer.Clear();
-        buffer[FrameDefinition.TypeOffset] = (byte)ControllerPipeFrameType.Input;
-        WriteUInt16(buffer, FrameDefinition.ControllerIndexOffset, frame.ControllerIndex);
+        buffer[Layout.TypeOffset] = (byte)ControllerPipeFrameType.Input;
+        WriteUInt16(buffer, Layout.ControllerIndexOffset, frame.ControllerIndex);
         WriteState(buffer, frame.State);
     }
 
-    public static void WriteFeedback(Span<byte> buffer, ControllerFeedbackFrame frame)
+    internal static void WriteFeedback(Span<byte> buffer, ControllerFeedbackFrame frame)
     {
         Validate(buffer);
         buffer.Clear();
-        buffer[FrameDefinition.TypeOffset] = (byte)ControllerPipeFrameType.Feedback;
-        WriteUInt16(buffer, FrameDefinition.ControllerIndexOffset, frame.ControllerIndex);
+        buffer[Layout.TypeOffset] = (byte)ControllerPipeFrameType.Feedback;
+        WriteUInt16(buffer, Layout.ControllerIndexOffset, frame.ControllerIndex);
         WriteFeedbackPayload(buffer, frame.Feedback);
     }
 
-    public static ControllerPipeMessage Read(ReadOnlySpan<byte> buffer)
+    internal static ControllerPipeMessage Read(ReadOnlySpan<byte> buffer)
     {
         Validate(buffer);
-        ControllerPipeFrameType type = (ControllerPipeFrameType)buffer[FrameDefinition.TypeOffset];
-        ushort controllerIndex = ReadUInt16(buffer, FrameDefinition.ControllerIndexOffset);
+        ControllerPipeFrameType type = (ControllerPipeFrameType)buffer[Layout.TypeOffset];
+        ushort controllerIndex = ReadUInt16(buffer, Layout.ControllerIndexOffset);
 
         return type switch
         {
@@ -94,124 +105,124 @@ internal static class ControllerPipeFrame
     {
         if (state.Standard is { } standard)
         {
-            buffer[FrameDefinition.HasStandardOffset] = 1;
-            WriteUInt32(buffer, FrameDefinition.ButtonsOffset, (uint)standard.Buttons);
-            WriteInt16(buffer, FrameDefinition.LeftXOffset, standard.LeftX);
-            WriteInt16(buffer, FrameDefinition.LeftYOffset, standard.LeftY);
-            WriteInt16(buffer, FrameDefinition.RightXOffset, standard.RightX);
-            WriteInt16(buffer, FrameDefinition.RightYOffset, standard.RightY);
-            WriteUInt16(buffer, FrameDefinition.LeftTriggerOffset, standard.LeftTrigger);
-            WriteUInt16(buffer, FrameDefinition.RightTriggerOffset, standard.RightTrigger);
+            buffer[Layout.HasStandardOffset] = Present;
+            WriteUInt32(buffer, Layout.ButtonsOffset, (uint)standard.Buttons);
+            WriteInt16(buffer, Layout.LeftXOffset, standard.LeftX);
+            WriteInt16(buffer, Layout.LeftYOffset, standard.LeftY);
+            WriteInt16(buffer, Layout.RightXOffset, standard.RightX);
+            WriteInt16(buffer, Layout.RightYOffset, standard.RightY);
+            WriteUInt16(buffer, Layout.LeftTriggerOffset, standard.LeftTrigger);
+            WriteUInt16(buffer, Layout.RightTriggerOffset, standard.RightTrigger);
         }
 
         if (state.Motion is { } motion)
         {
-            buffer[FrameDefinition.HasMotionOffset] = motion.HasGyro ? (byte)1 : (byte)0;
-            WriteSingle(buffer, FrameDefinition.GyroXOffset, motion.GyroX);
-            WriteSingle(buffer, FrameDefinition.GyroYOffset, motion.GyroY);
-            WriteSingle(buffer, FrameDefinition.GyroZOffset, motion.GyroZ);
-            buffer[FrameDefinition.HasAccelerometerOffset] = motion.HasAccelerometer ? (byte)1 : (byte)0;
-            WriteSingle(buffer, FrameDefinition.AccelXOffset, motion.AccelX);
-            WriteSingle(buffer, FrameDefinition.AccelYOffset, motion.AccelY);
-            WriteSingle(buffer, FrameDefinition.AccelZOffset, motion.AccelZ);
+            buffer[Layout.HasMotionOffset] = motion.HasGyro ? Present : (byte)0;
+            WriteSingle(buffer, Layout.GyroXOffset, motion.GyroX);
+            WriteSingle(buffer, Layout.GyroYOffset, motion.GyroY);
+            WriteSingle(buffer, Layout.GyroZOffset, motion.GyroZ);
+            buffer[Layout.HasAccelerometerOffset] = motion.HasAccelerometer ? Present : (byte)0;
+            WriteSingle(buffer, Layout.AccelXOffset, motion.AccelX);
+            WriteSingle(buffer, Layout.AccelYOffset, motion.AccelY);
+            WriteSingle(buffer, Layout.AccelZOffset, motion.AccelZ);
         }
 
         if (state.Touchpad is { } touchpad)
         {
-            buffer[FrameDefinition.HasTouchpadOffset] = touchpad.IsTouched ? (byte)1 : (byte)0;
-            WriteSingle(buffer, FrameDefinition.TouchXOffset, touchpad.X);
-            WriteSingle(buffer, FrameDefinition.TouchYOffset, touchpad.Y);
+            buffer[Layout.HasTouchpadOffset] = touchpad.IsTouched ? Present : (byte)0;
+            WriteSingle(buffer, Layout.TouchXOffset, touchpad.X);
+            WriteSingle(buffer, Layout.TouchYOffset, touchpad.Y);
         }
     }
 
     private static ControllerState ReadState(ReadOnlySpan<byte> buffer)
     {
-        ControllerStandardState? standard = buffer[FrameDefinition.HasStandardOffset] == 0
+        ControllerStandardState? standard = buffer[Layout.HasStandardOffset] == 0
             ? null
             : new ControllerStandardState(
-                (ControllerButtons)ReadUInt32(buffer, FrameDefinition.ButtonsOffset),
-                ReadInt16(buffer, FrameDefinition.LeftXOffset),
-                ReadInt16(buffer, FrameDefinition.LeftYOffset),
-                ReadInt16(buffer, FrameDefinition.RightXOffset),
-                ReadInt16(buffer, FrameDefinition.RightYOffset),
-                ReadUInt16(buffer, FrameDefinition.LeftTriggerOffset),
-                ReadUInt16(buffer, FrameDefinition.RightTriggerOffset));
+                (ControllerButtons)ReadUInt32(buffer, Layout.ButtonsOffset),
+                ReadInt16(buffer, Layout.LeftXOffset),
+                ReadInt16(buffer, Layout.LeftYOffset),
+                ReadInt16(buffer, Layout.RightXOffset),
+                ReadInt16(buffer, Layout.RightYOffset),
+                ReadUInt16(buffer, Layout.LeftTriggerOffset),
+                ReadUInt16(buffer, Layout.RightTriggerOffset));
 
         ControllerMotionState? motion =
-            buffer[FrameDefinition.HasMotionOffset] == 0 &&
-            buffer[FrameDefinition.HasAccelerometerOffset] == 0
+            buffer[Layout.HasMotionOffset] == 0 &&
+            buffer[Layout.HasAccelerometerOffset] == 0
             ? null
             : new ControllerMotionState(
-                buffer[FrameDefinition.HasMotionOffset] != 0,
-                ReadSingle(buffer, FrameDefinition.GyroXOffset),
-                ReadSingle(buffer, FrameDefinition.GyroYOffset),
-                ReadSingle(buffer, FrameDefinition.GyroZOffset),
-                buffer[FrameDefinition.HasAccelerometerOffset] != 0,
-                ReadSingle(buffer, FrameDefinition.AccelXOffset),
-                ReadSingle(buffer, FrameDefinition.AccelYOffset),
-                ReadSingle(buffer, FrameDefinition.AccelZOffset));
+                buffer[Layout.HasMotionOffset] != 0,
+                ReadSingle(buffer, Layout.GyroXOffset),
+                ReadSingle(buffer, Layout.GyroYOffset),
+                ReadSingle(buffer, Layout.GyroZOffset),
+                buffer[Layout.HasAccelerometerOffset] != 0,
+                ReadSingle(buffer, Layout.AccelXOffset),
+                ReadSingle(buffer, Layout.AccelYOffset),
+                ReadSingle(buffer, Layout.AccelZOffset));
 
-        ControllerTouchpadState? touchpad = buffer[FrameDefinition.HasTouchpadOffset] == 0
+        ControllerTouchpadState? touchpad = buffer[Layout.HasTouchpadOffset] == 0
             ? null
             : new ControllerTouchpadState(
                 true,
-                ReadSingle(buffer, FrameDefinition.TouchXOffset),
-                ReadSingle(buffer, FrameDefinition.TouchYOffset));
+                ReadSingle(buffer, Layout.TouchXOffset),
+                ReadSingle(buffer, Layout.TouchYOffset));
 
         return new ControllerState(standard, motion, touchpad);
     }
 
     private static void WriteFeedbackPayload(Span<byte> buffer, ControllerFeedback feedback)
     {
-        byte flags = 0;
+        FeedbackFields fields = FeedbackFields.None;
 
         if (feedback.Rumble is { } rumble)
         {
-            flags |= 1;
-            WriteUInt16(buffer, FrameDefinition.RumbleLowOffset, rumble.LowFrequency);
-            WriteUInt16(buffer, FrameDefinition.RumbleHighOffset, rumble.HighFrequency);
+            fields |= FeedbackFields.Rumble;
+            WriteUInt16(buffer, Layout.RumbleLowOffset, rumble.LowFrequency);
+            WriteUInt16(buffer, Layout.RumbleHighOffset, rumble.HighFrequency);
         }
 
         if (feedback.Light is { } light)
         {
-            flags |= 2;
-            buffer[FrameDefinition.LightRedOffset] = light.Red;
-            buffer[FrameDefinition.LightGreenOffset] = light.Green;
-            buffer[FrameDefinition.LightBlueOffset] = light.Blue;
+            fields |= FeedbackFields.Light;
+            buffer[Layout.LightRedOffset] = light.Red;
+            buffer[Layout.LightGreenOffset] = light.Green;
+            buffer[Layout.LightBlueOffset] = light.Blue;
         }
 
         if (feedback.AdaptiveTriggers is { } adaptive)
         {
-            flags |= 4;
-            buffer[FrameDefinition.AdaptiveLeftOffset] = adaptive.LeftMode;
-            buffer[FrameDefinition.AdaptiveRightOffset] = adaptive.RightMode;
+            fields |= FeedbackFields.AdaptiveTriggers;
+            buffer[Layout.AdaptiveLeftOffset] = adaptive.LeftMode;
+            buffer[Layout.AdaptiveRightOffset] = adaptive.RightMode;
         }
 
-        buffer[FrameDefinition.FeedbackFlagsOffset] = flags;
+        buffer[Layout.FeedbackFlagsOffset] = (byte)fields;
     }
 
     private static ControllerFeedback ReadFeedbackPayload(ReadOnlySpan<byte> buffer)
     {
-        byte flags = buffer[FrameDefinition.FeedbackFlagsOffset];
+        FeedbackFields fields = (FeedbackFields)buffer[Layout.FeedbackFlagsOffset];
 
-        ControllerRumble? rumble = (flags & 1) == 0
+        ControllerRumble? rumble = (fields & FeedbackFields.Rumble) == 0
             ? null
             : new ControllerRumble(
-                ReadUInt16(buffer, FrameDefinition.RumbleLowOffset),
-                ReadUInt16(buffer, FrameDefinition.RumbleHighOffset));
+                ReadUInt16(buffer, Layout.RumbleLowOffset),
+                ReadUInt16(buffer, Layout.RumbleHighOffset));
 
-        ControllerLight? light = (flags & 2) == 0
+        ControllerLight? light = (fields & FeedbackFields.Light) == 0
             ? null
             : new ControllerLight(
-                buffer[FrameDefinition.LightRedOffset],
-                buffer[FrameDefinition.LightGreenOffset],
-                buffer[FrameDefinition.LightBlueOffset]);
+                buffer[Layout.LightRedOffset],
+                buffer[Layout.LightGreenOffset],
+                buffer[Layout.LightBlueOffset]);
 
-        ControllerAdaptiveTriggers? adaptive = (flags & 4) == 0
+        ControllerAdaptiveTriggers? adaptive = (fields & FeedbackFields.AdaptiveTriggers) == 0
             ? null
             : new ControllerAdaptiveTriggers(
-                buffer[FrameDefinition.AdaptiveLeftOffset],
-                buffer[FrameDefinition.AdaptiveRightOffset]);
+                buffer[Layout.AdaptiveLeftOffset],
+                buffer[Layout.AdaptiveRightOffset]);
 
         return new ControllerFeedback(rumble, light, adaptive);
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Controller.Routing;
 
 namespace SteamInputBridge.Tests;
 
@@ -172,6 +173,74 @@ public sealed class ControllerBrokerTests
 
         Assert.HasCount(1, factory.Outputs);
         Assert.AreEqual(0, factory.SingleOutput.SendCount);
+    }
+
+    /// <summary>Only the active client may drive shared controller slots.</summary>
+    [TestMethod]
+    public void ActiveClientSwitchSendsCurrentStatesAndIgnoresInactiveInput()
+    {
+        Guid firstClient = Guid.NewGuid();
+        Guid secondClient = Guid.NewGuid();
+        ControllerId firstController = new("steam:first", "First");
+        ControllerId secondController = new("steam:second", "Second");
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(firstClient, ControllerOutput.Xbox360);
+        broker.RegisterClient(secondClient, ControllerOutput.Xbox360);
+        broker.SetActiveClient(firstClient);
+        broker.UpdateClientController(
+            firstClient,
+            0,
+            firstController,
+            new ControllerState(Standard(ControllerButtons.South), null, null),
+            ControllerFeatures.StandardControls);
+        broker.UpdateClientController(
+            firstClient,
+            1,
+            secondController,
+            new ControllerState(Standard(ControllerButtons.East), null, null),
+            ControllerFeatures.StandardControls);
+
+        FakeControllerOutput firstOutput = FindOutput(factory, firstController);
+        FakeControllerOutput secondOutput = FindOutput(factory, secondController);
+        Assert.AreEqual(ControllerButtons.South, firstOutput.LastState.Standard?.Buttons);
+        Assert.AreEqual(ControllerButtons.East, secondOutput.LastState.Standard?.Buttons);
+
+        broker.UpdateClientController(
+            secondClient,
+            0,
+            firstController,
+            new ControllerState(Standard(ControllerButtons.North), null, null),
+            ControllerFeatures.StandardControls);
+        broker.UpdateClientController(
+            secondClient,
+            1,
+            secondController,
+            new ControllerState(Standard(ControllerButtons.West), null, null),
+            ControllerFeatures.StandardControls);
+
+        Assert.AreEqual(ControllerButtons.South, firstOutput.LastState.Standard?.Buttons);
+        Assert.AreEqual(ControllerButtons.East, secondOutput.LastState.Standard?.Buttons);
+
+        broker.SetActiveClient(secondClient);
+
+        Assert.AreEqual(ControllerButtons.North, firstOutput.LastState.Standard?.Buttons);
+        Assert.AreEqual(ControllerButtons.West, secondOutput.LastState.Standard?.Buttons);
+
+        broker.UpdateClientController(
+            firstClient,
+            0,
+            firstController,
+            new ControllerState(Standard(ControllerButtons.Back), null, null),
+            ControllerFeatures.StandardControls);
+
+        Assert.AreEqual(ControllerButtons.North, firstOutput.LastState.Standard?.Buttons);
+
+        broker.SetActiveClient(null);
+
+        Assert.IsNull(firstOutput.LastState.Standard);
+        Assert.IsNull(secondOutput.LastState.Standard);
     }
 
     /// <summary>Client endpoint removal disconnects outputs with no remaining attached controller.</summary>
@@ -441,6 +510,12 @@ public sealed class ControllerBrokerTests
             ControllerFeatures.StandardControls);
 
         Assert.AreEqual("Steam Controller", factory.SingleOutput.ControllerId.DisplayName);
+    }
+
+    private static FakeControllerOutput FindOutput(FakeControllerOutputFactory factory, ControllerId controllerId)
+    {
+        return factory.Outputs.Find(output => output.ControllerId == controllerId) ??
+            throw new InvalidOperationException($"Expected output for {controllerId}.");
     }
 
     private static ControllerStandardState Standard(ControllerButtons buttons)

@@ -19,15 +19,15 @@ public sealed class ViiperXbox360Output : IControllerOutput, IDisposable
     internal const ushort OwnedProductId = 0x028E;
     internal const string OwnedProductName = "PID_028E";
 
-    private static readonly ViiperOutputDeviceDefinition DeviceDefinition = new(
+    private static readonly ViiperDeviceDefinition DeviceDefinition = new(
         "xbox360",
         OwnedVendorId,
         OwnedProductId,
-        "Virtual Controller");
+        ViiperDeviceDefinition.FormatOwnedDisplayName("Virtual Controller"));
 
-    private readonly ViiperOutputDevice _device;
+    private readonly ViiperCreatedDevice _device;
 
-    private ViiperXbox360Output(ViiperOutputDevice device)
+    private ViiperXbox360Output(ViiperCreatedDevice device)
     {
         _device = device;
     }
@@ -81,11 +81,12 @@ public sealed class ViiperXbox360Output : IControllerOutput, IDisposable
         ControllerId controllerId,
         CancellationToken cancellationToken = default)
     {
-        string? label = string.IsNullOrWhiteSpace(controllerId.DisplayName)
-            ? DeviceDefinition.DisplayName
-            : $"Steam Input Bridge - {controllerId.DisplayName}";
+        string label = ViiperDeviceDefinition.FormatOwnedDisplayName(
+            string.IsNullOrWhiteSpace(controllerId.DisplayName)
+                ? "Virtual Controller"
+                : controllerId.DisplayName);
 
-        return ViiperOutputConnector.ConnectAsync(
+        return ViiperDeviceLifecycle.ConnectAsync(
             options,
             DeviceDefinition with { DisplayName = label },
             device => new ViiperXbox360Output(device),
@@ -96,7 +97,7 @@ public sealed class ViiperXbox360Output : IControllerOutput, IDisposable
         ViiperOptions options,
         CancellationToken cancellationToken = default)
     {
-        return ViiperOutputConnector.ReclaimDevicesAsync(options, DeviceDefinition, cancellationToken);
+        return ViiperDeviceLifecycle.ReclaimDevicesAsync(options, DeviceDefinition, cancellationToken);
     }
 
     internal static ViiperXbox360Input MapReport(Xbox360Report report)

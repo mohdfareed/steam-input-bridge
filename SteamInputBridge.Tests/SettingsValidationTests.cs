@@ -93,6 +93,34 @@ public sealed class SettingsValidationTests
         }
     }
 
+    /// <summary>Checks that explicit None profile outputs mean no output.</summary>
+    [TestMethod]
+    public void NoneProfileOutputsResolveToNone()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithNoneOutputs());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
+            GameProfile profile = settings.Current.Games["none"];
+            ResolvedGameProfile resolved = ProfileResolver.Resolve("none", profile);
+
+            Assert.AreEqual(ControllerOutput.None, profile.ControllerOutput);
+            Assert.AreEqual(MouseOutput.None, profile.MouseOutput);
+            Assert.AreEqual(ControllerOutput.None, resolved.ControllerOutput);
+            Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     /// <summary>Checks that disabled HidHide settings do not require the CLI path.</summary>
     [TestMethod]
     public void DisabledHidHideDoesNotRequireCliPath()
@@ -182,7 +210,11 @@ public sealed class SettingsValidationTests
 
             ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
 
-            Assert.HasCount(2, settings.Current.Shortcuts);
+            Assert.HasCount(1, settings.Current.Shortcuts);
+            Assert.IsNull(settings.Current.Shortcuts[0].Name);
+            CollectionAssert.AreEqual(
+                new[] { ShortcutTarget.Motion, ShortcutTarget.Pointer },
+                settings.Current.Shortcuts[0].Targets.ToArray());
         }
         finally
         {
@@ -206,7 +238,7 @@ public sealed class SettingsValidationTests
             InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
                 services.GetRequiredService<ApplicationSettingsService>);
 
-            StringAssert.Contains(exception.Message, "shortcuts:1:target", StringComparison.Ordinal);
+            StringAssert.Contains(exception.Message, "shortcuts:1:targets", StringComparison.Ordinal);
         }
         finally
         {
@@ -277,6 +309,23 @@ public sealed class SettingsValidationTests
         """;
     }
 
+    private static string SettingsWithNoneOutputs()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "Games": {
+              "none": {
+                "Executable": "C:\\Games\\None\\game.exe",
+                "ControllerOutput": "None",
+                "MouseOutput": "None"
+              }
+            }
+          }
+        }
+        """;
+    }
+
     private static string SettingsWithDisabledHidHide()
     {
         return """
@@ -339,15 +388,11 @@ public sealed class SettingsValidationTests
           "SteamInputBridge": {
             "Shortcuts": [
               {
-                "Name": "motion-on",
                 "Keys": "Ctrl+Alt+F15",
-                "Target": "Motion",
-                "Value": "Enabled"
-              },
-              {
-                "Name": "pointer-on",
-                "Keys": "Ctrl+Alt+F15",
-                "Target": "Pointer",
+                "Targets": [
+                  "Motion",
+                  "Pointer"
+                ],
                 "Value": "Enabled"
               }
             ],
@@ -370,13 +415,17 @@ public sealed class SettingsValidationTests
               {
                 "Name": "motion-on",
                 "Keys": "Ctrl+Alt+F15",
-                "Target": "Motion",
+                "Targets": [
+                  "Motion"
+                ],
                 "Value": "Enabled"
               },
               {
                 "Name": "motion-on-again",
                 "Keys": "Ctrl+Alt+F15",
-                "Target": "Motion",
+                "Targets": [
+                  "Motion"
+                ],
                 "Value": "Enabled"
               }
             ],

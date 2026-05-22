@@ -4,7 +4,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
-using SteamInputBridge.Hosting.Server;
+using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Runtime;
 using StreamJsonRpc;
 

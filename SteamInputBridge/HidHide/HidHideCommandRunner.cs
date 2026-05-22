@@ -6,14 +6,14 @@ using System.IO;
 namespace SteamInputBridge.HidHide;
 
 /// <summary>Runs HidHide commands.</summary>
-public interface IHidHideCommandRunner
+internal interface IHidHideCommandRunner
 {
     /// <summary>Runs a HidHide command and returns stdout.</summary>
     string Run(IReadOnlyList<string> args);
 }
 
 /// <summary>HidHideCLI.exe command runner.</summary>
-public sealed class HidHideCliRunner(string cliPath) : IHidHideCommandRunner
+internal sealed class HidHideCliRunner(string cliPath) : IHidHideCommandRunner
 {
     /// <inheritdoc />
     public string Run(IReadOnlyList<string> args)

@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Controller.Routing;
+using SteamInputBridge.Hosting.Server.Orchestration;
 
 namespace SteamInputBridge.Hosting.Server.Pipes;
 

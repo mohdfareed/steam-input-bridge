@@ -5,7 +5,7 @@ using System.Linq;
 namespace SteamInputBridge.HidHide;
 
 /// <summary>Devices hidden from applications while a profile is active.</summary>
-public sealed record HidHideScope(
+internal sealed record HidHideScope(
     IReadOnlyList<string> DeviceInstancePaths,
     IReadOnlyList<string> ApplicationPaths)
 {

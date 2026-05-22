@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -86,3 +87,38 @@ public interface IMouseOutput : IAsyncDisposable
     /// <summary>Sends one mouse report.</summary>
     ValueTask SendAsync(MouseReport report, CancellationToken cancellationToken = default);
 }
+
+// MARK: Output Models
+// ============================================================================
+
+/// <summary>Mouse output shape.</summary>
+public enum MouseOutput
+{
+    /// <summary>No mouse output.</summary>
+    None,
+
+    /// <summary>VIIPER virtual mouse output.</summary>
+    Viiper,
+
+    /// <summary>Teensy hardware mouse output.</summary>
+    Teensy,
+}
+
+/// <summary>Creates game-facing mouse outputs.</summary>
+public interface IMouseOutputFactory
+{
+    /// <summary>Connects a mouse output.</summary>
+    IMouseOutput Connect(MouseOutput output);
+}
+
+/// <summary>Current mouse forwarding status.</summary>
+public sealed record MouseBrokerStatus(
+    Guid? ActiveClientId,
+    bool MouseOutputEnabled,
+    bool PointerOutputEnabled,
+    bool OutputConnected,
+    MouseOutput Output,
+    IReadOnlyList<MouseClientStatus> Clients);
+
+/// <summary>Mouse output requested by one connected client.</summary>
+public sealed record MouseClientStatus(Guid ClientId, MouseOutput Output);

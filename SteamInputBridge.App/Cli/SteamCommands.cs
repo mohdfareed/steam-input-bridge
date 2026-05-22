@@ -7,11 +7,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SteamInputBridge.Hosting.Client;
-using SteamInputBridge.Hosting.Server;
-using SteamInputBridge.Settings;
-using SteamInputBridge.Settings.Profiles;
+using SteamInputBridge.Hosting.Client.Connection;
+using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Steam;
+using AppHostSetup = SteamInputBridge.App.AppSetup;
 
 namespace SteamInputBridge.App.Cli;
 
@@ -49,7 +48,7 @@ internal static class SteamCommands
 
         command.SetAction(async (parseResult, _) =>
         {
-            using IHost app = AppSetup.Create();
+            using IHost app = AppHostSetup.CreateCli();
 
             IReadOnlyList<SteamGame> games = SteamInputClient.ListGames(
                 parseResult.GetValue(steamPath),
@@ -117,7 +116,7 @@ internal static class SteamCommands
 
         command.SetAction(async (_, cancellationToken) =>
         {
-            using IHost app = AppSetup.Create();
+            using IHost app = AppHostSetup.CreateCli();
             ClientService client = app.Services.GetRequiredService<ClientService>();
             await using (client.ConfigureAwait(false))
             {
@@ -149,21 +148,14 @@ internal static class SteamCommands
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            using IHost app = AppSetup.Create();
-            ProfilesService profiles = app.Services.GetRequiredService<ProfilesService>();
-            ApplicationSettingsService settings =
-                app.Services.GetRequiredService<ApplicationSettingsService>();
-            SettingsFile settingsFile = app.Services.GetRequiredService<SettingsFile>();
+            using IHost app = AppHostSetup.CreateCli();
+            SrmExportResult result = SrmExport.Export(app.Services, parseResult.GetValue(path));
+            if (!result.Exported)
+            {
+                throw new InvalidOperationException(result.Error ?? "Could not export SRM manifest.");
+            }
 
-            string manifestPath = ResolveManifestPath(
-                parseResult.GetValue(path) ?? settings.Current.Steam.SrmExportPath,
-                settingsFile.Path);
-            string shortcutExecutable = Path.Combine(System.AppContext.BaseDirectory, "SteamInputBridge.exe");
-
-            string manifestContent = SteamRomManagerExport.CreateJson(profiles, shortcutExecutable);
-            WriteFile(manifestPath, manifestContent);
-
-            await Console.Out.WriteLineAsync($"manifest={manifestPath} profiles={profiles.ListProfileIds().Count}")
+            await Console.Out.WriteLineAsync($"manifest={result.ManifestPath} profiles={result.ProfileCount}")
                 .ConfigureAwait(false);
         });
 
@@ -233,28 +225,6 @@ internal static class SteamCommands
         }
 
         return appId == SteamInputClient.DesktopConfigAppId ? "Desktop" : "unknown";
-    }
-
-    private static string ResolveManifestPath(string? path, string settingsPath)
-    {
-        string filePath = Environment.ExpandEnvironmentVariables(
-            string.IsNullOrWhiteSpace(path) ? "srm-manifest.json" : path);
-        return Path.IsPathFullyQualified(filePath)
-            ? filePath
-            : Path.Combine(Path.GetDirectoryName(settingsPath) ?? System.AppContext.BaseDirectory, filePath);
-    }
-
-    public static void WriteFile(string manifestPath, string content)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
-        string? directory = Path.GetDirectoryName(manifestPath);
-
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            _ = Directory.CreateDirectory(directory);
-        }
-
-        File.WriteAllText(manifestPath, content);
     }
 
     private static async Task PrintGamesAsync(IReadOnlyList<SteamGame> games)

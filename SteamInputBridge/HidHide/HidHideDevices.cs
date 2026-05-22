@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace SteamInputBridge.HidHide;
 
 /// <summary>HidHide device reported by HidHideCLI.</summary>
-public sealed record HidHideDevice(
+internal sealed record HidHideDevice(
     bool Present,
     bool GamingDevice,
     string FriendlyName,
@@ -17,7 +17,7 @@ public sealed record HidHideDevice(
     string DeviceInstancePath);
 
 /// <summary>Lists HidHide devices and matches them to transport paths.</summary>
-public sealed class HidHideDeviceCatalog(IHidHideCommandRunner runner)
+internal sealed class HidHideDeviceCatalog(IHidHideCommandRunner runner)
 {
     /// <summary>Lists HidHide devices.</summary>
     public IReadOnlyList<HidHideDevice> ListDevices()

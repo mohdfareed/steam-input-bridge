@@ -5,37 +5,6 @@ using System.Threading.Tasks;
 
 namespace SteamInputBridge.Forwarding.Mouse;
 
-// MARK: Models
-// ============================================================================
-
-/// <summary>Mouse output shape.</summary>
-public enum MouseOutput
-{
-    /// <summary>No mouse output.</summary>
-    None,
-
-    /// <summary>VIIPER virtual mouse output.</summary>
-    Viiper,
-
-    /// <summary>Teensy hardware mouse output.</summary>
-    Teensy,
-}
-
-/// <summary>Creates game-facing mouse outputs.</summary>
-public interface IMouseOutputFactory
-{
-    /// <summary>Connects a mouse output.</summary>
-    IMouseOutput Connect(MouseOutput output);
-}
-
-/// <summary>Current mouse forwarding status.</summary>
-public sealed record MouseBrokerStatus(
-    Guid? ActiveClientId,
-    bool MouseOutputEnabled,
-    bool PointerOutputEnabled,
-    bool OutputConnected,
-    MouseOutput Output);
-
 /// <summary>Routes mouse input through the active-client output gate.</summary>
 public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable, IAsyncDisposable
 {
@@ -181,7 +150,8 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
                 _mouseOutputEnabled,
                 _pointerOutputEnabled,
                 _output is not null,
-                _outputKind);
+                _outputKind,
+                GetClientStatuses());
         }
     }
 
@@ -283,6 +253,20 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         }
 
         return false;
+    }
+
+    private List<MouseClientStatus> GetClientStatuses()
+    {
+        List<MouseClientStatus> clients = [];
+        foreach (KeyValuePair<Guid, MouseOutput> client in _clients)
+        {
+            if (client.Value != MouseOutput.None)
+            {
+                clients.Add(new MouseClientStatus(client.Key, client.Value));
+            }
+        }
+
+        return clients;
     }
 
     private bool HasActiveOutput()

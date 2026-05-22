@@ -10,10 +10,13 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SteamInputBridge.Forwarding;
 using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Hosting;
-using SteamInputBridge.Hosting.Client;
-using SteamInputBridge.Hosting.Server;
+using SteamInputBridge.Hosting.Client.Connection;
+using SteamInputBridge.Hosting.Server.Orchestration;
+using SteamInputBridge.Hosting.Server.Orchestration.Active;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 using SteamInputBridge.Hosting.Server.Pipes;
 using SteamInputBridge.Runtime;
 using SteamInputBridge.Settings;
@@ -34,6 +37,7 @@ public sealed class HostingForwardingTests
         string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
         _ = Directory.CreateDirectory(directory);
         string settingsPath = Path.Combine(directory, "appsettings.json");
+        string pipeName = NewPipeName();
         await File.WriteAllTextAsync(settingsPath, SettingsJson()).ConfigureAwait(false);
 
         try
@@ -56,11 +60,12 @@ public sealed class HostingForwardingTests
                 services.GetRequiredService<ProfilesService>(),
                 runtime,
                 activeClients,
-                broker);
+                broker,
+                pipeName: pipeName);
 
             using CancellationTokenSource serverStop = new();
             Task serverTask = server.RunAsync(serverStop.Token);
-            await using ClientService client = new(NullLoggerFactory.Instance);
+            await using ClientService client = new(NullLoggerFactory.Instance, pipeName);
 
             try
             {
@@ -105,8 +110,21 @@ public sealed class HostingForwardingTests
                 await WaitUntilAsync(() => factory.Outputs.Count == 1 &&
                     factory.Outputs[0].LastState.Standard?.Buttons == ControllerButtons.South)
                     .ConfigureAwait(false);
+                FakeControllerOutput output = factory.Outputs[0];
 
-                factory.Outputs[0].EmitFeedback(new ControllerFeedback(new ControllerRumble(10, 20)));
+                await client.RegisterClientControllersAsync(
+                        [new ClientControllerInfo(
+                            0,
+                            "physical-1",
+                            "Physical 1",
+                            ControllerFeatures.StandardControls | ControllerFeatures.Rumble)],
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                Assert.HasCount(1, factory.Outputs);
+                Assert.IsFalse(output.Disposed);
+
+                output.EmitFeedback(new ControllerFeedback(new ControllerRumble(10, 20)));
                 ControllerPipeMessage feedback = await new ControllerPipeReader(controllerPipe)
                     .ReadAsync(CancellationToken.None)
                     .AsTask()
@@ -226,6 +244,11 @@ public sealed class HostingForwardingTests
         }
     }
 
+    private static string NewPipeName()
+    {
+        return $"SteamInputBridge.Tests.{Guid.NewGuid():N}";
+    }
+
     private static async Task IgnoreCancellationAsync(Task task)
     {
         try
@@ -258,6 +281,8 @@ public sealed class HostingForwardingTests
 
         public ControllerState LastState { get; private set; }
 
+        public bool Disposed { get; private set; }
+
         public void Send(in ControllerState state)
         {
             LastState = state;
@@ -276,6 +301,7 @@ public sealed class HostingForwardingTests
 
         public ValueTask DisposeAsync()
         {
+            Disposed = true;
             return ValueTask.CompletedTask;
         }
     }
