@@ -48,8 +48,6 @@ internal static class SteamCommands
 
         command.SetAction(async (parseResult, _) =>
         {
-            using IHost app = AppHostSetup.CreateCli();
-
             IReadOnlyList<SteamGame> games = SteamInputClient.ListGames(
                 parseResult.GetValue(steamPath),
                 parseResult.GetValue(userId));
@@ -162,7 +160,7 @@ internal static class SteamCommands
         return command;
     }
 
-    // MARK: Commands
+    // MARK: Helpers
     // ========================================================================
 
     private static Argument<string> CreateAppIdArgument(string name, bool allowDesktop)

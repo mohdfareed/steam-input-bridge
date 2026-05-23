@@ -135,6 +135,9 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
             List<ClientControllerRouteSource> removed = [];
             foreach (ClientControllerRouteSource source in _sources)
             {
+                // Steam can briefly report an empty or partial controller list
+                // during virtual-device rebuilds. A missing id is not enough
+                // to unregister a route; explicit SDL removal handles that.
                 if (!currentControllers.TryGetValue(source.Source.Controller.Id, out SdlControllerInfo? current) ||
                     SdlControllerRoutePolicy.IsSameConnectedController(source.Source.Controller, current))
                 {

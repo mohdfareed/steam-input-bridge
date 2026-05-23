@@ -23,7 +23,7 @@ internal static partial class HostingLog
     [LoggerMessage(EventId = 34, Level = LogLevel.Warning, Message = "HidHide update failed for client {ClientId}: {Message}")]
     public static partial void HidHideUpdateFailed(ILogger logger, Guid? clientId, string message);
 
-    [LoggerMessage(EventId = 39, Level = LogLevel.Information, Message = "Registered this process for HidHide device access.")]
+    [LoggerMessage(EventId = 39, Level = LogLevel.Information, Message = "Ensured this process has HidHide device access.")]
     public static partial void HidHideApplicationAccessRegistered(ILogger logger);
 
     [LoggerMessage(EventId = 40, Level = LogLevel.Warning, Message = "HidHide application access registration failed: {Message}")]

@@ -36,7 +36,7 @@ internal sealed partial class AppMenu
             CreateBoolStatus("Inverse mode", hidHide.InverseEnabled),
             NativeMenuItem.Separator,
             CreateValueMenu("Hidden physical devices", GetHidHideDeviceDisplayValues(hidHide)),
-            CreateValueMenu(GetHidHideApplicationTitle(hidHide), GetApplicationNames(hidHide.RegisteredApplications)),
+            CreateValueMenu("Allowed applications", GetApplicationNames(hidHide.RegisteredApplications)),
         ];
 
         if (!string.IsNullOrWhiteSpace(hidHide.LastError))
@@ -327,11 +327,6 @@ internal sealed partial class AppMenu
         }
 
         return devices;
-    }
-
-    private static string GetHidHideApplicationTitle(ServerHidHideStatus hidHide)
-    {
-        return hidHide.Active && hidHide.InverseEnabled ? "Receiver apps" : "Application list";
     }
 
     private static List<string> GetApplicationNames(IReadOnlyList<string> paths)

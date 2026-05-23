@@ -21,7 +21,7 @@ internal sealed class ServerActiveClientLoop(
     SteamInputClient? steam = null,
     ProfilesService? profiles = null,
     HidHideService? hidHide = null,
-    Func<ActiveClientRegistryStatus, Guid, IReadOnlyList<string>>? getHidHideDevices = null,
+    Func<Guid, IReadOnlyList<string>>? getHidHideDevices = null,
     Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
     ControllerBroker? forwarding = null,
     MouseBroker? mouseForwarding = null,
@@ -48,7 +48,7 @@ internal sealed class ServerActiveClientLoop(
         ILogger logger,
         ProfilesService? profiles = null,
         HidHideService? hidHide = null,
-        Func<ActiveClientRegistryStatus, Guid, IReadOnlyList<string>>? getHidHideDevices = null,
+        Func<Guid, IReadOnlyList<string>>? getHidHideDevices = null,
         Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
         ControllerBroker? forwarding = null,
         MouseBroker? mouseForwarding = null)

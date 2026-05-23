@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using SteamInputBridge.HidHide;
 using SteamInputBridge.Hosting.Server.Pipes;
-using SteamInputBridge.Runtime;
 
 namespace SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
@@ -10,9 +9,8 @@ internal sealed class ServerHidHideDeviceResolver(
     HidHideDeviceCatalog? devices,
     ControllerPipeSessions controllerPipes)
 {
-    public IReadOnlyList<string> GetDevicePaths(ActiveClientRegistryStatus status, Guid clientId)
+    public IReadOnlyList<string> GetDevicePaths(Guid clientId)
     {
-        _ = status;
         if (devices is null)
         {
             return [];

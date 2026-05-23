@@ -6,7 +6,6 @@ internal sealed partial class ServerSessions
 {
     internal Task<ServerStatus> GetStatusAsync()
     {
-        routeStateChanged?.Invoke();
         return Task.FromResult(new ServerStatus(_clients.Count)
         {
             Runtime = runtime.GetStatus(),

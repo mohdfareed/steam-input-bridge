@@ -24,21 +24,18 @@ internal sealed class HidHideService(
     {
         lock (_gate)
         {
-            if (_getCurrentProcessPath() is { Length: > 0 } processPath)
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (_getCurrentProcessPath() is not { Length: > 0 } processPath)
             {
-                AllowApplicationCore(processPath);
+                return;
             }
-        }
-    }
 
-    /// <summary>Registers an executable with HidHide's allowed application list.</summary>
-    public void AllowApplication(string path)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-
-        lock (_gate)
-        {
-            AllowApplicationCore(path);
+            string applications = runner.Run(["--app-list"]);
+            if (!HidHideCommandOutput.ContainsValue(applications, "--app-reg", processPath))
+            {
+                _ = runner.Run(["--app-reg", processPath]);
+            }
         }
     }
 
@@ -67,7 +64,7 @@ internal sealed class HidHideService(
     {
         lock (_gate)
         {
-            ThrowIfDisposed();
+            ObjectDisposedException.ThrowIf(_disposed, this);
 
             string hiddenDevices = runner.Run(["--dev-list"]);
             string registeredApps = runner.Run(["--app-list"]);
@@ -78,8 +75,8 @@ internal sealed class HidHideService(
                 _scope is not null,
                 HidHideSnapshot.IsOn(cloakState),
                 HidHideSnapshot.IsOn(inverseState),
-                HidHideSnapshot.ReadCommandValues(hiddenDevices, "--dev-hide"),
-                HidHideSnapshot.ReadCommandValues(registeredApps, "--app-reg"));
+                HidHideCommandOutput.ReadValues(hiddenDevices, "--dev-hide"),
+                HidHideCommandOutput.ReadValues(registeredApps, "--app-reg"));
         }
     }
 
@@ -98,20 +95,9 @@ internal sealed class HidHideService(
         }
     }
 
-    private void AllowApplicationCore(string path)
-    {
-        string applications = runner.Run(["--app-list"]);
-        if (ContainsLineValue(applications, path))
-        {
-            return;
-        }
-
-        _ = runner.Run(["--app-reg", path]);
-    }
-
     private void ApplyCore(HidHideScope scope)
     {
-        ThrowIfDisposed();
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (scope.IsEmpty)
         {
@@ -131,11 +117,13 @@ internal sealed class HidHideService(
         try
         {
             // Normal mode uses HidHide's application list as the allow list.
-            // For this experiment, only this executable sees scoped hidden devices.
+            // Server startup keeps this executable allowed; scope changes only
+            // hide devices and temporarily remove other applications from that
+            // global allow list.
             List<string> args = [];
             foreach (string app in snapshot.ExistingRegisteredApplications)
             {
-                if (!string.Equals(app, currentProcessPath, StringComparison.OrdinalIgnoreCase))
+                if (!snapshot.PermanentAllowedApplications.Contains(app))
                 {
                     args.Add("--app-unreg");
                     args.Add(app);
@@ -150,13 +138,10 @@ internal sealed class HidHideService(
                 args.Add(device);
             }
 
-            args.Add("--app-reg");
-            args.Add(currentProcessPath);
-
             _ = runner.Run(args);
             _snapshot = snapshot;
             _scope = scope;
-            HidHideLog.Applied(logger, scope.DeviceInstancePaths.Count, scope.ApplicationPaths.Count);
+            HidHideLog.Applied(logger, scope.DeviceInstancePaths.Count);
         }
         catch
         {
@@ -167,7 +152,7 @@ internal sealed class HidHideService(
 
     private void ClearCore()
     {
-        ThrowIfDisposed();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (_snapshot is null)
         {
             return;
@@ -178,27 +163,6 @@ internal sealed class HidHideService(
         _snapshot = null;
         _scope = null;
     }
-
-    private void ThrowIfDisposed()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-    }
-
-    private static bool ContainsLineValue(string output, string value)
-    {
-        foreach (string line in output.Split(
-            ['\r', '\n'],
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (line.Contains(value, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
 }
 
 /// <summary>Current HidHide state.</summary>
@@ -220,30 +184,28 @@ internal sealed record HidHideSnapshot(
     string CloakState,
     string InverseState,
     IReadOnlyDictionary<string, bool> HiddenDevices,
-    IReadOnlyDictionary<string, bool> ScopedApplications,
+    IReadOnlySet<string> PermanentAllowedApplications,
     IReadOnlyList<string> ExistingRegisteredApplications)
 {
     internal static HidHideSnapshot Capture(
         IHidHideCommandRunner runner,
         HidHideScope scope,
-        IReadOnlyList<string> scopedApplications)
+        IReadOnlyList<string> permanentAllowedApplications)
     {
         string hiddenDevices = runner.Run(["--dev-list"]);
         string registeredApps = runner.Run(["--app-list"]);
-        IReadOnlyList<string> registeredApplicationPaths = ReadCommandValues(registeredApps, "--app-reg");
+        IReadOnlyList<string> existingRegisteredApplications =
+            HidHideCommandOutput.ReadValues(registeredApps, "--app-reg");
 
         return new HidHideSnapshot(
             runner.Run(["--cloak-state"]),
             runner.Run(["--inv-state"]),
             scope.DeviceInstancePaths.ToDictionary(
                 static device => device,
-                device => ContainsLineValue(hiddenDevices, device),
+                device => HidHideCommandOutput.ContainsValue(hiddenDevices, "--dev-hide", device),
                 StringComparer.OrdinalIgnoreCase),
-            scopedApplications.ToDictionary(
-                static app => app,
-                app => registeredApplicationPaths.Contains(app, StringComparer.OrdinalIgnoreCase),
-                StringComparer.OrdinalIgnoreCase),
-            registeredApplicationPaths);
+            permanentAllowedApplications.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            existingRegisteredApplications);
     }
 
     internal void Restore(IHidHideCommandRunner runner)
@@ -251,17 +213,11 @@ internal sealed record HidHideSnapshot(
         List<string> args = [];
         foreach (string app in ExistingRegisteredApplications)
         {
-            if (!ScopedApplications.ContainsKey(app))
+            if (!PermanentAllowedApplications.Contains(app))
             {
                 args.Add("--app-reg");
                 args.Add(app);
             }
-        }
-
-        foreach ((string app, bool registered) in ScopedApplications)
-        {
-            args.Add(registered ? "--app-reg" : "--app-unreg");
-            args.Add(app);
         }
 
         foreach ((string device, bool hidden) in HiddenDevices)
@@ -275,19 +231,22 @@ internal sealed record HidHideSnapshot(
         _ = runner.Run(args);
     }
 
-    private static bool ContainsLineValue(string output, string value)
-    {
-        return output.Contains(value, StringComparison.OrdinalIgnoreCase);
-    }
-
     internal static bool IsOn(string value)
     {
         return value.Contains("yes", StringComparison.OrdinalIgnoreCase) ||
             value.Contains("true", StringComparison.OrdinalIgnoreCase) ||
             value.Contains("on", StringComparison.OrdinalIgnoreCase);
     }
+}
 
-    internal static IReadOnlyList<string> ReadCommandValues(string output, string command)
+internal static class HidHideCommandOutput
+{
+    internal static bool ContainsValue(string output, string command, string value)
+    {
+        return ReadValues(output, command).Contains(value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    internal static IReadOnlyList<string> ReadValues(string output, string command)
     {
         List<string> values = [];
         foreach (string line in output.Split(
@@ -306,11 +265,11 @@ internal sealed record HidHideSnapshot(
 
 internal static partial class HidHideLog
 {
-    private static readonly Action<ILogger, int, int, Exception?> AppliedMessage =
-        LoggerMessage.Define<int, int>(
+    private static readonly Action<ILogger, int, Exception?> AppliedMessage =
+        LoggerMessage.Define<int>(
             LogLevel.Information,
             new EventId(1, nameof(Applied)),
-            "Applied HidHide scope: devices={DeviceCount} applications={ApplicationCount}");
+            "Applied HidHide scope: devices={DeviceCount}");
 
     private static readonly Action<ILogger, Exception?> RestoredMessage =
         LoggerMessage.Define(
@@ -318,11 +277,11 @@ internal static partial class HidHideLog
             new EventId(2, nameof(Restored)),
             "Restored HidHide state.");
 
-    internal static void Applied(ILogger? logger, int deviceCount, int applicationCount)
+    internal static void Applied(ILogger? logger, int deviceCount)
     {
         if (logger is not null)
         {
-            AppliedMessage(logger, deviceCount, applicationCount, null);
+            AppliedMessage(logger, deviceCount, null);
         }
     }
 

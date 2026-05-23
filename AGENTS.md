@@ -142,6 +142,12 @@ Do not set `LangVersion=latest`.
 - Keep active-client state and receiver-process claims in
   `ActiveClientRegistry`; server loops own side effects such as forwarding gates
   and Steam forcing.
+- Keep status/query methods side-effect free. Do not mutate forwarding,
+  HidHide, Steam Input, route state, or device lifecycles from diagnostics or
+  status reads; refresh that state from explicit lifecycle changes instead.
+- When asked for a cleanup pass, do not narrow the work to the current diff
+  unless the user explicitly scopes it that way. Read and reason through the
+  relevant project files by responsibility before editing.
 
 ## Inputs
 
@@ -219,8 +225,16 @@ Do not set `LangVersion=latest`.
 - App settings currently enable HidHide. When it is disabled, the server must
   not mutate HidHide state, hidden devices, or application lists.
 - Current HidHide experimentation uses normal mode, not inverse mode: scoped
-  physical devices are hidden globally, and the app list is reduced to this
-  executable while the scope is active.
+  physical devices are hidden globally, and this executable is kept on
+  HidHide's app list.
+- Register this executable with HidHide once at server startup. Do not add and
+  remove it on every scope change.
+- Normal-mode HidHide scopes are device-based. Do not require receiver
+  executable paths to apply a scope; some games do not expose process paths to
+  this app.
+- Do not add Steam to the temporary HidHide app list just because profiles run
+  through Steam. Manual testing showed Steam Input still feeds the client while
+  only this executable is listed.
 - Restore previous HidHide cloak/inverse state, hidden devices, and app-list
   entries when clearing a scope. Treat the app list as user-owned global state.
 - Profiles should select output behavior, not store HidHide device paths.
@@ -268,6 +282,8 @@ Do not set `LangVersion=latest`.
 
 - Add tests for new behavior as it is added.
 - Use tests while developing, not only at the end.
+- Do not run multiple `dotnet build` or `dotnet test` commands in parallel for
+  the same configuration; they share `bin/obj` outputs and can lock each other.
 - Keep tests focused on behavior and mapping, not internal structure.
 - Keep all tests in `SteamInputBridge.Tests/SteamInputBridge.Tests.csproj`.
 - Keep tests in three tiers:
@@ -300,6 +316,8 @@ Do not set `LangVersion=latest`.
 - Do not leave near-empty migration artifact files.
 - Do not add private helpers that only wrap a constructor, null check, simple
   property access, or one obvious call.
+- Use comments for non-obvious behavior, external quirks, ownership rules, and
+  routing constraints instead of hiding intent behind tiny helper methods.
 - Do not place source files under dot-prefixed folders in SDK-style projects.
 
 ## Section Markers

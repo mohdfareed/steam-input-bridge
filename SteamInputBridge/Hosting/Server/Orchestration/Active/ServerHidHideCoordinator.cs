@@ -15,7 +15,7 @@ internal sealed class ServerHidHideCoordinator(
     ILogger? logger,
     ProfilesService? profiles,
     HidHideService? hidHide,
-    Func<ActiveClientRegistryStatus, Guid, IReadOnlyList<string>>? getDevices,
+    Func<Guid, IReadOnlyList<string>>? getDevices,
     Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatDevices,
     ControllerBroker? forwarding)
 {
@@ -76,7 +76,7 @@ internal sealed class ServerHidHideCoordinator(
 
     private bool TryCreateScope(out HidHideScope scope)
     {
-        scope = HidHideScope.Create([], []);
+        scope = HidHideScope.Create([]);
         if (profiles is null || forwarding?.GetStatus().ControllerOutputEnabled == false)
         {
             return false;
@@ -84,26 +84,27 @@ internal sealed class ServerHidHideCoordinator(
 
         ActiveClientRegistryStatus status = clients.GetStatus();
         HashSet<string> devices = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> applications = new(StringComparer.OrdinalIgnoreCase);
         foreach (ClientStatus client in status.Clients)
         {
-            if (!UsesControllerOutput(client))
+            GameProfile? profile = profiles.GetProfile(client.ProfileId);
+            bool needsControllerOutput =
+                profile?.ControllerOutput.GetValueOrDefault(ProfileControllerOutput.None) != ProfileControllerOutput.None;
+
+            // HidHide normal mode does not need receiver executable paths.
+            // A client with an owned receiver means its profile is live; the
+            // scope itself is only the physical devices backing that run.
+            if (!needsControllerOutput || client.OwnedProcesses.Count == 0)
             {
                 continue;
             }
 
-            foreach (string device in getDevices?.Invoke(status, client.ClientId) ?? [])
+            foreach (string device in getDevices?.Invoke(client.ClientId) ?? [])
             {
                 _ = devices.Add(device);
             }
-
-            foreach (string application in GetExecutablePaths(client.OwnedProcesses))
-            {
-                _ = applications.Add(application);
-            }
         }
 
-        scope = HidHideScope.Create(devices, applications);
+        scope = HidHideScope.Create(devices);
         return !scope.IsEmpty;
     }
 
@@ -117,12 +118,17 @@ internal sealed class ServerHidHideCoordinator(
         try
         {
             HidHideFirewallStatus status = hidHide.GetStatus();
+            IReadOnlyList<string> deviceLabels =
+                formatDevices is null || status.HiddenDevices.Count == 0
+                    ? []
+                    : formatDevices(status.HiddenDevices);
+
             return new ServerHidHideStatus(
                 status.ScopeActive,
                 status.CloakEnabled,
                 status.InverseEnabled,
                 status.HiddenDevices,
-                GetDeviceLabels(status.HiddenDevices),
+                deviceLabels,
                 status.RegisteredApplications,
                 clientId,
                 error);
@@ -144,32 +150,5 @@ internal sealed class ServerHidHideCoordinator(
         {
             _status = status;
         }
-    }
-
-    private bool UsesControllerOutput(ClientStatus client)
-    {
-        GameProfile? profile = profiles?.GetProfile(client.ProfileId);
-        return profile?.ControllerOutput.GetValueOrDefault(ProfileControllerOutput.None) != ProfileControllerOutput.None;
-    }
-
-    private IReadOnlyList<string> GetDeviceLabels(IReadOnlyList<string> devicePaths)
-    {
-        return formatDevices is null || devicePaths.Count == 0
-            ? []
-            : formatDevices(devicePaths);
-    }
-
-    private static List<string> GetExecutablePaths(IReadOnlyList<ObservedGameProcess> processes)
-    {
-        List<string> paths = [];
-        foreach (ObservedGameProcess process in processes)
-        {
-            if (GameProcessHost.GetExecutablePath(process.ProcessId) is { Length: > 0 } path)
-            {
-                paths.Add(path);
-            }
-        }
-
-        return paths;
     }
 }

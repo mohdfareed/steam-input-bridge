@@ -44,6 +44,7 @@ internal sealed partial class ServerSessions(
         forwarding.RemoveClient(clientId);
         mouseForwarding.RemoveClient(clientId);
         await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
+        routeStateChanged?.Invoke();
 
         HostingLog.ClientDisconnected(logger, clientId, _clients.Count);
     }
@@ -54,6 +55,7 @@ internal sealed partial class ServerSessions(
         forwarding.RemoveClient(clientId);
         mouseForwarding.RemoveClient(clientId);
         await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
+        routeStateChanged?.Invoke();
     }
 
     internal async Task StopClientAsync(Guid clientId)

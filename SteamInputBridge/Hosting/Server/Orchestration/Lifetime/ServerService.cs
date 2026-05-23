@@ -17,7 +17,6 @@ using SteamInputBridge.Settings.Profiles;
 
 namespace SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
-// The app-facing server owns server lifetime and accepts client pipes.
 /// <summary>Long-lived local server for client connections.</summary>
 public sealed class ServerService : IAsyncDisposable
 {
@@ -37,6 +36,7 @@ public sealed class ServerService : IAsyncDisposable
     private readonly MouseInputPump _mouseInput;
     private readonly PhysicalControllerPump _physicalControllers;
     private readonly ServerHidHideDeviceResolver _hidHideDevices;
+    private readonly HidHideService? _hidHide;
     private readonly ServerShortcutService? _shortcuts;
     private readonly Func<CancellationToken, Task> _startupCleanup;
 
@@ -77,11 +77,11 @@ public sealed class ServerService : IAsyncDisposable
             : pipeName;
         _startupCleanup = startupCleanup ?? (static _ => Task.CompletedTask);
         _shortcuts = shortcuts;
+        _hidHide = hidHide;
         _controllerBroker = forwarding ?? new ControllerBroker(new NoopControllerOutputFactory());
         _mouseBroker = mouseForwarding ?? new MouseBroker(new NoopMouseOutputFactory());
         _physicalControllers = new PhysicalControllerPump(_controllerBroker, logger);
         _controllerPipes = new ControllerPipeSessions(_controllerBroker, logger, _physicalControllers);
-        _physicalControllers.ControllersChanged += _controllerPipes.RefreshControllerRoutes;
         _hidHideDevices = new ServerHidHideDeviceResolver(
             hidHideDevices,
             _controllerPipes);
@@ -109,6 +109,8 @@ public sealed class ServerService : IAsyncDisposable
             () => _activeClients.GetSteamInputStatus(),
             () => _activeClients.GetHidHideStatus(),
             () => _activeClients.RefreshHidHide());
+
+        _physicalControllers.ControllersChanged += OnPhysicalControllersChanged;
     }
 
     internal IReadOnlyCollection<ConnectedClient> Clients => _sessions.Clients;
@@ -133,6 +135,7 @@ public sealed class ServerService : IAsyncDisposable
         }
 
         await RunStartupCleanupAsync(cancellationToken).ConfigureAwait(false);
+        RegisterHidHideApplicationAccess();
 
         using CancellationTokenSource orchestrationStop =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -179,6 +182,7 @@ public sealed class ServerService : IAsyncDisposable
         {
             await orchestrationStop.CancelAsync().ConfigureAwait(false);
             await IgnoreCancellationAsync(orchestrationTask).ConfigureAwait(false);
+            _physicalControllers.ControllersChanged -= OnPhysicalControllersChanged;
             await _mouseInput.DisposeAsync().ConfigureAwait(false);
             await _physicalControllers.DisposeAsync().ConfigureAwait(false);
             _shortcuts?.Dispose();
@@ -203,6 +207,7 @@ public sealed class ServerService : IAsyncDisposable
     /// <summary>Stops server-owned pumps.</summary>
     public async ValueTask DisposeAsync()
     {
+        _physicalControllers.ControllersChanged -= OnPhysicalControllersChanged;
         await _mouseInput.DisposeAsync().ConfigureAwait(false);
         await _physicalControllers.DisposeAsync().ConfigureAwait(false);
         _shortcuts?.Dispose();
@@ -221,9 +226,45 @@ public sealed class ServerService : IAsyncDisposable
         await _mouseBroker.DisposeAsync().ConfigureAwait(false);
     }
 
+    private void OnPhysicalControllersChanged()
+    {
+        _controllerPipes.RefreshControllerRoutes();
+        _activeClients.RefreshHidHide();
+    }
+
     private void TrackConnection(ServerConnectionHandle connection)
     {
         _connections.Track(connection);
+    }
+
+    private void RegisterHidHideApplicationAccess()
+    {
+        if (_hidHide is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // HidHide normal mode uses one global app allow list. Keep this
+            // process on that list for the server lifetime; scopes should only
+            // hide devices and temporarily remove other apps.
+            //
+            // Steam-launched profile testing showed Steam Input still feeds the
+            // client with only this executable allowed, so do not add Steam
+            // here unless a concrete failing route proves it is needed.
+            _hidHide.AllowCurrentProcess();
+            HostingLog.HidHideApplicationAccessRegistered(_logger);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+                ArgumentException or
+                System.ComponentModel.Win32Exception or
+                IOException or
+                UnauthorizedAccessException)
+        {
+            HostingLog.HidHideApplicationAccessFailed(_logger, exception.Message);
+        }
     }
 
     private ServerInstanceLease? TryAcquireInstanceLease()

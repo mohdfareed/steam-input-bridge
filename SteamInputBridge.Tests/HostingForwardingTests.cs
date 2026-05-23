@@ -228,6 +228,31 @@ public sealed class HostingForwardingTests
         }
     }
 
+    /// <summary>Status reads are diagnostics only and do not refresh route state.</summary>
+    [TestMethod]
+    public async Task ServerStatusReadDoesNotRefreshRouteState()
+    {
+        int routeChanges = 0;
+        ActiveClientRegistry runtime = new();
+        using ControllerBroker broker = new(new FakeControllerOutputFactory());
+        using MouseBroker mouse = new(new FakeMouseOutputFactory());
+        await using ControllerPipeSessions pipes = new(broker, NullLogger.Instance);
+        ServerSessions sessions = new(
+            NullLogger.Instance,
+            profiles: null,
+            runtime,
+            broker,
+            mouse,
+            pipes,
+            routeStateChanged: () => routeChanges++);
+
+        _ = sessions.ConnectClient(Environment.ProcessId);
+
+        _ = await sessions.GetStatusAsync().ConfigureAwait(false);
+
+        Assert.AreEqual(0, routeChanges);
+    }
+
     private static ServiceProvider CreateServices(string settingsPath)
     {
         IConfigurationRoot configuration = new ConfigurationBuilder()

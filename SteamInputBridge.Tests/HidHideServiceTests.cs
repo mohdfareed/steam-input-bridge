@@ -14,8 +14,8 @@ public sealed class HidHideServiceTests
         "--app-list",
         "--cloak-state",
         "--inv-state",
-        "--inv-off --cloak-on --dev-hide dev-1 --app-reg SteamInputBridge.exe",
-        "--app-unreg SteamInputBridge.exe --dev-unhide dev-1 --cloak-off --inv-off",
+        "--inv-off --cloak-on --dev-hide dev-1",
+        "--dev-unhide dev-1 --cloak-off --inv-off",
     ];
 
     private static readonly string[] AppListCommand = ["--app-list"];
@@ -28,12 +28,12 @@ public sealed class HidHideServiceTests
     {
         FakeRunner runner = new(
             devList: "",
-            appList: "",
+            appList: "SteamInputBridge.exe",
             cloakState: "off",
             inverseState: "off");
         using HidHideService firewall = CreateFirewall(runner);
 
-        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
+        firewall.Apply(HidHideScope.Create(["dev-1"]));
         firewall.Clear();
 
         CollectionAssert.AreEqual(ApplyThenClearCommands, runner.Commands);
@@ -45,38 +45,56 @@ public sealed class HidHideServiceTests
     {
         FakeRunner runner = new(
             devList: "dev-1",
-            appList: "app-1",
+            appList: "app-1\r\nSteamInputBridge.exe",
             cloakState: "on",
             inverseState: "on");
         using HidHideService firewall = CreateFirewall(runner);
 
-        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
+        firewall.Apply(HidHideScope.Create(["dev-1"]));
         firewall.Clear();
 
         Assert.AreEqual(
-            "--app-reg app-1 --app-unreg SteamInputBridge.exe --dev-hide dev-1 --cloak-on --inv-on",
+            "--app-reg app-1 --dev-hide dev-1 --cloak-on --inv-on",
             runner.Commands[^1]);
     }
 
     /// <summary>Normal scopes temporarily remove unrelated app-list entries.</summary>
     [TestMethod]
-    public void ApplyRegistersOnlyCurrentApplication()
+    public void ApplyTemporarilyRemovesOtherApplications()
     {
         FakeRunner runner = new(
             devList: "",
-            appList: "tool.exe\r\napp-1",
+            appList: "tool.exe\r\napp-1\r\nSteamInputBridge.exe",
             cloakState: "off",
             inverseState: "off");
         using HidHideService firewall = CreateFirewall(runner);
 
-        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
+        firewall.Apply(HidHideScope.Create(["dev-1"]));
         Assert.AreEqual(
-            "--app-unreg tool.exe --app-unreg app-1 --inv-off --cloak-on --dev-hide dev-1 --app-reg SteamInputBridge.exe",
+            "--app-unreg tool.exe --app-unreg app-1 --inv-off --cloak-on --dev-hide dev-1",
             runner.Commands[^1]);
 
         firewall.Clear();
         Assert.AreEqual(
-            "--app-reg tool.exe --app-reg app-1 --app-unreg SteamInputBridge.exe --dev-unhide dev-1 --cloak-off --inv-off",
+            "--app-reg tool.exe --app-reg app-1 --dev-unhide dev-1 --cloak-off --inv-off",
+            runner.Commands[^1]);
+    }
+
+    /// <summary>Normal-mode scopes do not require receiver executable paths.</summary>
+    [TestMethod]
+    public void ApplyRequiresOnlyDevicePaths()
+    {
+        FakeRunner runner = new(
+            devList: "",
+            appList: "SteamInputBridge.exe",
+            cloakState: "off",
+            inverseState: "off");
+        using HidHideService firewall = CreateFirewall(runner);
+
+        firewall.Apply(HidHideScope.Create(["dev-1"]));
+
+        Assert.AreEqual(
+            "--inv-off --cloak-on --dev-hide dev-1",
             runner.Commands[^1]);
     }
 
@@ -108,12 +126,12 @@ public sealed class HidHideServiceTests
     {
         FakeRunner runner = new(
             devList: "dev-1",
-            appList: "app-1",
+            appList: "SteamInputBridge.exe",
             cloakState: "--cloak-on",
             inverseState: "--inv-off");
         using HidHideService firewall = CreateFirewall(runner);
 
-        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
+        firewall.Apply(HidHideScope.Create(["dev-1"]));
         HidHideFirewallStatus status = firewall.GetStatus();
 
         Assert.IsTrue(status.ScopeActive);
@@ -126,21 +144,21 @@ public sealed class HidHideServiceTests
     {
         FakeRunner runner = new(
             devList: "",
-            appList: "",
+            appList: "SteamInputBridge.exe",
             cloakState: "off",
             inverseState: "off");
         using HidHideService firewall = CreateFirewall(runner);
 
-        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
-        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
+        firewall.Apply(HidHideScope.Create(["dev-1"]));
+        firewall.Apply(HidHideScope.Create(["dev-1"]));
 
-        Assert.AreEqual("--inv-off --cloak-on --dev-hide dev-1 --app-reg SteamInputBridge.exe", runner.Commands[^1]);
+        Assert.AreEqual("--inv-off --cloak-on --dev-hide dev-1", runner.Commands[^1]);
         Assert.HasCount(5, runner.Commands);
     }
 
     /// <summary>Registers this application only when it is not already allowed.</summary>
     [TestMethod]
-    public void ApplicationAccessRegistersMissingApp()
+    public void CurrentApplicationAccessRegistersMissingApp()
     {
         FakeRunner runner = new(
             devList: "",
@@ -149,14 +167,14 @@ public sealed class HidHideServiceTests
             inverseState: "off");
         using HidHideService access = CreateFirewall(runner);
 
-        access.AllowApplication("SteamInputBridge.exe");
+        access.AllowCurrentProcess();
 
         Assert.AreEqual("--app-reg SteamInputBridge.exe", runner.Commands[^1]);
     }
 
     /// <summary>Leaves existing application registration alone.</summary>
     [TestMethod]
-    public void ApplicationAccessSkipsRegisteredApp()
+    public void CurrentApplicationAccessSkipsRegisteredApp()
     {
         FakeRunner runner = new(
             devList: "",
@@ -165,9 +183,25 @@ public sealed class HidHideServiceTests
             inverseState: "off");
         using HidHideService access = CreateFirewall(runner);
 
-        access.AllowApplication("SteamInputBridge.exe");
+        access.AllowCurrentProcess();
 
         CollectionAssert.AreEqual(AppListCommand, runner.Commands);
+    }
+
+    /// <summary>Application access checks exact HidHide entries, not substrings.</summary>
+    [TestMethod]
+    public void CurrentApplicationAccessDoesNotMatchSubstring()
+    {
+        FakeRunner runner = new(
+            devList: "",
+            appList: "OtherSteamInputBridge.exe",
+            cloakState: "off",
+            inverseState: "off");
+        using HidHideService access = CreateFirewall(runner);
+
+        access.AllowCurrentProcess();
+
+        Assert.AreEqual("--app-reg SteamInputBridge.exe", runner.Commands[^1]);
     }
 
     /// <summary>Matches a transport path to HidHide's device instance path.</summary>

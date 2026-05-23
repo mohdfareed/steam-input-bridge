@@ -39,6 +39,7 @@ internal sealed partial class ServerSessions
         string controllerPipeName = resolved.ControllerOutput == ProfileControllerOutput.None
             ? string.Empty
             : controllerPipes.Start(clientId);
+        routeStateChanged?.Invoke();
 
         return Task.FromResult(new ClientRunLaunch(
             resolved.Id,
