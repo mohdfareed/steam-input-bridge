@@ -47,7 +47,8 @@ public sealed record SdlControllerInfo(
     ushort ProductId,
     string? Path,
     bool HasGyro,
-    bool HasAccelerometer)
+    bool HasAccelerometer,
+    bool HasTouchpad = false)
 {
     /// <summary>Gets whether SDL reports any motion sensor.</summary>
     public bool HasMotion => HasGyro || HasAccelerometer;
@@ -189,7 +190,8 @@ public static class SdlControllerCatalog
             SDL.GetGamepadProduct(gamepad),
             SDL.GetGamepadPath(gamepad) ?? SDL.GetGamepadPathForID(instanceId),
             SDL.GamepadHasSensor(gamepad, SDL.SensorType.Gyro),
-            SDL.GamepadHasSensor(gamepad, SDL.SensorType.Accel));
+            SDL.GamepadHasSensor(gamepad, SDL.SensorType.Accel),
+            SDL.GetNumGamepadTouchpads(gamepad) > 0);
 
         return controller with { Id = SdlControllerId.Create(controller) };
     }

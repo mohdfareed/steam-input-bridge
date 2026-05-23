@@ -2,17 +2,24 @@
 
 Steam Input orchestration and local input forwarding.
 
-## Scripts
+## Requirements
 
+- Steam, for Steam Input profiles and shortcut launches.
+- VIIPER server/runtime, for virtual controller and mouse output.
+- HidHide, for hiding physical controller duplicates when enabled.
+- Steam ROM Manager, only if using SRM shortcut export feature.
+
+## Development
 - `.\Scripts\Build-Solution.ps1` - build and format solution
 - `.\Scripts\Test-Solution.ps1` - run normal tests
 - `.\Scripts\Deploy-App.ps1` - package and deploy the apps
 - `.\Scripts\CLI.ps1` - run CLI commands (see below)
 
-## Runtime Timing
+### Requirements
 
-Current runtime defaults favor responsive game/controller changes without polling
-hot paths:
+- .NET 10 SDK, for building and running from source.
+
+## Runtime Timing
 
 - Foreground active-client checks: `100ms`
 - Receiver process checks: `100ms`
@@ -27,11 +34,10 @@ hot paths:
 - [ ] Fix un-deterministic identification of Steam Input controllers.
   - Steam Input shuffles controller IDs whenever a controller is disconnected or reconnected.
   - This causes unstable mapping to physical controllers.
-- [ ] Support multiple Valve controllers.
-  - Implement proper Steam Input controller identification.
+  - Restarting the server resolves the issue.
+- [ ] Support multiple controllers of the same model.
   - Current implementation only support a single physical instance per controller model.
-  - All Steam Input clients use VID/PID-based identification to pair with physical controllers.
-  - Since all controllers of the same model share the same VID/PID, only one instance per model will be paired with all clients.
+  - This is due to the identification method revolving around the vendor and product IDs.
 - [ ] Teensy output and firmware.
 - [ ] Packaging and deployment with install script and self-update (auto?).
 - [ ] Update README.md and add usage examples and documentation.

@@ -13,6 +13,7 @@ internal static class SdlGamepadStateReader
         nint gamepad,
         bool hasGyro,
         bool hasAccelerometer,
+        bool hasTouchpad,
         ReadOnlySpan<float> gyro,
         ReadOnlySpan<float> accelerometer)
     {
@@ -36,7 +37,7 @@ internal static class SdlGamepadStateReader
                 hasAccelerometer ? accelerometer[1] : 0,
                 hasAccelerometer ? accelerometer[2] : 0);
 
-        return new ControllerState(standard, motion, null);
+        return new ControllerState(standard, motion, hasTouchpad ? ReadTouchpad(gamepad) : null);
     }
 
     // MARK: Privates
@@ -61,8 +62,40 @@ internal static class SdlGamepadStateReader
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.DPadDown, ControllerButtons.DPadDown);
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.DPadLeft, ControllerButtons.DPadLeft);
         buttons = Apply(buttons, gamepad, SDL.GamepadButton.DPadRight, ControllerButtons.DPadRight);
+        buttons = Apply(buttons, gamepad, SDL.GamepadButton.Touchpad, ControllerButtons.TouchpadClick);
 
         return buttons;
+    }
+
+    private static ControllerTouchpadState? ReadTouchpad(nint gamepad)
+    {
+        if (SDL.GetNumGamepadTouchpads(gamepad) <= 0)
+        {
+            return null;
+        }
+
+        ControllerTouchContact touch1 = ReadTouchContact(gamepad, finger: 0);
+        ControllerTouchContact touch2 = SDL.GetNumGamepadTouchpadFingers(gamepad, touchpad: 0) > 1
+            ? ReadTouchContact(gamepad, finger: 1)
+            : default;
+
+        return !touch1.IsTouched && !touch2.IsTouched
+            ? null
+            : new ControllerTouchpadState(touch1, touch2);
+    }
+
+    private static ControllerTouchContact ReadTouchContact(nint gamepad, int finger)
+    {
+        return SDL.GetGamepadTouchpadFinger(
+            gamepad,
+            touchpad: 0,
+            finger: finger,
+            out bool down,
+            out float x,
+            out float y,
+            out float pressure)
+            ? new ControllerTouchContact(down, x, y, pressure)
+            : default;
     }
 
     private static ushort ToTrigger(short value)

@@ -187,6 +187,32 @@ public sealed class SdlControllerRoutePolicyTests
         CollectionAssert.AreEqual(new[] { steam }, selected.ToArray());
     }
 
+    /// <summary>Duplicate SDL ids keep the route with touchpad feature data.</summary>
+    [TestMethod]
+    public void ClientSelectionPrefersTouchpadFeature()
+    {
+        SdlControllerInfo basic = Controller(
+            SdlControllerSource.Steam,
+            0x054c,
+            0x05c4,
+            "basic",
+            id: "steam:0001fa99604010e6",
+            steamHandle: 0x0001fa99604010e6);
+        SdlControllerInfo touchpad = Controller(
+            SdlControllerSource.Steam,
+            0x054c,
+            0x05c4,
+            "touchpad",
+            id: "steam:0001fa99604010e6",
+            steamHandle: 0x0001fa99604010e6,
+            hasTouchpad: true);
+
+        IReadOnlyList<SdlControllerInfo> selected =
+            ClientControllerRoutePlanner.SelectClientControllers([basic, touchpad]);
+
+        CollectionAssert.AreEqual(new[] { touchpad }, selected.ToArray());
+    }
+
     /// <summary>A unique Steam virtual XInput fallback is kept when it is the only route.</summary>
     [TestMethod]
     public void ClientSelectionKeepsUniqueSteamVirtualXInputFallback()
@@ -278,7 +304,8 @@ public sealed class SdlControllerRoutePolicyTests
         string path,
         string name = "Controller",
         string? id = null,
-        ulong? steamHandle = null)
+        ulong? steamHandle = null,
+        bool hasTouchpad = false)
     {
         return new SdlControllerInfo(
             new SdlControllerId(id ?? path),
@@ -290,6 +317,7 @@ public sealed class SdlControllerRoutePolicyTests
             productId,
             path,
             HasGyro: false,
-            HasAccelerometer: false);
+            HasAccelerometer: false,
+            HasTouchpad: hasTouchpad);
     }
 }

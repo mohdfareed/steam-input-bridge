@@ -44,6 +44,8 @@ public static class ControllerOutputMapping
         Ds4Buttons buttons = hasStandard
             ? ToDs4Buttons(standard.Buttons, leftTrigger, rightTrigger)
             : Ds4Buttons.None;
+        ControllerTouchContact touch1 = touchpad?.Touch1 ?? default;
+        ControllerTouchContact touch2 = touchpad?.Touch2 ?? default;
 
         return new Ds4Report(
             buttons,
@@ -54,12 +56,12 @@ public static class ControllerOutputMapping
             hasStandard ? ToDs4Axis(standard.RightY) : (sbyte)0,
             leftTrigger,
             rightTrigger,
-            touchpad is { IsTouched: true } firstTouch ? ToTouchpadX(firstTouch.X) : (ushort)0,
-            touchpad is { IsTouched: true } firstTouchY ? ToTouchpadY(firstTouchY.Y) : (ushort)0,
-            touchpad is { IsTouched: true },
-            0,
-            0,
-            false,
+            touch1.IsTouched ? ToTouchpadX(touch1.X) : (ushort)0,
+            touch1.IsTouched ? ToTouchpadY(touch1.Y) : (ushort)0,
+            touch1.IsTouched,
+            touch2.IsTouched ? ToTouchpadX(touch2.X) : (ushort)0,
+            touch2.IsTouched ? ToTouchpadY(touch2.Y) : (ushort)0,
+            touch2.IsTouched,
             motion is { HasGyro: true } gyroX ? ToDs4GyroRaw(gyroX.GyroX) : (short)0,
             motion is { HasGyro: true } gyroY ? ToDs4GyroRaw(gyroY.GyroY) : (short)0,
             motion is { HasGyro: true } gyroZ ? ToDs4GyroRaw(gyroZ.GyroZ) : (short)0,
@@ -134,6 +136,7 @@ public static class ControllerOutputMapping
         Map(buttons, ControllerButtons.RightStick, ref output, Ds4Buttons.R3);
         Map(buttons, ControllerButtons.LeftShoulder, ref output, Ds4Buttons.L1);
         Map(buttons, ControllerButtons.RightShoulder, ref output, Ds4Buttons.R1);
+        Map(buttons, ControllerButtons.TouchpadClick, ref output, Ds4Buttons.TouchpadClick);
 
         if (leftTrigger != 0)
         {

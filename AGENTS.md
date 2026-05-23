@@ -17,7 +17,7 @@ Treat this file as living project memory.
 - Keep temporary notes, debugging details, and one-off tasks out of this file.
 - Keep it concise enough to be useful.
 - Track non-obvious external behavior and route-specific tricks in
-  `QUIRKS.md`; this file keeps the durable rule, while `QUIRKS.md` keeps the
+  `NOTES.md`; this file keeps the durable rule, while `NOTES.md` keeps the
   searchable one-look index.
 
 ## Stack
@@ -185,6 +185,9 @@ Do not set `LangVersion=latest`.
 - Keep SDL initialized for the client process lifetime after first controller
   use. Do not call `SDL_QuitSubSystem` on reconnect; Steam Input controller
   visibility may not recover inside the already-launched client process.
+- SDL touchpad input should carry touchpad click plus the first two touch
+  contacts. Keep contact coordinates normalized until mapping into a concrete
+  output report.
 - The host-side physical controller pump maintains physical slots only. It must
   not create a VIIPER output unless a client route with controller output
   attaches to that physical slot.
@@ -217,6 +220,9 @@ Do not set `LangVersion=latest`.
   DS4 raw as degrees/s scaled by 16, and map SDL accel from m/s² to DS4 raw
   scaled by 512. Use DS4 flat accelerometer default `Z=-5023` when no
   accelerometer is available.
+- VIIPER DS4 output maps touchpad click and the first two normalized touch
+  contacts into DS4 touchpad fields. Pressure is preserved in canonical state
+  and controller pipe frames, but the VIIPER DS4 input report does not use it.
 - Do not filter DS4 VIIPER loopback by `054C:05C4` alone because that is also
   a real DS4 identity. Require an app-owned name/path signal when treating a
   DS4-shaped SDL controller as VIIPER-owned.

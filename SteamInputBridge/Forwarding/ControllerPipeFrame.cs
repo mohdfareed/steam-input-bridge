@@ -10,7 +10,7 @@ namespace SteamInputBridge.Forwarding;
 
 internal static class ControllerPipeFrame
 {
-    public const int Size = 67;
+    public const int Size = 83;
 
     private const byte Present = 1;
 
@@ -43,19 +43,23 @@ internal static class ControllerPipeFrame
         public const int AccelXOffset = 34;
         public const int AccelYOffset = 38;
         public const int AccelZOffset = 42;
-        public const int HasTouchpadOffset = 46;
+        public const int TouchpadFlagsOffset = 46;
         public const int TouchXOffset = 47;
         public const int TouchYOffset = 51;
-        public const int RumbleLowOffset = 55;
-        public const int RumbleHighOffset = 57;
-        public const int LightRedOffset = 59;
-        public const int LightGreenOffset = 60;
-        public const int LightBlueOffset = 61;
-        public const int AdaptiveLeftOffset = 62;
-        public const int AdaptiveRightOffset = 63;
-        public const int FeedbackFlagsOffset = 64;
-        public const int LightFlashOnOffset = 65;
-        public const int LightFlashOffOffset = 66;
+        public const int TouchPressureOffset = 55;
+        public const int Touch2XOffset = 59;
+        public const int Touch2YOffset = 63;
+        public const int Touch2PressureOffset = 67;
+        public const int RumbleLowOffset = 71;
+        public const int RumbleHighOffset = 73;
+        public const int LightRedOffset = 75;
+        public const int LightGreenOffset = 76;
+        public const int LightBlueOffset = 77;
+        public const int AdaptiveLeftOffset = 78;
+        public const int AdaptiveRightOffset = 79;
+        public const int FeedbackFlagsOffset = 80;
+        public const int LightFlashOnOffset = 81;
+        public const int LightFlashOffOffset = 82;
     }
 
     // MARK: Frames
@@ -131,9 +135,14 @@ internal static class ControllerPipeFrame
 
         if (state.Touchpad is { } touchpad)
         {
-            buffer[Layout.HasTouchpadOffset] = touchpad.IsTouched ? Present : (byte)0;
-            WriteSingle(buffer, Layout.TouchXOffset, touchpad.X);
-            WriteSingle(buffer, Layout.TouchYOffset, touchpad.Y);
+            buffer[Layout.TouchpadFlagsOffset] =
+                (byte)((touchpad.Touch1.IsTouched ? 1 : 0) | (touchpad.Touch2.IsTouched ? 2 : 0));
+            WriteSingle(buffer, Layout.TouchXOffset, touchpad.Touch1.X);
+            WriteSingle(buffer, Layout.TouchYOffset, touchpad.Touch1.Y);
+            WriteSingle(buffer, Layout.TouchPressureOffset, touchpad.Touch1.Pressure);
+            WriteSingle(buffer, Layout.Touch2XOffset, touchpad.Touch2.X);
+            WriteSingle(buffer, Layout.Touch2YOffset, touchpad.Touch2.Y);
+            WriteSingle(buffer, Layout.Touch2PressureOffset, touchpad.Touch2.Pressure);
         }
     }
 
@@ -164,12 +173,20 @@ internal static class ControllerPipeFrame
                 ReadSingle(buffer, Layout.AccelYOffset),
                 ReadSingle(buffer, Layout.AccelZOffset));
 
-        ControllerTouchpadState? touchpad = buffer[Layout.HasTouchpadOffset] == 0
+        byte touchpadFlags = buffer[Layout.TouchpadFlagsOffset];
+        ControllerTouchpadState? touchpad = touchpadFlags == 0
             ? null
             : new ControllerTouchpadState(
-                true,
-                ReadSingle(buffer, Layout.TouchXOffset),
-                ReadSingle(buffer, Layout.TouchYOffset));
+                new ControllerTouchContact(
+                    (touchpadFlags & 1) != 0,
+                    ReadSingle(buffer, Layout.TouchXOffset),
+                    ReadSingle(buffer, Layout.TouchYOffset),
+                    ReadSingle(buffer, Layout.TouchPressureOffset)),
+                new ControllerTouchContact(
+                    (touchpadFlags & 2) != 0,
+                    ReadSingle(buffer, Layout.Touch2XOffset),
+                    ReadSingle(buffer, Layout.Touch2YOffset),
+                    ReadSingle(buffer, Layout.Touch2PressureOffset)));
 
         return new ControllerState(standard, motion, touchpad);
     }

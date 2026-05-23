@@ -34,6 +34,7 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
         HasAccelerometer = EnableSensor(gamepad, SDL.SensorType.Accel);
         HasRumble = GetGamepadBooleanProperty(gamepad, SDL.Props.GamepadCapRumbleBoolean);
         HasRgbLed = GetGamepadBooleanProperty(gamepad, SDL.Props.GamepadCapRGBLedBoolean);
+        HasTouchpad = SDL.GetNumGamepadTouchpads(gamepad) > 0;
     }
 
     // MARK: Publics
@@ -57,11 +58,15 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
     /// <summary>Gets whether the connected controller exposes an RGB LED.</summary>
     public bool HasRgbLed { get; }
 
+    /// <summary>Gets whether the connected controller exposes touchpad contacts.</summary>
+    public bool HasTouchpad { get; }
+
     /// <summary>Gets controller feature groups supported by this source.</summary>
     public ControllerFeatures Features =>
         ControllerFeatures.StandardControls |
         (HasRumble ? ControllerFeatures.Rumble : ControllerFeatures.None) |
         (HasRgbLed ? ControllerFeatures.Light : ControllerFeatures.None) |
+        (HasTouchpad ? ControllerFeatures.Touchpad : ControllerFeatures.None) |
         (HasGyro || HasAccelerometer ? ControllerFeatures.Motion : ControllerFeatures.None);
 
     /// <summary>Gets or sets whether motion data is emitted.</summary>
@@ -170,6 +175,14 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
             return true;
         }
 
+        if ((eventType is SDL.EventType.GamepadTouchpadDown or
+            SDL.EventType.GamepadTouchpadMotion or
+            SDL.EventType.GamepadTouchpadUp) &&
+            sdlEvent.GTouchpad.Which == Controller.InstanceId)
+        {
+            return true;
+        }
+
         if (eventType == SDL.EventType.GamepadRemoved &&
             sdlEvent.GDevice.Which == Controller.InstanceId)
         {
@@ -188,6 +201,7 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
             gamepad,
             motionEnabled && HasGyro,
             motionEnabled && HasAccelerometer,
+            HasTouchpad,
             _gyroData,
             _accelerometerData);
     }

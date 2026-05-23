@@ -20,7 +20,9 @@ public sealed class ControllerPipeTests
             new ControllerState(
                 new ControllerStandardState(ControllerButtons.South, 1, 2, 3, 4, 5, 6),
                 new ControllerMotionState(true, 1.5f, 2.5f, 3.5f, true, 4.5f, 5.5f, 6.5f),
-                new ControllerTouchpadState(true, 0.25f, 0.75f)));
+                new ControllerTouchpadState(
+                    new ControllerTouchContact(true, 0.25f, 0.75f, 0.5f),
+                    new ControllerTouchContact(true, 0.5f, 0.25f, 1f))));
 
         await writer.WriteInputAsync(input).ConfigureAwait(false);
         stream.Position = 0;
@@ -31,6 +33,9 @@ public sealed class ControllerPipeTests
         Assert.AreEqual(ControllerButtons.South, message.Input.State.Standard?.Buttons);
         Assert.AreEqual(1.5f, message.Input.State.Motion?.GyroX);
         Assert.AreEqual(0.25f, message.Input.State.Touchpad?.X);
+        Assert.AreEqual(0.5f, message.Input.State.Touchpad?.Pressure);
+        Assert.AreEqual(0.5f, message.Input.State.Touchpad?.Touch2.X);
+        Assert.AreEqual(1f, message.Input.State.Touchpad?.Touch2.Pressure);
     }
 
     /// <summary>Checks feedback frame round trips through the binary stream codec.</summary>

@@ -86,7 +86,8 @@ public sealed class ControllerOutputMappingTests
             ControllerButtons.LeftShoulder |
             ControllerButtons.RightShoulder |
             ControllerButtons.DPadUp |
-            ControllerButtons.DPadRight;
+            ControllerButtons.DPadRight |
+            ControllerButtons.TouchpadClick;
         ControllerState state = new(
             new ControllerStandardState(buttons, short.MaxValue, short.MinValue, 16384, -16384, 32767, 16384),
             new ControllerMotionState(
@@ -98,7 +99,9 @@ public sealed class ControllerOutputMappingTests
                 9.81f,
                 0,
                 -9.81f),
-            null);
+            new ControllerTouchpadState(
+                new ControllerTouchContact(true, 0.25f, 0.75f, 0.5f),
+                new ControllerTouchContact(true, 1f, 0f, 1f)));
 
         Ds4Report report = ControllerOutputMapping.ToDs4Report(in state);
 
@@ -114,6 +117,7 @@ public sealed class ControllerOutputMappingTests
             Ds4Buttons.R3 |
             Ds4Buttons.L1 |
             Ds4Buttons.R1 |
+            Ds4Buttons.TouchpadClick |
             Ds4Buttons.L2 |
             Ds4Buttons.R2;
         Assert.AreEqual(expected, report.Buttons);
@@ -124,6 +128,12 @@ public sealed class ControllerOutputMappingTests
         Assert.AreEqual((sbyte)-64, report.RightY);
         Assert.AreEqual(byte.MaxValue, report.LeftTrigger);
         Assert.AreEqual((byte)127, report.RightTrigger);
+        Assert.AreEqual((ushort)480, report.Touch1X);
+        Assert.AreEqual((ushort)706, report.Touch1Y);
+        Assert.IsTrue(report.Touch1Active);
+        Assert.AreEqual(Ds4Report.TouchpadMaxX, report.Touch2X);
+        Assert.AreEqual((ushort)0, report.Touch2Y);
+        Assert.IsTrue(report.Touch2Active);
         Assert.AreEqual((short)2880, report.GyroX);
         Assert.AreEqual((short)-1440, report.GyroY);
         Assert.AreEqual((short)0, report.GyroZ);

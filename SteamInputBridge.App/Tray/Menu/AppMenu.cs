@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Runtime;
@@ -13,6 +14,8 @@ internal sealed partial class AppMenu(
     string? logPath,
     Action exportSrm,
     Action restart,
+    Action openDesktopSteamInputConfig,
+    Action<uint> openSteamInputConfig,
     Action<Guid> stopClient,
     Action exit)
 {
@@ -32,8 +35,10 @@ internal sealed partial class AppMenu(
 
         items.AddRange(
         [
-            CreateClientsMenu(status, stopClient),
+            CreateClientsMenu(status, openSteamInputConfig, stopClient),
             CreateDiagnosticsMenu(status),
+            NativeMenuItem.Separator,
+            NativeMenuItem.Action("Open desktop Steam Input config", openDesktopSteamInputConfig),
             NativeMenuItem.Separator,
             NativeMenuItem.Action("Open settings", () => OpenFile(settingsPath)),
             CreateOpenLogsItem(),
@@ -63,7 +68,10 @@ internal sealed partial class AppMenu(
             : NativeMenuItem.Action("Open logs", () => OpenLogFile(logPath));
     }
 
-    private static NativeMenuItem CreateClientsMenu(ServerStatus? status, Action<Guid> stopClient)
+    private static NativeMenuItem CreateClientsMenu(
+        ServerStatus? status,
+        Action<uint> openSteamInputConfig,
+        Action<Guid> stopClient)
     {
         if (status is null || status.Runtime.Clients.Count == 0)
         {
@@ -76,19 +84,39 @@ internal sealed partial class AppMenu(
             items.Add(NativeMenuItem.MenuStatus(
                 client.ProfileId,
                 string.Empty,
-                [
-                    NativeMenuItem.Status("State", AppText.Active(client.IsActive), client.IsActive),
-                    NativeMenuItem.Status("PID", client.ClientProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                    NativeMenuItem.Status("Steam App", AppText.AppId(client.SteamAppId)),
-                    NativeMenuItem.Status("Receivers", AppText.Processes(client.ObservedProcesses)),
-                    NativeMenuItem.Status("Blocked", AppText.Processes(client.BlockedProcesses)),
-                    NativeMenuItem.Separator,
-                    NativeMenuItem.Action("Stop client", () => stopClient(client.ClientId)),
-                ],
+                CreateClientItems(client, openSteamInputConfig, stopClient),
                 isChecked: client.IsActive));
         }
 
         return NativeMenuItem.Menu("Clients", items);
+    }
+
+    private static List<NativeMenuItem> CreateClientItems(
+        ClientStatus client,
+        Action<uint> openSteamInputConfig,
+        Action<Guid> stopClient)
+    {
+        List<NativeMenuItem> items =
+        [
+            NativeMenuItem.Status("State", AppText.Active(client.IsActive), client.IsActive),
+            NativeMenuItem.Status("PID", client.ClientProcessId.ToString(CultureInfo.InvariantCulture)),
+            NativeMenuItem.Status("Steam App", AppText.AppId(client.SteamAppId)),
+            NativeMenuItem.Status("Receivers", AppText.Processes(client.ObservedProcesses)),
+            NativeMenuItem.Status("Blocked", AppText.Processes(client.BlockedProcesses)),
+            NativeMenuItem.Separator,
+        ];
+
+        if (client.SteamAppId is uint appId)
+        {
+            items.Add(NativeMenuItem.Action("Open Steam Input config", () => openSteamInputConfig(appId)));
+        }
+        else
+        {
+            items.Add(NativeMenuItem.Disabled("Open Steam Input config (no app id)"));
+        }
+
+        items.Add(NativeMenuItem.Action("Stop client", () => stopClient(client.ClientId)));
+        return items;
     }
 
     private static void OpenFile(string path)

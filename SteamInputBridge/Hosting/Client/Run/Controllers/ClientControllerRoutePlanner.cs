@@ -125,7 +125,7 @@ internal static class ClientControllerRoutePlanner
             preference += 2;
         }
 
-        return controller.HasMotion ? preference + 1 : preference;
+        return controller.HasMotion || controller.HasTouchpad ? preference + 1 : preference;
     }
 
 }

@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SteamInputBridge.App.Tray.Menu;
+using SteamInputBridge.Steam;
 
 namespace SteamInputBridge.App.Tray.Core;
 
@@ -12,6 +13,37 @@ internal sealed partial class AppContext
     private static void ShutdownApp()
     {
         System.Windows.Application.Current.Shutdown();
+    }
+
+    private void OpenDesktopSteamInputConfig()
+    {
+        OpenSteamInputConfig(SteamInputClient.DesktopConfigAppId);
+    }
+
+    private void OpenSteamInputConfig(uint appId)
+    {
+        _ = OpenSteamInputConfigAsync(appId);
+    }
+
+    private async Task OpenSteamInputConfigAsync(uint appId)
+    {
+        try
+        {
+            SteamInputClient steam = new();
+            await steam.OpenControllerConfigAsync(appId, _stop.Token).ConfigureAwait(true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException or OperationCanceledException)
+        {
+            if (!_stop.IsCancellationRequested)
+            {
+                _tray.ShowBalloonTip(
+                    5000,
+                    "Steam Input Bridge",
+                    $"Could not open Steam Input config: {exception.Message}",
+                    ToolTipIcon.Error);
+            }
+        }
     }
 
     private void StopClient(Guid clientId)

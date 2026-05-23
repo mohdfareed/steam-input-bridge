@@ -45,6 +45,8 @@ internal sealed partial class AppContext : IDisposable
             logPath,
             ExportSrmManifest,
             RestartApp,
+            OpenDesktopSteamInputConfig,
+            OpenSteamInputConfig,
             StopClient,
             ShutdownApp);
 

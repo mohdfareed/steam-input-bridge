@@ -187,6 +187,9 @@ public enum ControllerButtons
 
     /// <summary>D-pad right.</summary>
     DPadRight = 1 << 14,
+
+    /// <summary>Touchpad click button.</summary>
+    TouchpadClick = 1 << 15,
 }
 
 /// <summary>Buttons, sticks, and triggers.</summary>
@@ -210,8 +213,36 @@ public readonly record struct ControllerMotionState(
     float AccelY,
     float AccelZ);
 
-/// <summary>Touchpad state placeholder for future PlayStation-style features.</summary>
-public readonly record struct ControllerTouchpadState(bool IsTouched, float X, float Y);
+/// <summary>One normalized touch contact.</summary>
+public readonly record struct ControllerTouchContact(
+    bool IsTouched,
+    float X,
+    float Y,
+    float Pressure = 0);
+
+/// <summary>Touchpad contacts.</summary>
+public readonly record struct ControllerTouchpadState(
+    ControllerTouchContact Touch1,
+    ControllerTouchContact Touch2)
+{
+    /// <summary>Creates a single-contact touchpad state.</summary>
+    public ControllerTouchpadState(bool isTouched, float x, float y, float pressure = 0)
+        : this(new ControllerTouchContact(isTouched, x, y, pressure), default)
+    {
+    }
+
+    /// <summary>Gets whether the first contact is touching.</summary>
+    public bool IsTouched => Touch1.IsTouched;
+
+    /// <summary>First contact X coordinate.</summary>
+    public float X => Touch1.X;
+
+    /// <summary>First contact Y coordinate.</summary>
+    public float Y => Touch1.Y;
+
+    /// <summary>First contact pressure.</summary>
+    public float Pressure => Touch1.Pressure;
+}
 
 /// <summary>One controller input state, with optional feature groups.</summary>
 public readonly record struct ControllerState(
