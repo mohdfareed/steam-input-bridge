@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Hosting.Server.Orchestration;
+using SteamInputBridge.Outputs.Viiper;
 
 namespace SteamInputBridge.Hosting.Server.Pipes;
 
@@ -182,9 +183,29 @@ internal sealed partial class ClientControllerPipe
         List<ClientControllerInfo> resolved = [];
         foreach (ClientControllerInfo controller in controllers)
         {
-            resolved.Add(_physicalControllers?.ResolveClientController(controller) ?? controller);
+            ClientControllerInfo resolvedController =
+                _physicalControllers?.ResolveClientController(controller) ?? controller;
+
+            if (!IsUnresolvedSteamDs4Loopback(resolvedController))
+            {
+                resolved.Add(resolvedController);
+            }
         }
 
         return resolved;
+    }
+
+    private static bool IsUnresolvedSteamDs4Loopback(ClientControllerInfo controller)
+    {
+        // Steam can see our VIIPER DS4 output before filtering hides it, then
+        // expose it back to this client as a Steam-routed generic PS4 stream.
+        // After host-side physical resolution, a real DS4 has a physical
+        // counterpart; this unresolved Sony 054c:05c4 route is recursive
+        // loopback and must not create another VIIPER DS4 output.
+        return controller.PhysicalControllerId.StartsWith("steam:", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(controller.PhysicalDeviceId) &&
+            controller.VendorId == ViiperDs4Output.OwnedVendorId &&
+            controller.ProductId == ViiperDs4Output.OwnedProductId &&
+            string.Equals(controller.Label, "PS4 Controller", StringComparison.OrdinalIgnoreCase);
     }
 }

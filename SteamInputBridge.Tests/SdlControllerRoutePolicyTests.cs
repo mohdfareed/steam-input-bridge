@@ -187,6 +187,60 @@ public sealed class SdlControllerRoutePolicyTests
         CollectionAssert.AreEqual(new[] { steam }, selected.ToArray());
     }
 
+    /// <summary>Duplicate Steam handles prefer the real identity over a generic DS4 echo.</summary>
+    [TestMethod]
+    public void ClientSelectionPrefersNonGenericControllerOverGenericDs4Echo()
+    {
+        SdlControllerInfo echo = Controller(
+            SdlControllerSource.Steam,
+            0x054c,
+            0x05c4,
+            "XInput#0",
+            "PS4 Controller",
+            id: "steam:0001fa99604010e6",
+            steamHandle: 0x0001fa99604010e6);
+        SdlControllerInfo steam = Controller(
+            SdlControllerSource.Steam,
+            0x28de,
+            0x1302,
+            "XInput#1",
+            "Steam Controller",
+            id: "steam:0001fa99604010e6",
+            steamHandle: 0x0001fa99604010e6);
+
+        IReadOnlyList<SdlControllerInfo> selected =
+            ClientControllerRoutePlanner.SelectClientControllers([echo, steam]);
+
+        CollectionAssert.AreEqual(new[] { steam }, selected.ToArray());
+    }
+
+    /// <summary>Later generic Steam DS4 entries can be filtered when the initial baseline had no DS4.</summary>
+    [TestMethod]
+    public void ClientSelectionFiltersNewGenericDs4EchoWhenBaselineHadNone()
+    {
+        SdlControllerInfo steam = Controller(
+            SdlControllerSource.Steam,
+            0x28de,
+            0x1302,
+            "XInput#0",
+            "Steam Controller",
+            id: "steam:0001fa99604010e6",
+            steamHandle: 0x0001fa99604010e6);
+        SdlControllerInfo echo = Controller(
+            SdlControllerSource.Steam,
+            0x054c,
+            0x05c4,
+            "XInput#2",
+            "PS4 Controller",
+            id: "steam:0554c5c41534ef2f",
+            steamHandle: 0x0554c5c41534ef2f);
+
+        IReadOnlyList<SdlControllerInfo> filtered =
+            ClientControllerRoutePlanner.FilterSteamDs4Loopbacks([steam, echo], allowGenericSteamDs4: false);
+
+        CollectionAssert.AreEqual(new[] { steam }, filtered.ToArray());
+    }
+
     /// <summary>Duplicate SDL ids keep the route with touchpad feature data.</summary>
     [TestMethod]
     public void ClientSelectionPrefersTouchpadFeature()

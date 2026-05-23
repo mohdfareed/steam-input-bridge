@@ -226,6 +226,14 @@ Do not set `LangVersion=latest`.
 - Do not filter DS4 VIIPER loopback by `054C:05C4` alone because that is also
   a real DS4 identity. Require an app-owned name/path signal when treating a
   DS4-shaped SDL controller as VIIPER-owned.
+- After host-side physical resolution, drop unresolved Steam-routed
+  `054C:05C4` `PS4 Controller` streams. Steam can echo a VIIPER DS4 output
+  back into the client as a generic PS4 stream; a real DS4 should resolve to a
+  host-visible physical counterpart before it is allowed to create a route.
+- In Steam-launched clients, use the first non-empty controller scan as the
+  generic Steam DS4 baseline. If it had no generic Steam `PS4 Controller`, later
+  generic Steam `054C:05C4` `PS4 Controller` entries are VIIPER DS4 echoes and
+  should not be opened.
 - DS4 feedback through VIIPER supports normal small/large motor rumble plus
   lightbar RGB and flash on/off. Do not treat DS4 as DualSense advanced
   haptics/adaptive trigger support.

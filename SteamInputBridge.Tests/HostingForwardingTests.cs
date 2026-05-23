@@ -190,6 +190,77 @@ public sealed class HostingForwardingTests
         Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", factory.Outputs[1].ControllerId.Value);
     }
 
+    /// <summary>Unresolved Steam-routed PS4 streams are VIIPER DS4 loopback and do not create routes.</summary>
+    [TestMethod]
+    public async Task ControllerPipeDropsUnresolvedSteamDs4Loopback()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        await using ControllerBroker broker = new(factory);
+        await using ClientControllerPipe pipe = new(
+            clientId,
+            "unused",
+            broker,
+            NullLogger.Instance,
+            new FakePhysicalControllerResolver());
+
+        broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
+        IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
+            [new ClientControllerInfo(
+                0,
+                "steam:0654c5c41534ef2f",
+                "PS4 Controller",
+                ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
+                PhysicalDeviceId: null,
+                VendorId: 0x054c,
+                ProductId: 0x05c4)]);
+
+        Assert.IsEmpty(registered);
+        Assert.IsEmpty(broker.GetStatus().Slots);
+        Assert.IsEmpty(factory.Outputs);
+    }
+
+    /// <summary>Resolved physical DS4 routes are kept even though they use the same USB identity as VIIPER DS4.</summary>
+    [TestMethod]
+    public async Task ControllerPipeKeepsResolvedPhysicalDs4()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        FakePhysicalControllerResolver resolver = new()
+        {
+            Resolved = new ClientControllerInfo(
+                0,
+                @"path:\\?\hid#vid_054c&pid_05c4",
+                "Wireless Controller",
+                ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
+                @"path:\\?\hid#vid_054c&pid_05c4",
+                0x054c,
+                0x05c4),
+        };
+        await using ControllerBroker broker = new(factory);
+        await using ClientControllerPipe pipe = new(
+            clientId,
+            "unused",
+            broker,
+            NullLogger.Instance,
+            resolver);
+
+        broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
+        IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
+            [new ClientControllerInfo(
+                0,
+                "steam:0654c5c41534ef2f",
+                "PS4 Controller",
+                ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
+                PhysicalDeviceId: null,
+                VendorId: 0x054c,
+                ProductId: 0x05c4)]);
+
+        Assert.HasCount(1, registered);
+        Assert.HasCount(1, factory.Outputs);
+        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_05c4", factory.Outputs[0].ControllerId.Value);
+    }
+
     /// <summary>Native-controller profiles do not create a controller stream pipe.</summary>
     [TestMethod]
     public async Task NativeControllerProfileSkipsControllerPipe()

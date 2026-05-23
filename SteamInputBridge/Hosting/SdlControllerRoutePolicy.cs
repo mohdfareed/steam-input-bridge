@@ -41,6 +41,20 @@ internal static class SdlControllerRoutePolicy
             controller.Path.StartsWith("XInput#", StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool IsGenericSteamDs4(SdlControllerInfo controller)
+    {
+        // Steam echoes VIIPER DS4 outputs back to launched clients as generic
+        // Steam-routed PS4 controllers. Real original DS4 controllers can look
+        // similar, so callers should only treat this shape as loopback when
+        // they have more context, such as the initial controller baseline.
+        return controller.Source == SdlControllerSource.Steam &&
+            controller.VendorId == ViiperDs4Output.OwnedVendorId &&
+            controller.ProductId == ViiperDs4Output.OwnedProductId &&
+            string.Equals(controller.Name, "PS4 Controller", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(controller.Path) &&
+            controller.Path.StartsWith("XInput#", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string GetPhysicalControllerId(SdlControllerInfo controller)
     {
         ArgumentNullException.ThrowIfNull(controller);
