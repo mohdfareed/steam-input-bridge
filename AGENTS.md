@@ -16,6 +16,9 @@ Treat this file as living project memory.
 - Add only guidance likely to matter again.
 - Keep temporary notes, debugging details, and one-off tasks out of this file.
 - Keep it concise enough to be useful.
+- Track non-obvious external behavior and route-specific tricks in
+  `QUIRKS.md`; this file keeps the durable rule, while `QUIRKS.md` keeps the
+  searchable one-look index.
 
 ## Stack
 
@@ -90,7 +93,8 @@ Do not set `LangVersion=latest`.
 
 - Prefer one local host process for production forwarding.
 - The host owns Raw Input, VIIPER outputs, active-run gating, route-local
-  feedback, profile resolution, foreground selection, and cleanup.
+  feedback, profile resolution, foreground selection, physical controller slot
+  matching, and cleanup.
 - Clients launch or attach one profile run, read client-visible SDL controllers,
   stream controller reports to the host, handle route-local feedback, and
   release their run normally.
@@ -102,9 +106,28 @@ Do not set `LangVersion=latest`.
   an architecture decision that requires confirmation.
 - Host IPC is control-only except for client-to-host controller report pipes.
   Do not forward mouse report traffic over IPC unless explicitly revisited.
+- The default host/server pipe must have exactly one owner. Use async-safe
+  process-wide ownership such as a named semaphore; do not rely on named-pipe
+  exclusivity because Windows named pipes can have multiple server instances.
 - Support multiple client runs. Only the foreground/needed run should drive
   outputs at a time.
+- Active-client registry state should reflect the exact claimed foreground
+  receiver. Do not keep Steam Input forcing active for unclaimed foreground
+  windows.
+- Forwarding gates may use a short grace window after an active client clears to
+  mask transient foreground misses, but that grace must not drive Steam Input
+  forcing.
 - Disconnecting a client releases only that client run and its routes.
+- Reconcile controller route changes per endpoint. Do not remove every
+  controller endpoint for a client just because one controller appears,
+  disappears, or changes identity.
+- Apply client controller route snapshots atomically. Steam may reshuffle
+  handles and client indices during normal input; do not transiently remove
+  routes in a way that disconnects VIIPER outputs before re-adding them.
+- Registered controller endpoints should create or keep their VIIPER output
+  immediately with empty state; foreground activation only gates report data.
+- Prune empty controller slots after endpoint removal so stale disconnected
+  routes do not remain in diagnostics or output state.
 - Separate durable configuration from runtime state. Profiles, controllers,
   games, and global settings are configuration; client runs, controller routes,
   process ids, and created device ids are state.
@@ -139,18 +162,29 @@ Do not set `LangVersion=latest`.
 - Do not treat Steam-routed `XInput#N` paths as physical controller identity.
   Use a strict matched physical counterpart when available; otherwise use the
   Steam controller handle or a client-local route id.
+- Drop SDL `Physical` devices reported as Valve `28de:11ff` with `XInput#N`
+  paths from forwarding. Logs showed these are Steam virtual XInput fallback
+  devices, not stable physical route identities.
+- SDL can report duplicate Steam-routed entries with the same Steam handle, such
+  as `28de:11ff` XInput fallback plus the real Steam Controller. Treat
+  duplicate stable SDL ids as one route and prefer the non-fallback entry.
+- SDL can reuse a Steam handle while changing the reported controller identity
+  during Steam Input rebuilds. Treat an open source as stale when VID/PID or
+  name changes even if the SDL id, Steam handle, instance id, and path match.
 - SDL controller instance ids are runtime/lease-local. Do not list controllers
   under one SDL lease and open those instance ids under another lease; select
   from the fresh list inside `SdlControllerCatalog.OpenControllers`.
 - Keep controller route planning as pure policy code separate from SDL stream
   lifetime, pipe I/O, foreground activation, and VIIPER output ownership.
-- Physical companions are route-local, not a global controller slot registry.
+- Keep SDL initialized for the client process lifetime after first controller
+  use. Do not call `SDL_QuitSubSystem` on reconnect; Steam Input controller
+  visibility may not recover inside the already-launched client process.
+- The host-side physical controller pump maintains physical slots only. It must
+  not create a VIIPER output unless a client route with controller output
+  attaches to that physical slot.
 - Do not treat a Steam-launched client as able to read Steam-hidden physical
   controllers. If missing physical features are needed while Steam hides the
   device, solve that outside the Steam-hidden client path.
-- Do not start server-side physical controller pumping in the default route.
-  Physical companion readers must be explicitly wired by a route that needs
-  missing native features.
 - Each open `SdlGamepadSource` owns its own SDL runtime lease.
 
 ## Outputs
@@ -182,14 +216,18 @@ Do not set `LangVersion=latest`.
 ## HidHide
 
 - Keep HidHide integration in `SteamInputBridge/HidHide`.
-- Keep HidHide disabled by default. When it is disabled, the server must not
-  mutate HidHide state, register itself in the allow list, or read HidHide
-  status.
-- When HidHide is explicitly enabled, register the current server executable
-  with HidHide's allowed applications before applying profile scopes.
+- App settings currently enable HidHide. When it is disabled, the server must
+  not mutate HidHide state, hidden devices, or application lists.
+- Current HidHide experimentation uses normal mode, not inverse mode: scoped
+  physical devices are hidden globally, and the app list is reduced to this
+  executable while the scope is active.
+- Restore previous HidHide cloak/inverse state, hidden devices, and app-list
+  entries when clearing a scope. Treat the app list as user-owned global state.
 - Profiles should select output behavior, not store HidHide device paths.
-- HidHide firewall behavior should derive hidden physical devices from active
-  forwarded routes.
+- HidHide firewall behavior should derive hidden physical devices from running
+  client receiver scopes, not foreground focus. Hide the union of physical
+  controllers used by clients with controller output enabled from those clients'
+  owned receiver executables.
 - VIIPER devices should not leak to unrelated processes; expose them only where
   the active profile needs them.
 

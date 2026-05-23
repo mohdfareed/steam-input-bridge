@@ -35,4 +35,7 @@ internal static partial class HostingLog
 
     [LoggerMessage(EventId = 22, Level = LogLevel.Information, Message = "Connection changed: {State} client={ClientId}")]
     public static partial void ConnectionChanged(ILogger logger, ClientConnectionState state, Guid? clientId);
+
+    [LoggerMessage(EventId = 45, Level = LogLevel.Warning, Message = "Startup cleanup did not finish: {Message}")]
+    public static partial void StartupCleanupDidNotFinish(ILogger logger, string message);
 }

@@ -175,6 +175,119 @@ public sealed class ControllerBrokerTests
         Assert.AreEqual(0, factory.SingleOutput.SendCount);
     }
 
+    /// <summary>Controller registration connects output before the first input frame.</summary>
+    [TestMethod]
+    public void ControllerRegistrationConnectsOutputBeforeInput()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.RegisterClientController(
+            clientId,
+            0,
+            ControllerId,
+            ControllerFeatures.StandardControls);
+
+        Assert.HasCount(1, factory.Outputs);
+        Assert.AreEqual(0, factory.SingleOutput.SendCount);
+        ControllerBrokerStatus status = broker.GetStatus();
+        Assert.HasCount(1, status.Slots);
+        Assert.AreEqual(1, status.Slots[0].ClientEndpointCount);
+        Assert.IsTrue(status.Slots[0].OutputConnected);
+    }
+
+    /// <summary>Client route swaps keep existing virtual outputs connected.</summary>
+    [TestMethod]
+    public void BatchControllerRegistrationKeepsOutputsDuringIndexSwap()
+    {
+        Guid clientId = Guid.NewGuid();
+        ControllerId first = new("physical-1", "First");
+        ControllerId second = new("physical-2", "Second");
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.SetClientControllers(
+            clientId,
+            [
+                new ControllerClientRegistration(0, first, ControllerFeatures.StandardControls),
+                new ControllerClientRegistration(1, second, ControllerFeatures.StandardControls),
+            ]);
+
+        FakeControllerOutput firstOutput = FindOutput(factory, first);
+        FakeControllerOutput secondOutput = FindOutput(factory, second);
+
+        broker.SetClientControllers(
+            clientId,
+            [
+                new ControllerClientRegistration(0, second, ControllerFeatures.StandardControls),
+                new ControllerClientRegistration(1, first, ControllerFeatures.StandardControls),
+            ]);
+
+        Assert.HasCount(2, factory.Outputs);
+        Assert.AreSame(firstOutput, FindOutput(factory, first));
+        Assert.AreSame(secondOutput, FindOutput(factory, second));
+        Assert.IsFalse(firstOutput.Disposed);
+        Assert.IsFalse(secondOutput.Disposed);
+    }
+
+    /// <summary>Physical-only slots do not create virtual outputs until a client route attaches.</summary>
+    [TestMethod]
+    public void PhysicalOnlySlotDoesNotCreateOutputUntilClientRouteAttaches()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.UpdatePhysicalController(
+            ControllerId,
+            new ControllerState(null, Motion(1), null),
+            ControllerFeatures.Motion);
+
+        Assert.IsEmpty(factory.Outputs);
+        ControllerBrokerStatus physicalStatus = broker.GetStatus();
+        Assert.HasCount(1, physicalStatus.Slots);
+        Assert.IsTrue(physicalStatus.Slots[0].HasPhysicalEndpoint);
+        Assert.IsFalse(physicalStatus.Slots[0].OutputConnected);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.RegisterClientController(
+            clientId,
+            0,
+            ControllerId,
+            ControllerFeatures.StandardControls);
+
+        Assert.HasCount(1, factory.Outputs);
+        ControllerBrokerStatus routedStatus = broker.GetStatus();
+        Assert.HasCount(1, routedStatus.Slots);
+        Assert.IsTrue(routedStatus.Slots[0].HasPhysicalEndpoint);
+        Assert.AreEqual(1, routedStatus.Slots[0].ClientEndpointCount);
+        Assert.IsTrue(routedStatus.Slots[0].OutputConnected);
+    }
+
+    /// <summary>Active controller registration sends empty state until input arrives.</summary>
+    [TestMethod]
+    public void ActiveControllerRegistrationSendsEmptyState()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.SetActiveClient(clientId);
+        broker.RegisterClientController(
+            clientId,
+            0,
+            ControllerId,
+            ControllerFeatures.StandardControls);
+
+        Assert.HasCount(1, factory.Outputs);
+        Assert.AreEqual(1, factory.SingleOutput.SendCount);
+        Assert.IsNull(factory.SingleOutput.LastState.Standard);
+    }
+
     /// <summary>Only the active client may drive shared controller slots.</summary>
     [TestMethod]
     public void ActiveClientSwitchSendsCurrentStatesAndIgnoresInactiveInput()
@@ -243,7 +356,7 @@ public sealed class ControllerBrokerTests
         Assert.IsNull(secondOutput.LastState.Standard);
     }
 
-    /// <summary>Client endpoint removal disconnects outputs with no remaining attached controller.</summary>
+    /// <summary>Client endpoint removal removes slots with no remaining attached controller.</summary>
     [TestMethod]
     public void ClientControllerRemovalDropsStaleClientEndpoint()
     {
@@ -264,9 +377,45 @@ public sealed class ControllerBrokerTests
 
         Assert.IsTrue(output.Disposed);
         ControllerBrokerStatus status = broker.GetStatus();
+        Assert.IsEmpty(status.Slots);
+    }
+
+    /// <summary>Removing one client controller stream leaves unchanged slots connected.</summary>
+    [TestMethod]
+    public void SingleClientControllerRemovalKeepsOtherSlots()
+    {
+        Guid clientId = Guid.NewGuid();
+        ControllerId firstController = new("steam:first", "First");
+        ControllerId secondController = new("steam:second", "Second");
+        FakeControllerOutputFactory factory = new();
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+        broker.SetActiveClient(clientId);
+        broker.UpdateClientController(
+            clientId,
+            0,
+            firstController,
+            new ControllerState(Standard(ControllerButtons.South), null, null),
+            ControllerFeatures.StandardControls);
+        broker.UpdateClientController(
+            clientId,
+            1,
+            secondController,
+            new ControllerState(Standard(ControllerButtons.East), null, null),
+            ControllerFeatures.StandardControls);
+
+        FakeControllerOutput firstOutput = FindOutput(factory, firstController);
+        FakeControllerOutput secondOutput = FindOutput(factory, secondController);
+
+        broker.RemoveClientController(clientId, 0);
+
+        Assert.IsTrue(firstOutput.Disposed);
+        Assert.IsFalse(secondOutput.Disposed);
+        Assert.AreSame(secondOutput, FindOutput(factory, secondController));
+        ControllerBrokerStatus status = broker.GetStatus();
         Assert.HasCount(1, status.Slots);
-        Assert.AreEqual(0, status.Slots[0].ClientEndpointCount);
-        Assert.IsFalse(status.Slots[0].OutputConnected);
+        Assert.AreEqual(secondController, status.Slots[0].ControllerId);
     }
 
     /// <summary>Output feedback prefers the client endpoint and falls back to physical.</summary>

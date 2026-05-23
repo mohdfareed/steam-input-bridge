@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
 using SteamInputBridge.App.Cli;
@@ -26,6 +27,7 @@ internal static class Program
     {
         if (args.Length == 0 || IsMode(args[0], "tray"))
         {
+            WaitForParentExit(args);
             return TrayMode.Run();
         }
 
@@ -41,6 +43,30 @@ internal static class Program
     private static bool IsMode(string value, string mode)
     {
         return string.Equals(value, mode, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void WaitForParentExit(string[] args)
+    {
+        for (int i = 0; i + 1 < args.Length; i++)
+        {
+            if (!string.Equals(args[i], "--wait-parent", StringComparison.OrdinalIgnoreCase) ||
+                !int.TryParse(args[i + 1], out int processId) ||
+                processId <= 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                using Process parent = Process.GetProcessById(processId);
+                parent.WaitForExit();
+            }
+            catch (ArgumentException)
+            {
+            }
+
+            return;
+        }
     }
 
     private static void ReportUnhandledException(string[] args, Exception exception)

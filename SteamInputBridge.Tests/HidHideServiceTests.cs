@@ -14,15 +14,15 @@ public sealed class HidHideServiceTests
         "--app-list",
         "--cloak-state",
         "--inv-state",
-        "--inv-on --cloak-on --dev-hide dev-1 --app-reg app-1",
-        "--app-unreg app-1 --dev-unhide dev-1 --cloak-off --inv-off",
+        "--inv-off --cloak-on --dev-hide dev-1 --app-reg SteamInputBridge.exe",
+        "--app-unreg SteamInputBridge.exe --dev-unhide dev-1 --cloak-off --inv-off",
     ];
 
     private static readonly string[] AppListCommand = ["--app-list"];
     private static readonly string[] StatusHiddenDevices = ["dev-1", "dev-2"];
     private static readonly string[] StatusRegisteredApplications = ["app-1"];
 
-    /// <summary>Applies inverse-mode scope and restores previous device/app state.</summary>
+    /// <summary>Applies normal-mode scope and restores previous device/app state.</summary>
     [TestMethod]
     public void ApplyThenClearRestoresPreviousState()
     {
@@ -31,7 +31,7 @@ public sealed class HidHideServiceTests
             appList: "",
             cloakState: "off",
             inverseState: "off");
-        using HidHideService firewall = new(runner);
+        using HidHideService firewall = CreateFirewall(runner);
 
         firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
         firewall.Clear();
@@ -48,13 +48,35 @@ public sealed class HidHideServiceTests
             appList: "app-1",
             cloakState: "on",
             inverseState: "on");
-        using HidHideService firewall = new(runner);
+        using HidHideService firewall = CreateFirewall(runner);
 
         firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
         firewall.Clear();
 
         Assert.AreEqual(
-            "--app-reg app-1 --dev-hide dev-1 --cloak-on --inv-on",
+            "--app-reg app-1 --app-unreg SteamInputBridge.exe --dev-hide dev-1 --cloak-on --inv-on",
+            runner.Commands[^1]);
+    }
+
+    /// <summary>Normal scopes temporarily remove unrelated app-list entries.</summary>
+    [TestMethod]
+    public void ApplyRegistersOnlyCurrentApplication()
+    {
+        FakeRunner runner = new(
+            devList: "",
+            appList: "tool.exe\r\napp-1",
+            cloakState: "off",
+            inverseState: "off");
+        using HidHideService firewall = CreateFirewall(runner);
+
+        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
+        Assert.AreEqual(
+            "--app-unreg tool.exe --app-unreg app-1 --inv-off --cloak-on --dev-hide dev-1 --app-reg SteamInputBridge.exe",
+            runner.Commands[^1]);
+
+        firewall.Clear();
+        Assert.AreEqual(
+            "--app-reg tool.exe --app-reg app-1 --app-unreg SteamInputBridge.exe --dev-unhide dev-1 --cloak-off --inv-off",
             runner.Commands[^1]);
     }
 
@@ -67,7 +89,7 @@ public sealed class HidHideServiceTests
             appList: "app-1",
             cloakState: "--cloak-on",
             inverseState: "--inv-off");
-        using HidHideService firewall = new(runner);
+        using HidHideService firewall = CreateFirewall(runner);
 
         HidHideFirewallStatus status = firewall.GetStatus();
 
@@ -88,14 +110,32 @@ public sealed class HidHideServiceTests
             devList: "dev-1",
             appList: "app-1",
             cloakState: "--cloak-on",
-            inverseState: "--inv-on");
-        using HidHideService firewall = new(runner);
+            inverseState: "--inv-off");
+        using HidHideService firewall = CreateFirewall(runner);
 
         firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
         HidHideFirewallStatus status = firewall.GetStatus();
 
         Assert.IsTrue(status.ScopeActive);
-        Assert.IsTrue(status.InverseEnabled);
+        Assert.IsFalse(status.InverseEnabled);
+    }
+
+    /// <summary>Repeated equivalent scopes do not restore and reapply HidHide.</summary>
+    [TestMethod]
+    public void EquivalentApplyDoesNotReapply()
+    {
+        FakeRunner runner = new(
+            devList: "",
+            appList: "",
+            cloakState: "off",
+            inverseState: "off");
+        using HidHideService firewall = CreateFirewall(runner);
+
+        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
+        firewall.Apply(HidHideScope.Create(["dev-1"], ["app-1"]));
+
+        Assert.AreEqual("--inv-off --cloak-on --dev-hide dev-1 --app-reg SteamInputBridge.exe", runner.Commands[^1]);
+        Assert.HasCount(5, runner.Commands);
     }
 
     /// <summary>Registers this application only when it is not already allowed.</summary>
@@ -107,7 +147,7 @@ public sealed class HidHideServiceTests
             appList: "existing-app",
             cloakState: "off",
             inverseState: "off");
-        using HidHideService access = new(runner);
+        using HidHideService access = CreateFirewall(runner);
 
         access.AllowApplication("SteamInputBridge.exe");
 
@@ -123,7 +163,7 @@ public sealed class HidHideServiceTests
             appList: "--app-reg \"SteamInputBridge.exe\"",
             cloakState: "off",
             inverseState: "off");
-        using HidHideService access = new(runner);
+        using HidHideService access = CreateFirewall(runner);
 
         access.AllowApplication("SteamInputBridge.exe");
 
@@ -180,6 +220,11 @@ public sealed class HidHideServiceTests
                 _ => "",
             };
         }
+    }
+
+    private static HidHideService CreateFirewall(FakeRunner runner)
+    {
+        return new HidHideService(runner, getCurrentProcessPath: static () => "SteamInputBridge.exe");
     }
 
     private sealed class DeviceListRunner(string devices) : IHidHideCommandRunner

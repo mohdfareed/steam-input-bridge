@@ -19,8 +19,11 @@ public sealed class GameClient(
     ProfilesService profiles,
     ILogger<GameClient> logger) : IAsyncDisposable
 {
+    private readonly SemaphoreSlim _stateGate = new(1, 1);
     private readonly ClientGameProcessManager _processes = new(logger);
     private readonly ClientReceiverProcessMonitor _receivers = new(logger);
+    private ClientRunState? _currentState;
+    private CancellationToken _runCancellationToken;
     private bool _disposed;
 
     // MARK: Publics
@@ -47,6 +50,8 @@ public sealed class GameClient(
                 .ConfigureAwait(false);
 
             ClientRunState state = new(launch, client.ClientId, request, killReceivers);
+            _currentState = state;
+            _runCancellationToken = cancellationToken;
             _processes.StartProfileProcess(state);
             AppDomain.CurrentDomain.ProcessExit += ProcessExit;
 
@@ -80,6 +85,7 @@ public sealed class GameClient(
             }
             finally
             {
+                _currentState = null;
                 AppDomain.CurrentDomain.ProcessExit -= ProcessExit;
                 state.ProcessOwner?.Dispose();
                 state.LaunchedProcess?.Dispose();
@@ -114,6 +120,7 @@ public sealed class GameClient(
 
         _disposed = true;
         await client.DisposeAsync().ConfigureAwait(false);
+        _stateGate.Dispose();
     }
 
     // MARK: Privates
@@ -132,18 +139,20 @@ public sealed class GameClient(
 
         try
         {
-            if (state.RegisteredClientId != client.ClientId)
+            await _stateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                await StopControllerStreamsAsync(state).ConfigureAwait(false);
-                state.Launch = await client
-                    .StartRunAsync(state.Request, cancellationToken)
-                    .ConfigureAwait(false);
-                state.RegisteredClientId = client.ClientId;
-                await StartControllerStreamsAsync(state, cancellationToken).ConfigureAwait(false);
-                HostingLog.RestoredServerRegistration(logger, state.Launch.ProfileId, client.ClientId);
-            }
+                if (!await RestoreServerRegistrationAsync(state, cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
 
-            await client.UpdateRunProcessesAsync(observed, cancellationToken).ConfigureAwait(false);
+                await client.UpdateRunProcessesAsync(observed, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _ = _stateGate.Release();
+            }
         }
         catch (Exception exception) when (IsConnectionFailure(exception))
         {
@@ -173,6 +182,20 @@ public sealed class GameClient(
     private void OnConnectionChanged(object? sender, ClientConnectionChangedEventArgs update)
     {
         HostingLog.ConnectionChanged(logger, update.State, update.ClientId);
+        if (update.State == ClientConnectionState.Disconnected)
+        {
+            if (_currentState is { } disconnected)
+            {
+                disconnected.RegisteredClientId = null;
+            }
+
+            return;
+        }
+
+        if (update.State == ClientConnectionState.Connected && _currentState is not null)
+        {
+            _ = Task.Run(RestoreConnectedRunAsync, CancellationToken.None);
+        }
     }
 
     private async Task StartControllerStreamsAsync(
@@ -196,6 +219,59 @@ public sealed class GameClient(
             await state.ControllerStreams.DisposeAsync().ConfigureAwait(false);
             state.ControllerStreams = null;
         }
+    }
+
+    private async Task RestoreConnectedRunAsync()
+    {
+        ClientRunState? state = _currentState;
+        if (state is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _stateGate.WaitAsync(_runCancellationToken).ConfigureAwait(false);
+            try
+            {
+                _ = await RestoreServerRegistrationAsync(state, _runCancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _ = _stateGate.Release();
+            }
+        }
+        catch (Exception exception) when (
+            exception is OperationCanceledException ||
+                IsConnectionFailure(exception))
+        {
+            state.RegisteredClientId = null;
+        }
+    }
+
+    private async Task<bool> RestoreServerRegistrationAsync(
+        ClientRunState state,
+        CancellationToken cancellationToken)
+    {
+        if (client.State != ClientConnectionState.Connected)
+        {
+            state.RegisteredClientId = null;
+            return false;
+        }
+
+        if (state.RegisteredClientId == client.ClientId)
+        {
+            return true;
+        }
+
+        await StopControllerStreamsAsync(state).ConfigureAwait(false);
+        state.Launch = await client
+            .StartRunAsync(state.Request, cancellationToken)
+            .ConfigureAwait(false);
+        state.RegisteredClientId = client.ClientId;
+        await StartControllerStreamsAsync(state, cancellationToken).ConfigureAwait(false);
+        HostingLog.RestoredServerRegistration(logger, state.Launch.ProfileId, client.ClientId);
+        return true;
     }
 
     private uint? ResolveSteamAppId(string profileId, uint? overrideAppId)

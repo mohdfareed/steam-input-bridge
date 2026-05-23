@@ -86,7 +86,7 @@ function Stop-DeployedApp {
     foreach ($process in $processes) {
         Write-Host "Stopping SteamInputBridge ($($process.Id))"
         Stop-Process -Id $process.Id -Force
-        $process.WaitForExit(5000)
+        $null = $process.WaitForExit(5000)
     }
 }
 

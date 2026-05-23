@@ -66,6 +66,13 @@ internal static class AppText
         return count == 0 ? None : count.ToString(CultureInfo.InvariantCulture);
     }
 
+    public static string Sources(int count)
+    {
+        return count == 0
+            ? None
+            : count.ToString(CultureInfo.InvariantCulture);
+    }
+
     public static string Error(string message)
     {
         return $"Error: {message}";
@@ -112,6 +119,15 @@ internal static class AppText
             : Running(false);
     }
 
+    public static string ControllerInput(ControllerInputPumpStatus status)
+    {
+        return !string.IsNullOrWhiteSpace(status.LastError)
+            ? "Retrying"
+            : status.Running
+            ? Sources(status.SourceCount)
+            : Running(false);
+    }
+
     public static string FormatMouseOutput(MouseBrokerStatus status)
     {
         return status.Output == SteamInputBridge.Forwarding.Mouse.MouseOutput.None
@@ -135,11 +151,78 @@ internal static class AppText
         return string.Join(", ", values);
     }
 
-    public static string ControllerSlot(ControllerSlotStatus slot)
+    public static string ControllerSlotName(ControllerId controllerId)
     {
-        string name = string.IsNullOrWhiteSpace(slot.ControllerId.DisplayName)
-            ? "Unknown Controller"
-            : slot.ControllerId.DisplayName;
-        return $"{name}: {Output(slot.Output)} {Connected(slot.OutputConnected)}";
+        return string.IsNullOrWhiteSpace(controllerId.DisplayName)
+            ? ControllerRouteId(controllerId.Value)
+            : controllerId.DisplayName;
+    }
+
+    public static string ControllerSlotOutput(ControllerSlotStatus slot)
+    {
+        return slot.Output == ControllerOutput.None
+            ? None
+            : slot.OutputConnected
+            ? $"{Output(slot.Output)} {Connected(true)}"
+            : $"{Output(slot.Output)} {Connected(false)}";
+    }
+
+    public static string ControllerRouteId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return None;
+        }
+
+        const string PathPrefix = "path:";
+        string route = value.StartsWith(PathPrefix, StringComparison.OrdinalIgnoreCase)
+            ? value[PathPrefix.Length..]
+            : value;
+
+        string? vendor = FindHexPart(route, "VID_");
+        string? product = FindHexPart(route, "PID_");
+        if (vendor is not null && product is not null)
+        {
+            return FindInstancePart(route) is { } instance
+                ? $"{vendor}:{product} {instance}"
+                : $"{vendor}:{product}";
+        }
+
+        int slash = route.LastIndexOf('\\');
+        string shortened = slash >= 0 && slash + 1 < route.Length
+            ? route[(slash + 1)..]
+            : route;
+
+        return shortened.Length <= 48 ? shortened : $"{shortened[..45]}...";
+    }
+
+    public static string Features(ControllerFeatures? features)
+    {
+        return features.HasValue ? Features(features.Value) : None;
+    }
+
+    public static string Features(ControllerFeatures features)
+    {
+        return features == ControllerFeatures.None ? None : features.ToString();
+    }
+
+    private static string? FindHexPart(string value, string prefix)
+    {
+        int index = value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+        return index < 0 || index + prefix.Length + 4 > value.Length
+            ? null
+            : value.Substring(index + prefix.Length, 4).ToUpperInvariant();
+    }
+
+    private static string? FindInstancePart(string value)
+    {
+        string[] parts = value.Split('#', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 3)
+        {
+            return null;
+        }
+
+        string instance = parts[^2];
+        return instance.Length <= 20 ? instance : $"{instance[..17]}...";
     }
 }

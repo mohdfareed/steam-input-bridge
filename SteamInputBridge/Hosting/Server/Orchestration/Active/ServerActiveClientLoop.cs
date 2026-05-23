@@ -24,7 +24,8 @@ internal sealed class ServerActiveClientLoop(
     Func<ActiveClientRegistryStatus, Guid, IReadOnlyList<string>>? getHidHideDevices = null,
     Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
     ControllerBroker? forwarding = null,
-    MouseBroker? mouseForwarding = null)
+    MouseBroker? mouseForwarding = null,
+    TimeSpan? forwardingInactiveGrace = null)
 {
     private readonly ServerSteamInputCoordinator _steamInput = new(clients, logger, steam);
     private readonly ServerHidHideCoordinator _hidHide = new(
@@ -35,6 +36,10 @@ internal sealed class ServerActiveClientLoop(
         getHidHideDevices,
         formatHidHideDevices,
         forwarding);
+    private readonly Lock _forwardingGate = new();
+    private readonly TimeSpan _forwardingInactiveGrace = forwardingInactiveGrace ?? TimeSpan.FromMilliseconds(500);
+    private CancellationTokenSource? _forwardingInactiveDelay;
+    private Guid? _forwardingActiveClientId;
 
     private static readonly TimeSpan ForegroundPollDelay = TimeSpan.FromMilliseconds(100);
 
@@ -87,6 +92,7 @@ internal sealed class ServerActiveClientLoop(
         {
             clients.ActiveClientChanged -= OnActiveClientChanged;
             _hidHide.Clear();
+            ClearForwardingImmediately();
         }
     }
 
@@ -130,10 +136,92 @@ internal sealed class ServerActiveClientLoop(
 
         HostingLog.ActiveClientChanged(logger, args.PreviousClientId, args.CurrentClientId);
 
-        forwarding?.SetActiveClient(args.CurrentClientId);
-        mouseForwarding?.SetActiveClient(args.CurrentClientId);
+        ApplyForwardingActiveClient(args.CurrentClientId);
 
         _steamInput.Apply(args.CurrentClientId);
         _hidHide.Refresh(args.CurrentClientId);
+    }
+
+    private void ApplyForwardingActiveClient(Guid? clientId)
+    {
+        CancellationTokenSource? previousDelay;
+        bool applyNow = false;
+
+        lock (_forwardingGate)
+        {
+            previousDelay = _forwardingInactiveDelay;
+            _forwardingInactiveDelay = null;
+
+            if (clientId.HasValue || _forwardingActiveClientId is null || _forwardingInactiveGrace <= TimeSpan.Zero)
+            {
+                _forwardingActiveClientId = clientId;
+                applyNow = true;
+            }
+            else
+            {
+                CancellationTokenSource delay = new();
+                _forwardingInactiveDelay = delay;
+                _ = ClearForwardingAfterDelayAsync(delay);
+            }
+        }
+
+        previousDelay?.Cancel();
+        if (applyNow)
+        {
+            SetForwardingActiveClient(clientId);
+        }
+    }
+
+    private async Task ClearForwardingAfterDelayAsync(CancellationTokenSource delay)
+    {
+        try
+        {
+            await Task.Delay(_forwardingInactiveGrace, delay.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        bool apply = false;
+        lock (_forwardingGate)
+        {
+            if (!ReferenceEquals(_forwardingInactiveDelay, delay))
+            {
+                return;
+            }
+
+            _forwardingInactiveDelay = null;
+            if (_forwardingActiveClientId.HasValue)
+            {
+                _forwardingActiveClientId = null;
+                apply = true;
+            }
+        }
+
+        if (apply)
+        {
+            SetForwardingActiveClient(null);
+        }
+    }
+
+    private void ClearForwardingImmediately()
+    {
+        CancellationTokenSource? delay;
+        lock (_forwardingGate)
+        {
+            delay = _forwardingInactiveDelay;
+            _forwardingInactiveDelay = null;
+            _forwardingActiveClientId = null;
+        }
+
+        delay?.Cancel();
+        SetForwardingActiveClient(null);
+    }
+
+    private void SetForwardingActiveClient(Guid? clientId)
+    {
+        forwarding?.SetActiveClient(clientId);
+        mouseForwarding?.SetActiveClient(clientId);
     }
 }

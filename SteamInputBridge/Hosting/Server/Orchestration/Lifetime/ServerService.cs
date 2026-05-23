@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +22,8 @@ namespace SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 public sealed class ServerService : IAsyncDisposable
 {
     private const string PipeName = "SteamInputBridge";
+    private const string InstanceSemaphoreName = @"Local\SteamInputBridge.Server";
+    private static readonly TimeSpan StartupCleanupTimeout = TimeSpan.FromSeconds(5);
 
     private readonly ILogger<ServerService> _logger;
     private readonly SettingsFile? _settingsFile;
@@ -32,6 +35,7 @@ public sealed class ServerService : IAsyncDisposable
     private readonly MouseBroker _mouseBroker;
     private readonly ControllerPipeSessions _controllerPipes;
     private readonly MouseInputPump _mouseInput;
+    private readonly PhysicalControllerPump _physicalControllers;
     private readonly ServerHidHideDeviceResolver _hidHideDevices;
     private readonly ServerShortcutService? _shortcuts;
     private readonly Func<CancellationToken, Task> _startupCleanup;
@@ -75,12 +79,12 @@ public sealed class ServerService : IAsyncDisposable
         _shortcuts = shortcuts;
         _controllerBroker = forwarding ?? new ControllerBroker(new NoopControllerOutputFactory());
         _mouseBroker = mouseForwarding ?? new MouseBroker(new NoopMouseOutputFactory());
-        _controllerPipes = new ControllerPipeSessions(_controllerBroker, logger);
+        _physicalControllers = new PhysicalControllerPump(_controllerBroker, logger);
+        _controllerPipes = new ControllerPipeSessions(_controllerBroker, logger, _physicalControllers);
+        _physicalControllers.ControllersChanged += _controllerPipes.RefreshControllerRoutes;
         _hidHideDevices = new ServerHidHideDeviceResolver(
-            hidHide,
             hidHideDevices,
-            _controllerPipes,
-            logger);
+            _controllerPipes);
 
         ActiveClientRegistry activeRuntime = runtime ?? new ActiveClientRegistry();
         _mouseInput = new MouseInputPump(_mouseBroker, logger);
@@ -101,7 +105,7 @@ public sealed class ServerService : IAsyncDisposable
             _controllerBroker,
             _mouseBroker,
             _controllerPipes,
-            () => new ServerInputStatus(_mouseInput.GetStatus()),
+            () => new ServerInputStatus(_mouseInput.GetStatus(), _physicalControllers.GetStatus()),
             () => _activeClients.GetSteamInputStatus(),
             () => _activeClients.GetHidHideStatus(),
             () => _activeClients.RefreshHidHide());
@@ -120,6 +124,7 @@ public sealed class ServerService : IAsyncDisposable
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         string pipeName = _pipeName;
+        using ServerInstanceLease? instanceLease = TryAcquireInstanceLease();
         HostingLog.ListeningOnServerPipe(_logger, pipeName);
 
         if (_settingsFile is not null)
@@ -127,13 +132,13 @@ public sealed class ServerService : IAsyncDisposable
             HostingLog.UsingSettingsFile(_logger, _settingsFile.Path);
         }
 
-        await _startupCleanup(cancellationToken).ConfigureAwait(false);
-        _hidHideDevices.RegisterApplicationAccess();
+        await RunStartupCleanupAsync(cancellationToken).ConfigureAwait(false);
 
         using CancellationTokenSource orchestrationStop =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task orchestrationTask = _activeClients.RunAsync(orchestrationStop.Token);
         _mouseInput.Start(orchestrationStop.Token);
+        _physicalControllers.Start(orchestrationStop.Token);
         _shortcuts?.Start();
 
         try
@@ -175,6 +180,7 @@ public sealed class ServerService : IAsyncDisposable
             await orchestrationStop.CancelAsync().ConfigureAwait(false);
             await IgnoreCancellationAsync(orchestrationTask).ConfigureAwait(false);
             await _mouseInput.DisposeAsync().ConfigureAwait(false);
+            await _physicalControllers.DisposeAsync().ConfigureAwait(false);
             _shortcuts?.Dispose();
             _activeClients.ClearHidHide();
             await _connections.DisposeAsync().ConfigureAwait(false);
@@ -198,6 +204,7 @@ public sealed class ServerService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _mouseInput.DisposeAsync().ConfigureAwait(false);
+        await _physicalControllers.DisposeAsync().ConfigureAwait(false);
         _shortcuts?.Dispose();
         _activeClients.ClearHidHide();
         await _connections.DisposeAsync().ConfigureAwait(false);
@@ -219,6 +226,55 @@ public sealed class ServerService : IAsyncDisposable
         _connections.Track(connection);
     }
 
+    private ServerInstanceLease? TryAcquireInstanceLease()
+    {
+        if (!string.Equals(_pipeName, PipeName, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        Semaphore? semaphore = null;
+        try
+        {
+            semaphore = new Semaphore(1, 1, InstanceSemaphoreName);
+            if (semaphore.WaitOne(0))
+            {
+                Semaphore acquired = semaphore;
+                semaphore = null;
+                return new ServerInstanceLease(acquired);
+            }
+
+            throw new InvalidOperationException("Another Steam Input Bridge server is already running.");
+        }
+        finally
+        {
+            semaphore?.Dispose();
+        }
+    }
+
+    private async Task RunStartupCleanupAsync(CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource timeout =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(StartupCleanupTimeout);
+
+        try
+        {
+            await _startupCleanup(timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            HostingLog.StartupCleanupDidNotFinish(_logger, "timed out");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+                IOException or
+                ObjectDisposedException)
+        {
+            HostingLog.StartupCleanupDidNotFinish(_logger, exception.Message);
+        }
+    }
+
     private static async Task IgnoreCancellationAsync(Task task)
     {
         try
@@ -227,6 +283,23 @@ public sealed class ServerService : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
+        }
+    }
+
+    private sealed class ServerInstanceLease(Semaphore semaphore) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _ = semaphore.Release();
+            semaphore.Dispose();
         }
     }
 }

@@ -75,6 +75,36 @@ public sealed class ActiveClientRegistryTests
         Assert.IsNull(status.ActiveClientId);
     }
 
+    /// <summary>Checks claimed foreground pid still switches to another client.</summary>
+    [TestMethod]
+    public void ClaimedForegroundPidSwitchesActiveClient()
+    {
+        ActiveClientRegistry runtime = new();
+        Guid first = Start(runtime, "first");
+        Guid second = Start(runtime, "second");
+        runtime.UpdateClient(first, [Receiver(100)]);
+        runtime.UpdateClient(second, [Receiver(200)]);
+        runtime.RefreshClients(100);
+
+        runtime.RefreshClients(200);
+
+        Assert.AreEqual(second, runtime.GetStatus().ActiveClientId);
+    }
+
+    /// <summary>Checks active client clears once its receiver process is gone.</summary>
+    [TestMethod]
+    public void RemovedReceiverProcessClearsActiveClient()
+    {
+        ActiveClientRegistry runtime = new();
+        Guid clientId = Start(runtime, "game");
+        runtime.UpdateClient(clientId, [Receiver(100)]);
+        runtime.RefreshClients(100);
+
+        runtime.UpdateClient(clientId, []);
+
+        Assert.IsNull(runtime.GetStatus().ActiveClientId);
+    }
+
     /// <summary>Checks receiver ownership transfers to the oldest observer.</summary>
     [TestMethod]
     public void ClaimTransfersToOldestObserverWhenOwnerEnds()

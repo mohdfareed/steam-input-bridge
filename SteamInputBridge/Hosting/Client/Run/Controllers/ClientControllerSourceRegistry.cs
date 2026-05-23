@@ -135,7 +135,8 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
             List<ClientControllerRouteSource> removed = [];
             foreach (ClientControllerRouteSource source in _sources)
             {
-                if (IsCurrent(source.Source.Controller, currentControllers))
+                if (!currentControllers.TryGetValue(source.Source.Controller.Id, out SdlControllerInfo? current) ||
+                    SdlControllerRoutePolicy.IsSameConnectedController(source.Source.Controller, current))
                 {
                     retained.Add(source);
                 }
@@ -187,14 +188,4 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
         return index;
     }
 
-    private static bool IsCurrent(
-        SdlControllerInfo source,
-        Dictionary<SdlControllerId, SdlControllerInfo> currentControllers)
-    {
-        return currentControllers.TryGetValue(source.Id, out SdlControllerInfo? current) &&
-            current.InstanceId == source.InstanceId &&
-            current.Source == source.Source &&
-            current.SteamHandle == source.SteamHandle &&
-            string.Equals(current.Path, source.Path, StringComparison.OrdinalIgnoreCase);
-    }
 }

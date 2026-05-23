@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Microsoft.Extensions.Logging;
 using SteamInputBridge.HidHide;
 using SteamInputBridge.Hosting.Server.Pipes;
 using SteamInputBridge.Runtime;
@@ -8,34 +7,9 @@ using SteamInputBridge.Runtime;
 namespace SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
 internal sealed class ServerHidHideDeviceResolver(
-    HidHideService? hidHide,
     HidHideDeviceCatalog? devices,
-    ControllerPipeSessions controllerPipes,
-    ILogger logger)
+    ControllerPipeSessions controllerPipes)
 {
-    public void RegisterApplicationAccess()
-    {
-        if (hidHide is null)
-        {
-            return;
-        }
-
-        try
-        {
-            hidHide.AllowCurrentProcess();
-            HostingLog.HidHideApplicationAccessRegistered(logger);
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or
-                ArgumentException or
-                System.ComponentModel.Win32Exception or
-                System.IO.IOException or
-                UnauthorizedAccessException)
-        {
-            HostingLog.HidHideApplicationAccessFailed(logger, exception.Message);
-        }
-    }
-
     public IReadOnlyList<string> GetDevicePaths(ActiveClientRegistryStatus status, Guid clientId)
     {
         _ = status;

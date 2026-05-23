@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding;
 using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Forwarding.Controller.Routing;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
 namespace SteamInputBridge.Hosting.Server.Pipes;
 
@@ -16,9 +17,12 @@ internal sealed partial class ClientControllerPipe(
     Guid clientId,
     string pipeName,
     ControllerBroker broker,
-    ILogger logger) : IAsyncDisposable
+    ILogger logger,
+    IPhysicalControllerResolver? physicalControllers = null) : IAsyncDisposable
 {
     private readonly CancellationTokenSource _stop = new();
+    private readonly IPhysicalControllerResolver? _physicalControllers = physicalControllers;
+    private readonly Dictionary<ushort, ClientControllerInfo> _requestedControllers = [];
     private readonly Dictionary<ushort, ClientControllerInfo> _controllers = [];
     private readonly Dictionary<ushort, long> _inputFrameCounts = [];
     private readonly Channel<ControllerFeedbackFrame> _feedbackWrites =

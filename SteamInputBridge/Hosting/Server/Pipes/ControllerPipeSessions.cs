@@ -4,10 +4,14 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Hosting.Server.Orchestration;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
 namespace SteamInputBridge.Hosting.Server.Pipes;
 
-internal sealed class ControllerPipeSessions(ControllerBroker broker, ILogger logger) : IAsyncDisposable
+internal sealed class ControllerPipeSessions(
+    ControllerBroker broker,
+    ILogger logger,
+    IPhysicalControllerResolver? physicalControllers = null) : IAsyncDisposable
 {
     private readonly Dictionary<Guid, ClientControllerPipe> _pipes = [];
 
@@ -19,17 +23,17 @@ internal sealed class ControllerPipeSessions(ControllerBroker broker, ILogger lo
         }
 
         string pipeName = $"SteamInputBridge.Controller.{clientId:N}";
-        ClientControllerPipe pipe = new(clientId, pipeName, broker, logger);
+        ClientControllerPipe pipe = new(clientId, pipeName, broker, logger, physicalControllers);
         _pipes[clientId] = pipe;
         pipe.Start();
         return pipeName;
     }
 
-    public void RegisterControllers(
+    public IReadOnlyList<ClientControllerInfo> RegisterControllers(
         Guid clientId,
         IReadOnlyList<ClientControllerInfo> controllers)
     {
-        Get(clientId).RegisterControllers(controllers);
+        return Get(clientId).RegisterControllers(controllers);
     }
 
     public async Task RemoveAsync(Guid clientId)
@@ -49,6 +53,14 @@ internal sealed class ControllerPipeSessions(ControllerBroker broker, ILogger lo
         }
 
         return status;
+    }
+
+    public void RefreshControllerRoutes()
+    {
+        foreach (ClientControllerPipe pipe in _pipes.Values)
+        {
+            pipe.RefreshResolvedControllers();
+        }
     }
 
     public async ValueTask DisposeAsync()

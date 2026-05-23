@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,6 +26,12 @@ public sealed record ControllerSlotStatus(
     int ClientEndpointCount,
     ControllerFeatures? PhysicalFeatures,
     ControllerFeatures? ActiveClientFeatures);
+
+/// <summary>Registered client endpoint for one physical controller slot.</summary>
+public sealed record ControllerClientRegistration(
+    ushort ControllerIndex,
+    ControllerId ControllerId,
+    ControllerFeatures Features);
 
 /// <summary>Routes active-client controller input to game-facing controller outputs.</summary>
 public sealed partial class ControllerBroker(IControllerOutputFactory outputFactory) : IDisposable, IAsyncDisposable
@@ -90,6 +97,7 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
                 slot.RemoveClient(clientId);
             }
 
+            PruneEmptySlots(dispose);
             RefreshOutputs(dispose);
             RetargetFeedback();
             AddCurrentStateSends(sends);
@@ -112,6 +120,124 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
                 slot.RemoveClient(clientId);
             }
 
+            PruneEmptySlots(dispose);
+            RefreshOutputs(dispose);
+            RetargetFeedback();
+            AddCurrentStateSends(sends);
+        }
+
+        SendOutputs(sends);
+        DisposeOutputs(dispose);
+    }
+
+    /// <summary>Registers one client-visible controller stream before input frames arrive.</summary>
+    public void RegisterClientController(
+        Guid clientId,
+        ushort controllerIndex,
+        ControllerId physicalControllerId,
+        ControllerFeatures features)
+    {
+        ThrowIfDisposed();
+        PendingControllerSend? send;
+        lock (_gate)
+        {
+            if (!_clients.ContainsKey(clientId))
+            {
+                return;
+            }
+
+            ControllerSlot slot = GetOrCreateSlot(physicalControllerId);
+            ControllerEndpointId endpointId = new(clientId, controllerIndex);
+            if (!slot.ClientEndpoints.ContainsKey(endpointId))
+            {
+                slot.ClientEndpoints[endpointId] =
+                    new ControllerEndpointState(ControllerState.Empty, features, null);
+            }
+
+            RefreshOutput(slot);
+            send = _activeClientId == clientId
+                ? CreateCurrentStateSend(slot)
+                : null;
+        }
+
+        SendOutput(send);
+    }
+
+    /// <summary>Replaces one client's registered controller streams as one atomic route update.</summary>
+    public void SetClientControllers(
+        Guid clientId,
+        IReadOnlyList<ControllerClientRegistration> controllers)
+    {
+        ArgumentNullException.ThrowIfNull(controllers);
+        ThrowIfDisposed();
+
+        List<IControllerOutput> dispose = [];
+        List<PendingControllerSend> sends = [];
+        lock (_gate)
+        {
+            if (!_clients.ContainsKey(clientId))
+            {
+                return;
+            }
+
+            Dictionary<ControllerEndpointId, ControllerClientRegistration> next = [];
+            foreach (ControllerClientRegistration controller in controllers)
+            {
+                next[new ControllerEndpointId(clientId, controller.ControllerIndex)] = controller;
+            }
+
+            foreach (ControllerSlot slot in _slots.Values)
+            {
+                foreach (ControllerEndpointId endpointId in slot.ClientEndpoints.Keys.ToArray())
+                {
+                    if (endpointId.ClientId != clientId)
+                    {
+                        continue;
+                    }
+
+                    if (!next.TryGetValue(endpointId, out ControllerClientRegistration? registration) ||
+                        slot.ControllerId != registration.ControllerId)
+                    {
+                        slot.RemoveClientController(endpointId);
+                    }
+                }
+            }
+
+            foreach (KeyValuePair<ControllerEndpointId, ControllerClientRegistration> entry in next)
+            {
+                ControllerSlot slot = GetOrCreateSlot(entry.Value.ControllerId);
+                ControllerEndpointState state =
+                    slot.ClientEndpoints.TryGetValue(entry.Key, out ControllerEndpointState current)
+                        ? new ControllerEndpointState(current.State, entry.Value.Features, current.FeedbackSink)
+                        : new ControllerEndpointState(ControllerState.Empty, entry.Value.Features, null);
+                slot.ClientEndpoints[entry.Key] = state;
+            }
+
+            PruneEmptySlots(dispose);
+            RefreshOutputs(dispose);
+            RetargetFeedback();
+            AddCurrentStateSends(sends);
+        }
+
+        SendOutputs(sends);
+        DisposeOutputs(dispose);
+    }
+
+    /// <summary>Removes one controller endpoint owned by a connected client.</summary>
+    public void RemoveClientController(Guid clientId, ushort controllerIndex)
+    {
+        ThrowIfDisposed();
+        ControllerEndpointId endpointId = new(clientId, controllerIndex);
+        List<IControllerOutput> dispose = [];
+        List<PendingControllerSend> sends = [];
+        lock (_gate)
+        {
+            foreach (ControllerSlot slot in _slots.Values)
+            {
+                slot.RemoveClientController(endpointId);
+            }
+
+            PruneEmptySlots(dispose);
             RefreshOutputs(dispose);
             RetargetFeedback();
             AddCurrentStateSends(sends);
@@ -351,6 +477,20 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
         }
 
         return slot;
+    }
+
+    private void PruneEmptySlots(List<IControllerOutput> dispose)
+    {
+        foreach (KeyValuePair<ControllerId, ControllerSlot> slot in _slots.ToArray())
+        {
+            if (slot.Value.HasEndpoints)
+            {
+                continue;
+            }
+
+            slot.Value.DisconnectOutput(dispose);
+            _ = _slots.Remove(slot.Key);
+        }
     }
 
     private void ThrowIfDisposed()

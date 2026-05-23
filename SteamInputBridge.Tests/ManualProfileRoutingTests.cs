@@ -38,6 +38,7 @@ public sealed class ManualProfileRoutingTests
         string profileId = TestEnvironment.Require("SIB_MANUAL_PROFILE");
         int expectedControllers = TestEnvironment.GetInt("SIB_MANUAL_EXPECTED_CONTROLLERS", 1);
         bool requireActive = TestEnvironment.GetBool("SIB_MANUAL_REQUIRE_ACTIVE");
+        bool requireHidHide = TestEnvironment.GetBool("SIB_MANUAL_REQUIRE_HIDHIDE");
         string settingsPath = TestEnvironment.Get("SIB_MANUAL_SETTINGS") ??
             Path.Combine(AppContext.BaseDirectory, "appsettings.json");
         if (!File.Exists(settingsPath))
@@ -73,10 +74,22 @@ public sealed class ManualProfileRoutingTests
 
                 ServerStatus status = await server.GetStatusAsync().ConfigureAwait(false);
                 int controllerCount = status.ControllerPipes.Sum(static pipe => pipe.Controllers.Count);
+                int physicalCount = status.Inputs.Controller.SourceCount;
+                int attachedOutputCount = status.Forwarding.Slots.Count(static slot =>
+                    slot.HasPhysicalEndpoint &&
+                    slot.ClientEndpointCount > 0 &&
+                    slot.OutputConnected);
                 bool activeOk = !requireActive || status.Runtime.ActiveClientId == client.ClientId;
+                bool hidHideOk = !requireHidHide ||
+                    (status.HidHide.Active &&
+                    status.HidHide.DeviceCount >= expectedControllers);
                 WriteStatus(status, receivers);
 
-                if (controllerCount >= expectedControllers && activeOk)
+                if (controllerCount >= expectedControllers &&
+                    physicalCount >= expectedControllers &&
+                    attachedOutputCount >= expectedControllers &&
+                    activeOk &&
+                    hidHideOk)
                 {
                     return;
                 }
@@ -103,7 +116,7 @@ public sealed class ManualProfileRoutingTests
         }
 
         Assert.Fail(
-            "Profile route did not register expected controllers before timeout. " +
+            "Profile route did not register expected physical/virtual controller routes before timeout. " +
             "Start the game/profile, keep the receiver process running, connect the expected controllers, and focus the game if SIB_MANUAL_REQUIRE_ACTIVE=1.");
     }
 
@@ -154,7 +167,13 @@ public sealed class ManualProfileRoutingTests
     private void WriteStatus(ServerStatus status, IReadOnlyList<ObservedGameProcess> receivers)
     {
         TestContext.WriteLine(
-            $"clients={status.ConnectedClientCount} active={status.Runtime.ActiveClientId?.ToString() ?? "none"} receivers={receivers.Count} pipes={status.ControllerPipes.Count}");
+            $"clients={status.ConnectedClientCount} active={status.Runtime.ActiveClientId?.ToString() ?? "none"} receivers={receivers.Count} pipes={status.ControllerPipes.Count} physical={status.Inputs.Controller.SourceCount} hidhide={status.HidHide.Active}/{status.HidHide.DeviceCount}");
+        foreach (ControllerSlotStatus slot in status.Forwarding.Slots)
+        {
+            TestContext.WriteLine(
+                $"slot id={slot.ControllerId.Value} output={slot.OutputConnected}/{slot.Output} clientEndpoints={slot.ClientEndpointCount} physical={slot.HasPhysicalEndpoint} active={slot.HasActiveClientEndpoint}");
+        }
+
         foreach (ControllerPipeStatus pipe in status.ControllerPipes)
         {
             TestContext.WriteLine(

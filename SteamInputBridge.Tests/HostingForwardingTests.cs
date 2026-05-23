@@ -146,6 +146,50 @@ public sealed class HostingForwardingTests
         }
     }
 
+    /// <summary>Server-side physical matching moves a Steam route onto the physical slot.</summary>
+    [TestMethod]
+    public async Task ControllerPipeReresolvesSteamRouteWhenPhysicalMatchAppears()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        FakePhysicalControllerResolver resolver = new();
+        await using ControllerBroker broker = new(factory);
+        await using ClientControllerPipe pipe = new(
+            clientId,
+            "unused",
+            broker,
+            NullLogger.Instance,
+            resolver);
+
+        broker.RegisterClient(clientId, ForwardingControllerOutput.Xbox360);
+        _ = pipe.RegisterControllers(
+            [new ClientControllerInfo(
+                0,
+                "steam:05de143a9a0d5235",
+                "DualSense Edge",
+                ControllerFeatures.StandardControls,
+                PhysicalDeviceId: null,
+                VendorId: 0x054c,
+                ProductId: 0x0df2)]);
+
+        Assert.HasCount(1, factory.Outputs);
+        Assert.AreEqual("steam:05de143a9a0d5235", factory.Outputs[0].ControllerId.Value);
+
+        resolver.Resolved = new ClientControllerInfo(
+            0,
+            @"path:\\?\hid#vid_054c&pid_0df2",
+            "DualSense Edge",
+            ControllerFeatures.StandardControls,
+            @"path:\\?\hid#vid_054c&pid_0df2",
+            0x054c,
+            0x0df2);
+        pipe.RefreshResolvedControllers();
+
+        Assert.HasCount(2, factory.Outputs);
+        Assert.IsTrue(factory.Outputs[0].Disposed);
+        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", factory.Outputs[1].ControllerId.Value);
+    }
+
     /// <summary>Native-controller profiles do not create a controller stream pipe.</summary>
     [TestMethod]
     public async Task NativeControllerProfileSkipsControllerPipe()
@@ -312,6 +356,16 @@ public sealed class HostingForwardingTests
         {
             _ = output;
             throw new InvalidOperationException("Mouse output should not connect.");
+        }
+    }
+
+    private sealed class FakePhysicalControllerResolver : IPhysicalControllerResolver
+    {
+        public ClientControllerInfo? Resolved { get; set; }
+
+        public ClientControllerInfo ResolveClientController(ClientControllerInfo controller)
+        {
+            return Resolved ?? controller;
         }
     }
 

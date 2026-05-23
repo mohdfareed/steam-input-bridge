@@ -36,7 +36,7 @@ internal sealed partial class AppContext
         _ = Process.Start(new ProcessStartInfo
         {
             FileName = processPath,
-            Arguments = "tray",
+            Arguments = $"tray --wait-parent {Environment.ProcessId}",
             WorkingDirectory = System.AppContext.BaseDirectory,
             UseShellExecute = false,
         });

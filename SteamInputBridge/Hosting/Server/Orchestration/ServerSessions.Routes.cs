@@ -57,14 +57,14 @@ internal sealed partial class ServerSessions
         IReadOnlyList<ClientControllerInfo> controllers)
     {
         _ = GetClient(clientId);
-        controllerPipes.RegisterControllers(clientId, controllers);
+        IReadOnlyList<ClientControllerInfo> registered = controllerPipes.RegisterControllers(clientId, controllers);
         if (logger.IsEnabled(LogLevel.Information))
         {
-            string routes = FormatControllerRegistrations(controllers);
+            string routes = FormatControllerRegistrations(registered);
             HostingLog.ClientControllersRegistered(
                 logger,
                 clientId,
-                controllers.Count,
+                registered.Count,
                 routes);
         }
 
@@ -97,7 +97,7 @@ internal sealed partial class ServerSessions
         foreach (ClientControllerInfo controller in controllers)
         {
             values.Add(
-                $"idx={controller.ControllerIndex} route=\"{controller.PhysicalControllerId}\" physical=\"{controller.PhysicalDeviceId ?? "none"}\" label=\"{controller.Label}\" features={controller.Features}");
+                $"idx={controller.ControllerIndex} route=\"{controller.PhysicalControllerId}\" physical=\"{controller.PhysicalDeviceId ?? "none"}\" label=\"{controller.Label}\" vidpid={controller.VendorId:x4}:{controller.ProductId:x4} features={controller.Features}");
         }
 
         return string.Join("; ", values);

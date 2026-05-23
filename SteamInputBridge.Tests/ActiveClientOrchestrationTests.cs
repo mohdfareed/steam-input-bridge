@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Hosting.Server.Orchestration.Active;
 using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
@@ -88,7 +90,8 @@ public sealed class ServerActiveClientLoopTests
             settingsFile: null,
             profiles: null,
             runtime,
-            activeClients);
+            activeClients,
+            pipeName: $"SteamInputBridge.Tests.{Guid.NewGuid():N}");
 
         using CancellationTokenSource stop = new();
         Task task = server.RunAsync(stop.Token);
@@ -162,6 +165,53 @@ public sealed class ServerActiveClientLoopTests
         }
     }
 
+    /// <summary>Forwarding tolerates short foreground misses without keeping Steam forcing active.</summary>
+    [TestMethod]
+    public async Task ForwardingClearUsesGraceAfterActiveClientClears()
+    {
+        ActiveClientRegistry runtime = new();
+        Guid clientId = Guid.NewGuid();
+        runtime.RegisterClient(clientId, Environment.ProcessId, "game", steamAppId: 123, ["game.exe"]);
+        runtime.UpdateClient(clientId, [new ObservedGameProcess(123, "game.exe")]);
+
+        using ControllerBroker broker = new(new NoopControllerOutputFactory());
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+
+        int foregroundProcessId = 0;
+        ServerActiveClientLoop activeClients = new(
+            runtime,
+            () => Volatile.Read(ref foregroundProcessId),
+            TimeSpan.FromMilliseconds(5),
+            activeClientChanged: null,
+            NullLogger.Instance,
+            forwarding: broker,
+            forwardingInactiveGrace: TimeSpan.FromMilliseconds(250));
+
+        using CancellationTokenSource stop = new();
+        Task task = activeClients.RunAsync(stop.Token);
+
+        try
+        {
+            Volatile.Write(ref foregroundProcessId, 123);
+            await WaitUntilAsync(() => broker.GetStatus().ActiveClientId == clientId)
+                .ConfigureAwait(false);
+
+            Volatile.Write(ref foregroundProcessId, 0);
+            await WaitUntilAsync(() => runtime.GetStatus().ActiveClientId is null)
+                .ConfigureAwait(false);
+
+            Assert.AreEqual(clientId, broker.GetStatus().ActiveClientId);
+
+            await WaitUntilAsync(() => broker.GetStatus().ActiveClientId is null)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            await stop.CancelAsync().ConfigureAwait(false);
+            await IgnoreCancellationAsync(task).ConfigureAwait(false);
+        }
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
@@ -182,4 +232,35 @@ public sealed class ServerActiveClientLoopTests
         }
     }
 
+    private sealed class NoopControllerOutputFactory : IControllerOutputFactory
+    {
+        public IControllerOutput Connect(ControllerId controllerId, ControllerOutput output)
+        {
+            return new NoopControllerOutput();
+        }
+    }
+
+    private sealed class NoopControllerOutput : IControllerOutput
+    {
+        public void Send(in ControllerState state)
+        {
+        }
+
+        public IDisposable ListenFeedback(Action<ControllerFeedback> handler)
+        {
+            return new Subscription();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class Subscription : IDisposable
+    {
+        public void Dispose()
+        {
+        }
+    }
 }

@@ -19,12 +19,13 @@ internal sealed class ServerHidHideCoordinator(
     Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatDevices,
     ControllerBroker? forwarding)
 {
-    private readonly Lock _gate = new();
+    private readonly Lock _statusGate = new();
+    private readonly Lock _refreshGate = new();
     private ServerHidHideStatus _status = new(false, false, false, [], [], [], null, null);
 
     public ServerHidHideStatus GetStatus()
     {
-        lock (_gate)
+        lock (_statusGate)
         {
             return _status;
         }
@@ -32,67 +33,78 @@ internal sealed class ServerHidHideCoordinator(
 
     public void Refresh(Guid? clientId)
     {
-        if (logger is null || hidHide is null)
+        lock (_refreshGate)
         {
-            return;
-        }
-
-        try
-        {
-            if (!TryCreateScope(clientId, out HidHideScope scope))
+            if (logger is null || hidHide is null)
             {
-                hidHide.Clear();
-                SetStatus(ReadStatus(clientId, null));
                 return;
             }
 
-            hidHide.Apply(scope);
-            SetStatus(ReadStatus(clientId, null));
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or
+            try
+            {
+                if (!TryCreateScope(out HidHideScope scope))
+                {
+                    hidHide.Clear();
+                    SetStatus(ReadStatus(clientId, null));
+                    return;
+                }
+
+                hidHide.Apply(scope);
+                SetStatus(ReadStatus(clientId, null));
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or
                 ArgumentException or
                 System.ComponentModel.Win32Exception or
                 System.IO.IOException or
                 UnauthorizedAccessException)
-        {
-            HostingLog.HidHideUpdateFailed(logger, clientId, exception.Message);
-            SetStatus(ReadStatus(clientId, exception.Message));
+            {
+                HostingLog.HidHideUpdateFailed(logger, clientId, exception.Message);
+                SetStatus(ReadStatus(clientId, exception.Message));
+            }
         }
     }
 
     public void Clear()
     {
-        hidHide?.Clear();
+        lock (_refreshGate)
+        {
+            hidHide?.Clear();
+            SetStatus(new ServerHidHideStatus(false, false, false, [], [], [], null, null));
+        }
     }
 
-    private bool TryCreateScope(Guid? clientId, out HidHideScope scope)
+    private bool TryCreateScope(out HidHideScope scope)
     {
         scope = HidHideScope.Create([], []);
-        if (!clientId.HasValue || profiles is null)
+        if (profiles is null || forwarding?.GetStatus().ControllerOutputEnabled == false)
         {
             return false;
         }
 
         ActiveClientRegistryStatus status = clients.GetStatus();
-        ClientStatus? client = FindClient(status, clientId.Value);
-        if (client is null)
+        HashSet<string> devices = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> applications = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ClientStatus client in status.Clients)
         {
-            return false;
+            if (!UsesControllerOutput(client))
+            {
+                continue;
+            }
+
+            foreach (string device in getDevices?.Invoke(status, client.ClientId) ?? [])
+            {
+                _ = devices.Add(device);
+            }
+
+            foreach (string application in GetExecutablePaths(client.OwnedProcesses))
+            {
+                _ = applications.Add(application);
+            }
         }
 
-        GameProfile? profile = profiles.GetProfile(client.ProfileId);
-        if (profile is null ||
-            profile.ControllerOutput.GetValueOrDefault(ProfileControllerOutput.None) == ProfileControllerOutput.None ||
-            forwarding?.GetStatus().ControllerOutputEnabled == false)
-        {
-            return false;
-        }
-
-        scope = HidHideScope.Create(
-            getDevices?.Invoke(status, clientId.Value) ?? [],
-            GetExecutablePaths(client.OwnedProcesses));
-        return true;
+        scope = HidHideScope.Create(devices, applications);
+        return !scope.IsEmpty;
     }
 
     private ServerHidHideStatus ReadStatus(Guid? clientId, string? error)
@@ -128,10 +140,16 @@ internal sealed class ServerHidHideCoordinator(
 
     private void SetStatus(ServerHidHideStatus status)
     {
-        lock (_gate)
+        lock (_statusGate)
         {
             _status = status;
         }
+    }
+
+    private bool UsesControllerOutput(ClientStatus client)
+    {
+        GameProfile? profile = profiles?.GetProfile(client.ProfileId);
+        return profile?.ControllerOutput.GetValueOrDefault(ProfileControllerOutput.None) != ProfileControllerOutput.None;
     }
 
     private IReadOnlyList<string> GetDeviceLabels(IReadOnlyList<string> devicePaths)
@@ -139,19 +157,6 @@ internal sealed class ServerHidHideCoordinator(
         return formatDevices is null || devicePaths.Count == 0
             ? []
             : formatDevices(devicePaths);
-    }
-
-    private static ClientStatus? FindClient(ActiveClientRegistryStatus status, Guid clientId)
-    {
-        foreach (ClientStatus client in status.Clients)
-        {
-            if (client.ClientId == clientId)
-            {
-                return client;
-            }
-        }
-
-        return null;
     }
 
     private static List<string> GetExecutablePaths(IReadOnlyList<ObservedGameProcess> processes)

@@ -17,6 +17,12 @@ internal static partial class HostingLog
     [LoggerMessage(EventId = 10, Level = LogLevel.Warning, Message = "Raw Input mouse pump stopped: {Message}")]
     public static partial void RawInputMousePumpStopped(ILogger logger, string message);
 
+    [LoggerMessage(EventId = 11, Level = LogLevel.Information, Message = "Physical SDL controller pump started.")]
+    public static partial void PhysicalControllerPumpStarted(ILogger logger);
+
+    [LoggerMessage(EventId = 12, Level = LogLevel.Information, Message = "Physical SDL controller pump restarting: {Message}")]
+    public static partial void PhysicalControllerPumpRestarting(ILogger logger, string message);
+
     [LoggerMessage(EventId = 42, Level = LogLevel.Information, Message = "Client SDL controller scan: visible={VisibleCount} selected={SelectedCount} opened={OpenedCount} controllers={Controllers}")]
     public static partial void ClientControllerScan(
         ILogger logger,

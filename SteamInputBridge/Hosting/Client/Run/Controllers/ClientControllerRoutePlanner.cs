@@ -45,7 +45,7 @@ internal static class ClientControllerRoutePlanner
             }
         }
 
-        return selected;
+        return SelectUniqueControllers(selected);
     }
 
     public static ClientControllerRoutePlan CreatePlan(
@@ -65,7 +65,9 @@ internal static class ClientControllerRoutePlanner
                 identity.RouteId,
                 identity.Label,
                 gamepad.Features,
-                identity.PhysicalDeviceId);
+                identity.PhysicalDeviceId,
+                gamepad.Controller.VendorId,
+                gamepad.Controller.ProductId);
         }
 
         return new ClientControllerRoutePlan(controllers, identities);
@@ -91,6 +93,39 @@ internal static class ClientControllerRoutePlanner
         }
 
         return identities;
+    }
+
+    private static List<SdlControllerInfo> SelectUniqueControllers(IReadOnlyList<SdlControllerInfo> controllers)
+    {
+        List<SdlControllerInfo> selected = [];
+        Dictionary<SdlControllerId, int> positions = [];
+        foreach (SdlControllerInfo controller in controllers)
+        {
+            if (!positions.TryGetValue(controller.Id, out int index))
+            {
+                positions[controller.Id] = selected.Count;
+                selected.Add(controller);
+                continue;
+            }
+
+            if (GetDuplicatePreference(controller) > GetDuplicatePreference(selected[index]))
+            {
+                selected[index] = controller;
+            }
+        }
+
+        return selected;
+    }
+
+    private static int GetDuplicatePreference(SdlControllerInfo controller)
+    {
+        int preference = controller.Source == SdlControllerSource.Steam ? 4 : 0;
+        if (!SdlControllerRoutePolicy.IsValveVirtualXInput(controller))
+        {
+            preference += 2;
+        }
+
+        return controller.HasMotion ? preference + 1 : preference;
     }
 
 }

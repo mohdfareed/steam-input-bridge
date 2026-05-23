@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace SteamInputBridge.HidHide;
@@ -8,8 +9,12 @@ namespace SteamInputBridge.HidHide;
 /// <summary>Applies HidHide profile scopes and process access rules.</summary>
 internal sealed class HidHideService(
     IHidHideCommandRunner runner,
-    ILogger<HidHideService>? logger = null) : IDisposable
+    ILogger<HidHideService>? logger = null,
+    Func<string?>? getCurrentProcessPath = null) : IDisposable
 {
+    private readonly Lock _gate = new();
+    private readonly Func<string?> _getCurrentProcessPath =
+        getCurrentProcessPath ?? (static () => Environment.ProcessPath);
     private HidHideSnapshot? _snapshot;
     private HidHideScope? _scope;
     private bool _disposed;
@@ -17,9 +22,12 @@ internal sealed class HidHideService(
     /// <summary>Registers the current executable with HidHide's allowed application list.</summary>
     public void AllowCurrentProcess()
     {
-        if (Environment.ProcessPath is { Length: > 0 } processPath)
+        lock (_gate)
         {
-            AllowApplication(processPath);
+            if (_getCurrentProcessPath() is { Length: > 0 } processPath)
+            {
+                AllowApplicationCore(processPath);
+            }
         }
     }
 
@@ -28,6 +36,70 @@ internal sealed class HidHideService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
+        lock (_gate)
+        {
+            AllowApplicationCore(path);
+        }
+    }
+
+    /// <summary>Applies a profile scope using HidHide normal mode.</summary>
+    public void Apply(HidHideScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+
+        lock (_gate)
+        {
+            ApplyCore(scope);
+        }
+    }
+
+    /// <summary>Restores the previous HidHide state.</summary>
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            ClearCore();
+        }
+    }
+
+    /// <summary>Gets current HidHide state.</summary>
+    public HidHideFirewallStatus GetStatus()
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+
+            string hiddenDevices = runner.Run(["--dev-list"]);
+            string registeredApps = runner.Run(["--app-list"]);
+            string cloakState = runner.Run(["--cloak-state"]);
+            string inverseState = runner.Run(["--inv-state"]);
+
+            return new HidHideFirewallStatus(
+                _scope is not null,
+                HidHideSnapshot.IsOn(cloakState),
+                HidHideSnapshot.IsOn(inverseState),
+                HidHideSnapshot.ReadCommandValues(hiddenDevices, "--dev-hide"),
+                HidHideSnapshot.ReadCommandValues(registeredApps, "--app-reg"));
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            ClearCore();
+            _disposed = true;
+        }
+    }
+
+    private void AllowApplicationCore(string path)
+    {
         string applications = runner.Run(["--app-list"]);
         if (ContainsLineValue(applications, path))
         {
@@ -37,39 +109,49 @@ internal sealed class HidHideService(
         _ = runner.Run(["--app-reg", path]);
     }
 
-    /// <summary>Applies a profile scope using HidHide inverse mode.</summary>
-    public void Apply(HidHideScope scope)
+    private void ApplyCore(HidHideScope scope)
     {
-        ArgumentNullException.ThrowIfNull(scope);
         ThrowIfDisposed();
 
         if (scope.IsEmpty)
         {
-            Clear();
+            ClearCore();
             return;
         }
 
-        if (_scope == scope)
+        if (_scope?.HasSameValues(scope) == true)
         {
             return;
         }
 
-        Clear();
-        HidHideSnapshot snapshot = HidHideSnapshot.Capture(runner, scope);
+        ClearCore();
+        string currentProcessPath = _getCurrentProcessPath() ??
+            throw new InvalidOperationException("Current process path is required for HidHide scope access.");
+        HidHideSnapshot snapshot = HidHideSnapshot.Capture(runner, scope, [currentProcessPath]);
         try
         {
-            List<string> args = ["--inv-on", "--cloak-on"];
+            // Normal mode uses HidHide's application list as the allow list.
+            // For this experiment, only this executable sees scoped hidden devices.
+            List<string> args = [];
+            foreach (string app in snapshot.ExistingRegisteredApplications)
+            {
+                if (!string.Equals(app, currentProcessPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    args.Add("--app-unreg");
+                    args.Add(app);
+                }
+            }
+
+            args.Add("--inv-off");
+            args.Add("--cloak-on");
             foreach (string device in scope.DeviceInstancePaths)
             {
                 args.Add("--dev-hide");
                 args.Add(device);
             }
 
-            foreach (string app in scope.ApplicationPaths)
-            {
-                args.Add("--app-reg");
-                args.Add(app);
-            }
+            args.Add("--app-reg");
+            args.Add(currentProcessPath);
 
             _ = runner.Run(args);
             _snapshot = snapshot;
@@ -83,8 +165,7 @@ internal sealed class HidHideService(
         }
     }
 
-    /// <summary>Restores the previous HidHide state.</summary>
-    public void Clear()
+    private void ClearCore()
     {
         ThrowIfDisposed();
         if (_snapshot is null)
@@ -96,36 +177,6 @@ internal sealed class HidHideService(
         HidHideLog.Restored(logger);
         _snapshot = null;
         _scope = null;
-    }
-
-    /// <summary>Gets current HidHide state.</summary>
-    public HidHideFirewallStatus GetStatus()
-    {
-        ThrowIfDisposed();
-
-        string hiddenDevices = runner.Run(["--dev-list"]);
-        string registeredApps = runner.Run(["--app-list"]);
-        string cloakState = runner.Run(["--cloak-state"]);
-        string inverseState = runner.Run(["--inv-state"]);
-
-        return new HidHideFirewallStatus(
-            _scope is not null,
-            HidHideSnapshot.IsOn(cloakState),
-            HidHideSnapshot.IsOn(inverseState),
-            HidHideSnapshot.ReadCommandValues(hiddenDevices, "--dev-hide"),
-            HidHideSnapshot.ReadCommandValues(registeredApps, "--app-reg"));
-    }
-
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        Clear();
-        _disposed = true;
     }
 
     private void ThrowIfDisposed()
@@ -147,6 +198,7 @@ internal sealed class HidHideService(
 
         return false;
     }
+
 }
 
 /// <summary>Current HidHide state.</summary>
@@ -168,12 +220,17 @@ internal sealed record HidHideSnapshot(
     string CloakState,
     string InverseState,
     IReadOnlyDictionary<string, bool> HiddenDevices,
-    IReadOnlyDictionary<string, bool> RegisteredApps)
+    IReadOnlyDictionary<string, bool> ScopedApplications,
+    IReadOnlyList<string> ExistingRegisteredApplications)
 {
-    internal static HidHideSnapshot Capture(IHidHideCommandRunner runner, HidHideScope scope)
+    internal static HidHideSnapshot Capture(
+        IHidHideCommandRunner runner,
+        HidHideScope scope,
+        IReadOnlyList<string> scopedApplications)
     {
         string hiddenDevices = runner.Run(["--dev-list"]);
         string registeredApps = runner.Run(["--app-list"]);
+        IReadOnlyList<string> registeredApplicationPaths = ReadCommandValues(registeredApps, "--app-reg");
 
         return new HidHideSnapshot(
             runner.Run(["--cloak-state"]),
@@ -182,16 +239,26 @@ internal sealed record HidHideSnapshot(
                 static device => device,
                 device => ContainsLineValue(hiddenDevices, device),
                 StringComparer.OrdinalIgnoreCase),
-            scope.ApplicationPaths.ToDictionary(
+            scopedApplications.ToDictionary(
                 static app => app,
-                app => ContainsLineValue(registeredApps, app),
-                StringComparer.OrdinalIgnoreCase));
+                app => registeredApplicationPaths.Contains(app, StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase),
+            registeredApplicationPaths);
     }
 
     internal void Restore(IHidHideCommandRunner runner)
     {
         List<string> args = [];
-        foreach ((string app, bool registered) in RegisteredApps)
+        foreach (string app in ExistingRegisteredApplications)
+        {
+            if (!ScopedApplications.ContainsKey(app))
+            {
+                args.Add("--app-reg");
+                args.Add(app);
+            }
+        }
+
+        foreach ((string app, bool registered) in ScopedApplications)
         {
             args.Add(registered ? "--app-reg" : "--app-unreg");
             args.Add(app);

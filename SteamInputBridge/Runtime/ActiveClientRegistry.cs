@@ -152,9 +152,10 @@ public sealed partial class ActiveClientRegistry
     private ActiveClientChangedEventArgs? RefreshActiveClient()
     {
         Guid? previous = _activeClientId;
-        Guid? current = _foregroundProcessId > 0 && _claims.TryGetValue(_foregroundProcessId, out List<Guid>? observers)
-            ? observers[0]
-            : null;
+        Guid? current =
+            _foregroundProcessId > 0 && _claims.TryGetValue(_foregroundProcessId, out List<Guid>? observers)
+                ? observers[0]
+                : null;
 
         if (previous == current)
         {

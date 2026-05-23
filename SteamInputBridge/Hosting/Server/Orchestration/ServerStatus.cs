@@ -45,10 +45,15 @@ public sealed record ServerStatus(int ConnectedClientCount)
 }
 
 /// <summary>Server-owned input source status.</summary>
-public sealed record ServerInputStatus(MouseInputPumpStatus Mouse);
+public sealed record ServerInputStatus(
+    MouseInputPumpStatus Mouse,
+    ControllerInputPumpStatus Controller = default);
 
 /// <summary>Raw Input mouse pump status.</summary>
 public sealed record MouseInputPumpStatus(bool Running, bool SourceConnected, string? LastError);
+
+/// <summary>Physical SDL controller pump status.</summary>
+public readonly record struct ControllerInputPumpStatus(bool Running, int SourceCount, string? LastError);
 
 /// <summary>Steam Input configuration currently forced by the server.</summary>
 public sealed record ServerSteamInputStatus(

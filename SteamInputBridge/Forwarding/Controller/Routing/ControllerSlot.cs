@@ -34,9 +34,19 @@ internal sealed partial class ControllerSlot(ControllerId controllerId, Action<C
     {
         foreach (ControllerEndpointId endpointId in ClientEndpoints.Keys.Where(id => id.ClientId == clientId).ToArray())
         {
-            StopFeedbackTarget(new FeedbackTarget(endpointId));
-            _ = ClientEndpoints.Remove(endpointId);
+            RemoveClientController(endpointId);
         }
+    }
+
+    public void RemoveClientController(ControllerEndpointId endpointId)
+    {
+        if (!ClientEndpoints.ContainsKey(endpointId))
+        {
+            return;
+        }
+
+        StopFeedbackTarget(new FeedbackTarget(endpointId));
+        _ = ClientEndpoints.Remove(endpointId);
     }
 
     public void RemovePhysical()
