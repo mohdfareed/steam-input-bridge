@@ -126,6 +126,40 @@ public sealed class SdlControllerRoutePolicyTests
         CollectionAssert.AreEqual(new[] { steam }, forwardable.ToArray());
     }
 
+    /// <summary>Real DS4 controllers are not dropped by DS4 output VID/PID alone.</summary>
+    [TestMethod]
+    public void ForwardableFilterKeepsRealDs4()
+    {
+        SdlControllerInfo realDs4 = Controller(
+            SdlControllerSource.Physical,
+            0x054c,
+            0x05c4,
+            @"\\?\hid#vid_054c&pid_05c4",
+            "Wireless Controller");
+
+        List<SdlControllerInfo> forwardable =
+            ClientControllerRoutePlanner.FilterForwardable([realDs4]);
+
+        CollectionAssert.AreEqual(new[] { realDs4 }, forwardable.ToArray());
+    }
+
+    /// <summary>App-owned DS4 virtual outputs are dropped when SDL exposes their name.</summary>
+    [TestMethod]
+    public void ForwardableFilterDropsOwnedDs4VirtualOutput()
+    {
+        SdlControllerInfo virtualDs4 = Controller(
+            SdlControllerSource.Physical,
+            0x054c,
+            0x05c4,
+            @"\\?\hid#vid_054c&pid_05c4#virtual",
+            "Steam Input Bridge - Virtual Controller");
+
+        List<SdlControllerInfo> forwardable =
+            ClientControllerRoutePlanner.FilterForwardable([virtualDs4]);
+
+        Assert.HasCount(0, forwardable);
+    }
+
     /// <summary>Duplicate Steam handles keep the non-XInput fallback route.</summary>
     [TestMethod]
     public void ClientSelectionDropsDuplicateSteamVirtualXInputFallback()

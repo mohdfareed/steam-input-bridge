@@ -29,7 +29,7 @@ internal static class SdlControllerRoutePolicy
 
     public static bool IsForwardable(SdlControllerInfo controller)
     {
-        return !ViiperDevices.IsController(controller.VendorId, controller.ProductId) &&
+        return !ViiperDevices.IsController(controller.VendorId, controller.ProductId, controller.Name, controller.Path) &&
             !IsSteamVirtualXInputFallback(controller);
     }
 

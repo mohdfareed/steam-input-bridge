@@ -70,15 +70,47 @@ internal sealed partial class ControllerSlot
             yield break;
         }
 
+        foreach (FeedbackTarget target in FindFeedbackTargets(clientId, feedback, requireAll: true))
+        {
+            yield return target;
+        }
+
+        foreach (FeedbackTarget target in FindFeedbackTargets(clientId, feedback, requireAll: false))
+        {
+            yield return target;
+        }
+    }
+
+    private IEnumerable<FeedbackTarget> FindFeedbackTargets(
+        Guid clientId,
+        ControllerFeedback feedback,
+        bool requireAll)
+    {
         foreach (KeyValuePair<ControllerEndpointId, ControllerEndpointState> endpoint in ClientEndpoints)
         {
-            if (endpoint.Key.ClientId == clientId && endpoint.Value.CanAccept(feedback))
+            if (endpoint.Key.ClientId != clientId)
+            {
+                continue;
+            }
+
+            bool canAccept = requireAll
+                ? endpoint.Value.CanAcceptAll(feedback)
+                : endpoint.Value.CanAccept(feedback) && !endpoint.Value.CanAcceptAll(feedback);
+            if (canAccept)
             {
                 yield return new FeedbackTarget(endpoint.Key);
             }
         }
 
-        if (Physical is { } physical && physical.CanAccept(feedback))
+        if (Physical is not { } physical)
+        {
+            yield break;
+        }
+
+        bool physicalCanAccept = requireAll
+            ? physical.CanAcceptAll(feedback)
+            : physical.CanAccept(feedback) && !physical.CanAcceptAll(feedback);
+        if (physicalCanAccept)
         {
             yield return FeedbackTarget.Physical;
         }
@@ -99,6 +131,11 @@ internal sealed partial class ControllerSlot
             return;
         }
 
-        _ = SendFeedback(target, ControllerFeedback.StopRumble);
+        ControllerLight? light = _heldFeedback.Value.Light is { } currentLight
+            ? currentLight with { FlashOn = 0, FlashOff = 0 }
+            : null;
+        _ = SendFeedback(
+            target,
+            new ControllerFeedback(ControllerFeedback.StopRumble.Rumble, light));
     }
 }

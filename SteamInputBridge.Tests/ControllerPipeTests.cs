@@ -43,7 +43,7 @@ public sealed class ControllerPipeTests
             3,
             new ControllerFeedback(
                 new ControllerRumble(10, 20),
-                new ControllerLight(1, 2, 3),
+                new ControllerLight(1, 2, 3, 6, 7),
                 new ControllerAdaptiveTriggers(4, 5)));
 
         await writer.WriteFeedbackAsync(feedback).ConfigureAwait(false);
@@ -54,6 +54,8 @@ public sealed class ControllerPipeTests
         Assert.AreEqual((ushort)3, message.Feedback.ControllerIndex);
         Assert.AreEqual((ushort)10, message.Feedback.Feedback.Rumble?.LowFrequency);
         Assert.AreEqual((byte)2, message.Feedback.Feedback.Light?.Green);
+        Assert.AreEqual((byte)6, message.Feedback.Feedback.Light?.FlashOn);
+        Assert.AreEqual((byte)7, message.Feedback.Feedback.Light?.FlashOff);
         Assert.AreEqual((byte)5, message.Feedback.Feedback.AdaptiveTriggers?.RightMode);
     }
 }

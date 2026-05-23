@@ -3,6 +3,7 @@
     "appmanifest",
     "appsettings",
     "controllerconfig",
+    "dualshock",
     "forceinputappid",
     "forwardable",
     "gamepads",

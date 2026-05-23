@@ -213,6 +213,16 @@ Do not set `LangVersion=latest`.
   attempt narrowly; do not retry by adding another device to the same bus.
 - Xbox 360 output uses Microsoft `045E:028E`; DS4 output should use Sony
   `054C:05C4` unless a newer DS4 profile specifically needs `054C:09CC`.
+- VIIPER DS4 output uses device type `dualshock4`. Map SDL gyro from rad/s to
+  DS4 raw as degrees/s scaled by 16, and map SDL accel from m/s² to DS4 raw
+  scaled by 512. Use DS4 flat accelerometer default `Z=-5023` when no
+  accelerometer is available.
+- Do not filter DS4 VIIPER loopback by `054C:05C4` alone because that is also
+  a real DS4 identity. Require an app-owned name/path signal when treating a
+  DS4-shaped SDL controller as VIIPER-owned.
+- DS4 feedback through VIIPER supports normal small/large motor rumble plus
+  lightbar RGB and flash on/off. Do not treat DS4 as DualSense advanced
+  haptics/adaptive trigger support.
 - Fail on unsupported output ranges rather than silently clamping.
 - Route rumble feedback back through the exact controller route that owns the
   virtual output.

@@ -453,6 +453,41 @@ public sealed class ControllerBrokerTests
         Assert.AreEqual((ushort)0, clientFeedback.Feedback[2].Rumble?.LowFrequency);
     }
 
+    /// <summary>Combined DS4 feedback prefers an endpoint that can apply both rumble and light.</summary>
+    [TestMethod]
+    public void FeedbackPrefersEndpointWithAllRequestedFeatures()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        FakeFeedbackSink clientFeedback = new(accept: true);
+        FakeFeedbackSink physicalFeedback = new(accept: true);
+        using ControllerBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, ControllerOutput.Ds4);
+        broker.SetActiveClient(clientId);
+        broker.UpdatePhysicalController(
+            ControllerId,
+            new ControllerState(null, Motion(1), null),
+            ControllerFeatures.Motion | ControllerFeatures.Rumble | ControllerFeatures.Light,
+            physicalFeedback);
+        broker.UpdateClientController(
+            clientId,
+            ControllerId,
+            new ControllerState(Standard(ControllerButtons.South), null, null),
+            ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
+            clientFeedback);
+
+        factory.SingleOutput.EmitFeedback(new ControllerFeedback(
+            new ControllerRumble(10, 20),
+            new ControllerLight(1, 2, 3, 4, 5)));
+
+        Assert.IsEmpty(clientFeedback.Feedback);
+        Assert.HasCount(1, physicalFeedback.Feedback);
+        Assert.AreEqual((ushort)10, physicalFeedback.Feedback[0].Rumble?.LowFrequency);
+        Assert.AreEqual((byte)3, physicalFeedback.Feedback[0].Light?.Blue);
+        Assert.AreEqual((byte)5, physicalFeedback.Feedback[0].Light?.FlashOff);
+    }
+
     /// <summary>Held feedback is replayed when the active endpoint reconnects.</summary>
     [TestMethod]
     public void FeedbackReplaysWhenEndpointReconnects()

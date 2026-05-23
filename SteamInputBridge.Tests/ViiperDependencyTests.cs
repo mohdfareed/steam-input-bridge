@@ -24,6 +24,12 @@ public sealed class ViiperDependencyTests
         ViiperXbox360Output.OwnedProductId,
         ViiperDeviceDefinition.FormatOwnedDisplayName("Dependency Test Controller"));
 
+    private static readonly ViiperDeviceDefinition Ds4Definition = new(
+        "dualshock4",
+        ViiperDs4Output.OwnedVendorId,
+        ViiperDs4Output.OwnedProductId,
+        ViiperDeviceDefinition.FormatOwnedDisplayName("Dependency Test Controller"));
+
     private static readonly ViiperDeviceDefinition MouseDefinition = new(
         "mouse",
         ViiperMouseOutput.OwnedVendorId,
@@ -59,6 +65,37 @@ public sealed class ViiperDependencyTests
         Assert.IsFalse(output.IsConnected);
         await ViiperOutputFactory.ReclaimDevicesAsync(options, CancellationToken.None).ConfigureAwait(false);
         Assert.AreEqual(0, await CountOwnedDevicesAsync(options, Xbox360Definition).ConfigureAwait(false));
+    }
+
+    /// <summary>Creates, drives, disposes, and reclaims a real VIIPER DS4 output.</summary>
+    [TestMethod]
+    public async Task Ds4OutputConnectsSendsDisconnectsAndReclaims()
+    {
+        ViiperOptions options = RequireViiperOptions();
+        await ViiperOutputFactory.ReclaimDevicesAsync(options, CancellationToken.None).ConfigureAwait(false);
+        Assert.AreEqual(0, await CountOwnedDevicesAsync(options, Ds4Definition).ConfigureAwait(false));
+
+        ViiperDs4Output output = await ViiperDs4Output
+            .ConnectAsync(options, new ControllerId("dependency:ds4", "Dependency Test Controller"))
+            .ConfigureAwait(false);
+
+        try
+        {
+            Assert.IsTrue(output.IsConnected);
+            Assert.AreEqual(1, await CountOwnedDevicesAsync(options, Ds4Definition).ConfigureAwait(false));
+            output.Send(new ControllerState(
+                new ControllerStandardState(ControllerButtons.South, 1, 2, 3, 4, 5, 6),
+                new ControllerMotionState(true, MathF.PI, 0, 0, true, 0, 0, -9.81f),
+                null));
+        }
+        finally
+        {
+            await output.DisposeAsync().ConfigureAwait(false);
+        }
+
+        Assert.IsFalse(output.IsConnected);
+        await ViiperOutputFactory.ReclaimDevicesAsync(options, CancellationToken.None).ConfigureAwait(false);
+        Assert.AreEqual(0, await CountOwnedDevicesAsync(options, Ds4Definition).ConfigureAwait(false));
     }
 
     /// <summary>Creates, drives, disposes, and reclaims a real VIIPER mouse output.</summary>

@@ -15,8 +15,8 @@ internal sealed class ViiperOutputFactory(ViiperOptions options) : IControllerOu
         return output switch
         {
             ControllerOutput.Xbox360 => ViiperXbox360Output.ConnectAsync(options, controllerId).GetAwaiter().GetResult(),
+            ControllerOutput.Ds4 => ViiperDs4Output.ConnectAsync(options, controllerId).GetAwaiter().GetResult(),
             ControllerOutput.None => throw new NotSupportedException("None is not a VIIPER controller output."),
-            ControllerOutput.Ds4 => throw new NotSupportedException("VIIPER DS4 output is not implemented yet."),
             _ => throw new NotSupportedException($"VIIPER does not support {output} controller output yet."),
         };
     }
@@ -43,6 +43,9 @@ internal sealed class ViiperOutputFactory(ViiperOptions options) : IControllerOu
     public static async Task ReclaimDevicesAsync(ViiperOptions options, CancellationToken cancellationToken = default)
     {
         await ViiperXbox360Output.ReclaimDevicesAsync(options, cancellationToken)
+            .ConfigureAwait(false);
+
+        await ViiperDs4Output.ReclaimDevicesAsync(options, cancellationToken)
             .ConfigureAwait(false);
 
         await ViiperMouseOutput.ReclaimDevicesAsync(options, cancellationToken)

@@ -121,6 +121,36 @@ public sealed class SettingsValidationTests
         }
     }
 
+    /// <summary>Checks that enum-like JSON values are case-insensitive.</summary>
+    [TestMethod]
+    public void EnumSettingsValuesAreCaseInsensitive()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithMixedCaseEnumValues());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
+            GameProfile profile = settings.Current.Games["case"];
+
+            Assert.AreEqual(LogLevel.Debug, settings.Current.Logging.Level);
+            Assert.AreEqual(ControllerOutput.Ds4, profile.ControllerOutput);
+            Assert.AreEqual(MouseOutput.Viiper, profile.MouseOutput);
+            CollectionAssert.AreEqual(
+                new[] { ShortcutTarget.Motion, ShortcutTarget.Pointer },
+                settings.Current.Shortcuts[0].Targets.ToArray());
+            Assert.AreEqual(ShortcutValue.Toggle, settings.Current.Shortcuts[0].Value);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     /// <summary>Checks that disabled HidHide settings do not require the CLI path.</summary>
     [TestMethod]
     public void DisabledHidHideDoesNotRequireCliPath()
@@ -319,6 +349,36 @@ public sealed class SettingsValidationTests
                 "Executable": "C:\\Games\\None\\game.exe",
                 "ControllerOutput": "None",
                 "MouseOutput": "None"
+              }
+            }
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithMixedCaseEnumValues()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "Logging": {
+              "Level": "debug"
+            },
+            "Shortcuts": [
+              {
+                "Keys": "Num1",
+                "Targets": [
+                  "motion",
+                  "POINTER"
+                ],
+                "Value": "toggle"
+              }
+            ],
+            "Games": {
+              "case": {
+                "Executable": "C:\\Games\\Case\\game.exe",
+                "ControllerOutput": "ds4",
+                "MouseOutput": "vIIPer"
               }
             }
           }

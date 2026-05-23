@@ -10,7 +10,7 @@ namespace SteamInputBridge.Forwarding;
 
 internal static class ControllerPipeFrame
 {
-    public const int Size = 65;
+    public const int Size = 67;
 
     private const byte Present = 1;
 
@@ -54,6 +54,8 @@ internal static class ControllerPipeFrame
         public const int AdaptiveLeftOffset = 62;
         public const int AdaptiveRightOffset = 63;
         public const int FeedbackFlagsOffset = 64;
+        public const int LightFlashOnOffset = 65;
+        public const int LightFlashOffOffset = 66;
     }
 
     // MARK: Frames
@@ -189,6 +191,8 @@ internal static class ControllerPipeFrame
             buffer[Layout.LightRedOffset] = light.Red;
             buffer[Layout.LightGreenOffset] = light.Green;
             buffer[Layout.LightBlueOffset] = light.Blue;
+            buffer[Layout.LightFlashOnOffset] = light.FlashOn;
+            buffer[Layout.LightFlashOffOffset] = light.FlashOff;
         }
 
         if (feedback.AdaptiveTriggers is { } adaptive)
@@ -216,7 +220,9 @@ internal static class ControllerPipeFrame
             : new ControllerLight(
                 buffer[Layout.LightRedOffset],
                 buffer[Layout.LightGreenOffset],
-                buffer[Layout.LightBlueOffset]);
+                buffer[Layout.LightBlueOffset],
+                buffer[Layout.LightFlashOnOffset],
+                buffer[Layout.LightFlashOffOffset]);
 
         ControllerAdaptiveTriggers? adaptive = (fields & FeedbackFields.AdaptiveTriggers) == 0
             ? null

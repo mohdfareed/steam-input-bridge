@@ -13,12 +13,23 @@ internal readonly record struct ControllerEndpointState(
     public bool CanAccept(ControllerFeedback feedback)
     {
         ControllerFeatures required = feedback.RequiredFeatures;
-        return FeedbackSink is not null && required != ControllerFeatures.None && Supports(required);
+        return FeedbackSink is not null &&
+            required != ControllerFeatures.None &&
+            (Features & required) != ControllerFeatures.None;
+    }
+
+    public bool CanAcceptAll(ControllerFeedback feedback)
+    {
+        ControllerFeatures required = feedback.RequiredFeatures;
+        return FeedbackSink is not null &&
+            required != ControllerFeatures.None &&
+            Supports(required);
     }
 
     public bool TrySendFeedback(ControllerFeedback feedback)
     {
-        return CanAccept(feedback) && FeedbackSink!.TrySendFeedback(feedback);
+        ControllerFeedback supported = feedback.ForFeatures(Features);
+        return !supported.IsEmpty && FeedbackSink is not null && FeedbackSink.TrySendFeedback(supported);
     }
 }
 

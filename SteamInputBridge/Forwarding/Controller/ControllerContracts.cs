@@ -227,7 +227,12 @@ public readonly record struct ControllerState(
 public readonly record struct ControllerRumble(ushort LowFrequency, ushort HighFrequency);
 
 /// <summary>LED or player-light feedback.</summary>
-public readonly record struct ControllerLight(byte Red, byte Green, byte Blue);
+public readonly record struct ControllerLight(
+    byte Red,
+    byte Green,
+    byte Blue,
+    byte FlashOn = 0,
+    byte FlashOff = 0);
 
 /// <summary>Adaptive trigger feedback placeholder for future PlayStation-style features.</summary>
 public readonly record struct ControllerAdaptiveTriggers(byte LeftMode, byte RightMode);
@@ -246,6 +251,15 @@ public readonly record struct ControllerFeedback(
 
     /// <summary>Gets whether this feedback carries any feature state.</summary>
     public bool IsEmpty => RequiredFeatures == ControllerFeatures.None;
+
+    /// <summary>Gets the feedback subset supported by one endpoint.</summary>
+    public ControllerFeedback ForFeatures(ControllerFeatures features)
+    {
+        return new ControllerFeedback(
+            (features & ControllerFeatures.Rumble) == 0 ? null : Rumble,
+            (features & ControllerFeatures.Light) == 0 ? null : Light,
+            (features & ControllerFeatures.AdaptiveTriggers) == 0 ? null : AdaptiveTriggers);
+    }
 
     /// <summary>Feedback that stops held rumble.</summary>
     public static ControllerFeedback StopRumble { get; } =

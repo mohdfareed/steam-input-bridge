@@ -81,3 +81,169 @@ public readonly record struct Xbox360Report(
 
 /// <summary>Xbox 360 rumble feedback.</summary>
 public readonly record struct Xbox360Rumble(byte LeftMotor, byte RightMotor);
+
+/// <summary>DualShock 4 button flags.</summary>
+[Flags]
+public enum Ds4Buttons
+{
+    /// <summary>No buttons.</summary>
+    None = 0,
+
+    /// <summary>PlayStation button.</summary>
+    PlayStation = 0x0001,
+
+    /// <summary>Touchpad click.</summary>
+    TouchpadClick = 0x0002,
+
+    /// <summary>Square button.</summary>
+    Square = 0x0010,
+
+    /// <summary>Cross button.</summary>
+    Cross = 0x0020,
+
+    /// <summary>Circle button.</summary>
+    Circle = 0x0040,
+
+    /// <summary>Triangle button.</summary>
+    Triangle = 0x0080,
+
+    /// <summary>L1 shoulder button.</summary>
+    L1 = 0x0100,
+
+    /// <summary>R1 shoulder button.</summary>
+    R1 = 0x0200,
+
+    /// <summary>L2 trigger button.</summary>
+    L2 = 0x0400,
+
+    /// <summary>R2 trigger button.</summary>
+    R2 = 0x0800,
+
+    /// <summary>Share button.</summary>
+    Share = 0x1000,
+
+    /// <summary>Options button.</summary>
+    Options = 0x2000,
+
+    /// <summary>L3 stick button.</summary>
+    L3 = 0x4000,
+
+    /// <summary>R3 stick button.</summary>
+    R3 = 0x8000,
+}
+
+/// <summary>DualShock 4 USB d-pad hat value.</summary>
+public enum Ds4DPad
+{
+    /// <summary>D-pad up.</summary>
+    Up = 0,
+
+    /// <summary>D-pad up/right.</summary>
+    UpRight = 1,
+
+    /// <summary>D-pad right.</summary>
+    Right = 2,
+
+    /// <summary>D-pad down/right.</summary>
+    DownRight = 3,
+
+    /// <summary>D-pad down.</summary>
+    Down = 4,
+
+    /// <summary>D-pad down/left.</summary>
+    DownLeft = 5,
+
+    /// <summary>D-pad left.</summary>
+    Left = 6,
+
+    /// <summary>D-pad up/left.</summary>
+    UpLeft = 7,
+
+    /// <summary>D-pad released.</summary>
+    Neutral = 8,
+}
+
+/// <summary>DualShock 4 controller state report.</summary>
+public readonly record struct Ds4Report(
+    Ds4Buttons Buttons,
+    Ds4DPad DPad,
+    sbyte LeftX,
+    sbyte LeftY,
+    sbyte RightX,
+    sbyte RightY,
+    byte LeftTrigger,
+    byte RightTrigger,
+    ushort Touch1X,
+    ushort Touch1Y,
+    bool Touch1Active,
+    ushort Touch2X,
+    ushort Touch2Y,
+    bool Touch2Active,
+    short GyroX,
+    short GyroY,
+    short GyroZ,
+    short AccelX,
+    short AccelY,
+    short AccelZ)
+{
+    /// <summary>Default accelerometer value for a flat DS4.</summary>
+    public const short DefaultAccelZ = -5023;
+
+    /// <summary>Maximum DS4 touchpad X coordinate.</summary>
+    public const ushort TouchpadMaxX = 1920;
+
+    /// <summary>Maximum DS4 touchpad Y coordinate.</summary>
+    public const ushort TouchpadMaxY = 942;
+
+    /// <summary>Centered controller state.</summary>
+    public static Ds4Report Empty => new(
+        Ds4Buttons.None,
+        Ds4DPad.Neutral,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        false,
+        0,
+        0,
+        false,
+        0,
+        0,
+        0,
+        0,
+        0,
+        DefaultAccelZ);
+
+    /// <summary>Gets whether the report carries no active input.</summary>
+    public bool IsEmpty =>
+        Buttons == Ds4Buttons.None &&
+        DPad == Ds4DPad.Neutral &&
+        LeftX == 0 &&
+        LeftY == 0 &&
+        RightX == 0 &&
+        RightY == 0 &&
+        LeftTrigger == 0 &&
+        RightTrigger == 0 &&
+        !Touch1Active &&
+        !Touch2Active &&
+        GyroX == 0 &&
+        GyroY == 0 &&
+        GyroZ == 0 &&
+        AccelX == 0 &&
+        AccelY == 0 &&
+        AccelZ == DefaultAccelZ;
+}
+
+/// <summary>DualShock 4 output feedback.</summary>
+public readonly record struct Ds4Feedback(
+    byte SmallRumble,
+    byte LargeRumble,
+    byte LedRed,
+    byte LedGreen,
+    byte LedBlue,
+    byte FlashOn,
+    byte FlashOff);

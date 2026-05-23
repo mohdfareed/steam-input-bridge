@@ -6,8 +6,6 @@ Steam Input orchestration and local input forwarding.
 
 - `.\Scripts\Build-Solution.ps1` - build and format solution
 - `.\Scripts\Test-Solution.ps1` - run normal tests
-- `.\Scripts\Test-Solution.ps1 -Tier Dependency` - run explicit dependency tests
-- `.\Scripts\Test-Solution.ps1 -Tier Manual` - run manual hardware/profile tests
 - `.\Scripts\Deploy-App.ps1` - package and deploy the apps
 - `.\Scripts\CLI.ps1` - run CLI commands (see below)
 
@@ -26,10 +24,9 @@ hot paths:
 
 ## TODO
 
-- [ ] Rewrite tray app using Windows standards.
-- [ ] SDL-VIIPER DS4 support with gyro integration.
-- [ ] Touchpad support and feedback capabilities.
-  - Light-bar RGB, flash timing, trigger rumble
+- [ ] Fix un-deterministic identification of Steam Input controllers.
+  - Steam Input shuffles controller IDs whenever a controller is disconnected or reconnected.
+  - This causes unstable mapping to physical controllers.
 - [ ] Support multiple Valve controllers.
   - Implement proper Steam Input controller identification.
   - Current implementation only support a single physical instance per controller model.

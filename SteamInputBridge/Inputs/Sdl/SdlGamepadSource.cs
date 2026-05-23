@@ -14,8 +14,10 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
 
     private readonly float[] _gyroData = new float[SensorValueCount];
     private readonly float[] _accelerometerData = new float[SensorValueCount];
+    private readonly Lock _feedbackGate = new();
     private readonly SdlGamepadRuntime.Lease _runtimeLease;
     private nint _gamepad;
+    private CancellationTokenSource? _lightFlashStop;
     private int _isConnected = 1;
     private int _motionEnabled = 1;
 
@@ -31,6 +33,7 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
         HasGyro = EnableSensor(gamepad, SDL.SensorType.Gyro);
         HasAccelerometer = EnableSensor(gamepad, SDL.SensorType.Accel);
         HasRumble = GetGamepadBooleanProperty(gamepad, SDL.Props.GamepadCapRumbleBoolean);
+        HasRgbLed = GetGamepadBooleanProperty(gamepad, SDL.Props.GamepadCapRGBLedBoolean);
     }
 
     // MARK: Publics
@@ -51,10 +54,14 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
     /// <summary>Gets whether the connected controller exposes basic rumble.</summary>
     public bool HasRumble { get; }
 
+    /// <summary>Gets whether the connected controller exposes an RGB LED.</summary>
+    public bool HasRgbLed { get; }
+
     /// <summary>Gets controller feature groups supported by this source.</summary>
     public ControllerFeatures Features =>
         ControllerFeatures.StandardControls |
         (HasRumble ? ControllerFeatures.Rumble : ControllerFeatures.None) |
+        (HasRgbLed ? ControllerFeatures.Light : ControllerFeatures.None) |
         (HasGyro || HasAccelerometer ? ControllerFeatures.Motion : ControllerFeatures.None);
 
     /// <summary>Gets or sets whether motion data is emitted.</summary>
@@ -93,19 +100,24 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
     /// <inheritdoc />
     public bool TrySendFeedback(ControllerFeedback feedback)
     {
-        if (!HasRumble || feedback.Rumble is not { } rumble)
+        nint gamepad = _gamepad;
+        if (!IsConnected || gamepad == 0)
         {
             return false;
         }
 
-        nint gamepad = _gamepad;
-        return IsConnected &&
-            gamepad != 0 &&
-            SDL.RumbleGamepad(
-                gamepad,
-                rumble.LowFrequency,
-                rumble.HighFrequency,
-                rumble.LowFrequency == 0 && rumble.HighFrequency == 0 ? 0 : RumbleHoldDurationMilliseconds);
+        bool applied = false;
+        if (feedback.Rumble is { } rumble)
+        {
+            applied = TrySendRumble(gamepad, rumble);
+        }
+
+        if (feedback.Light is { } light)
+        {
+            applied = TrySendLight(light) || applied;
+        }
+
+        return applied;
     }
 
     /// <inheritdoc />
@@ -121,7 +133,17 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
         nint gamepad = Interlocked.Exchange(ref _gamepad, 0);
         if (gamepad != 0)
         {
+            lock (_feedbackGate)
+            {
+                CancelLightFlash();
+            }
+
             _ = SDL.RumbleGamepad(gamepad, 0, 0, 0);
+            if (HasRgbLed)
+            {
+                _ = SDL.SetGamepadLED(gamepad, 0, 0, 0);
+            }
+
             SDL.CloseGamepad(gamepad);
         }
 
@@ -200,5 +222,88 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
     {
         uint properties = SDL.GetGamepadProperties(gamepad);
         return properties != 0 && SDL.GetBooleanProperty(properties, property, defaultValue: false);
+    }
+
+    private static bool TrySendRumble(nint gamepad, ControllerRumble rumble)
+    {
+        return SDL.RumbleGamepad(
+            gamepad,
+            rumble.LowFrequency,
+            rumble.HighFrequency,
+            rumble.LowFrequency == 0 && rumble.HighFrequency == 0 ? 0 : RumbleHoldDurationMilliseconds);
+    }
+
+    private bool TrySendLight(ControllerLight light)
+    {
+        if (!HasRgbLed)
+        {
+            return false;
+        }
+
+        lock (_feedbackGate)
+        {
+            CancelLightFlash();
+            if (light.FlashOn == 0 || light.FlashOff == 0)
+            {
+                nint gamepad = _gamepad;
+                return IsConnected && gamepad != 0 &&
+                    SDL.SetGamepadLED(gamepad, light.Red, light.Green, light.Blue);
+            }
+
+            _lightFlashStop = new CancellationTokenSource();
+            _ = FlashLightAsync(light, _lightFlashStop.Token);
+            return true;
+        }
+    }
+
+    private async Task FlashLightAsync(ControllerLight light, CancellationToken cancellationToken)
+    {
+        TimeSpan onDelay = ToFlashDelay(light.FlashOn);
+        TimeSpan offDelay = ToFlashDelay(light.FlashOff);
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                nint gamepad = _gamepad;
+                if (!IsConnected || gamepad == 0)
+                {
+                    return;
+                }
+
+                _ = SDL.SetGamepadLED(gamepad, light.Red, light.Green, light.Blue);
+                await Task.Delay(onDelay, cancellationToken).ConfigureAwait(false);
+
+                gamepad = _gamepad;
+                if (!IsConnected || gamepad == 0)
+                {
+                    return;
+                }
+
+                _ = SDL.SetGamepadLED(gamepad, 0, 0, 0);
+                await Task.Delay(offDelay, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private void CancelLightFlash()
+    {
+        CancellationTokenSource? previous = _lightFlashStop;
+        _lightFlashStop = null;
+        previous?.Cancel();
+        previous?.Dispose();
+    }
+
+    private static TimeSpan ToFlashDelay(byte value)
+    {
+        // DS4 output reports express flash on/off in 2.5ms units.
+        int milliseconds = Math.Max(1, (int)Math.Round(value * 2.5, MidpointRounding.AwayFromZero));
+        return TimeSpan.FromMilliseconds(milliseconds);
     }
 }
