@@ -4,12 +4,13 @@ Steam Input orchestration and local input forwarding.
 
 ## Requirements
 
-- Steam, for Steam Input profiles and shortcut launches.
-- VIIPER server/runtime, for virtual controller and mouse output.
-- HidHide, for hiding physical controller duplicates when enabled.
-- Steam ROM Manager, only if using SRM shortcut export feature.
+- Steam, for Steam Input profiles and game shortcut support
+- VIIPER server/runtime, for virtual controller and mouse output
+- HidHide, for hiding physical controller duplicates when enabled
+- Steam ROM Manager (optional), only if using SRM shortcut export feature
 
 ## Development
+
 - `.\Scripts\Build-Solution.ps1` - build and format solution
 - `.\Scripts\Test-Solution.ps1` - run normal tests
 - `.\Scripts\Deploy-App.ps1` - package and deploy the apps
@@ -17,7 +18,7 @@ Steam Input orchestration and local input forwarding.
 
 ### Requirements
 
-- .NET 10 SDK, for building and running from source.
+- .NET 10 SDK
 
 ## Runtime Timing
 
@@ -31,6 +32,7 @@ Steam Input orchestration and local input forwarding.
 
 ## TODO
 
+- [ ] Update SDL dependency to add Steam Controller touchpad support.
 - [ ] Fix un-deterministic identification of Steam Input controllers.
   - Steam Input shuffles controller IDs whenever a controller is disconnected or reconnected.
   - This causes unstable mapping to physical controllers.

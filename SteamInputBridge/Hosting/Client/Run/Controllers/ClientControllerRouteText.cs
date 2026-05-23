@@ -39,7 +39,7 @@ internal static class ClientControllerRouteText
             SdlControllerRouteIdentity identity = identities[source.Source];
             values.Add(string.Create(
                 CultureInfo.InvariantCulture,
-                $"idx={source.ControllerIndex} route=\"{Clean(identity.RouteId)}\" physical=\"{Clean(identity.PhysicalDeviceId)}\" label=\"{Clean(identity.Label)}\" sdl=\"{Clean(controller.Id.Value)}\" source={controller.Source} instance={controller.InstanceId} steam={controller.SteamHandle:x16} vid={controller.VendorId:x4} pid={controller.ProductId:x4} path=\"{Clean(controller.Path)}\" motion={controller.HasMotion}"));
+                $"idx={source.ControllerIndex} route=\"{Clean(identity.RouteId)}\" physical=\"{Clean(identity.PhysicalDeviceId)}\" label=\"{Clean(identity.Label)}\" sdl=\"{Clean(controller.Id.Value)}\" source={controller.Source} instance={controller.InstanceId} steam={controller.SteamHandle:x16} vid={controller.VendorId:x4} pid={controller.ProductId:x4} path=\"{Clean(controller.Path)}\" motion={controller.HasMotion} touchpad={controller.HasTouchpad}"));
         }
 
         return string.Join("; ", values);
@@ -49,7 +49,7 @@ internal static class ClientControllerRouteText
     {
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"name=\"{Clean(controller.Name)}\" id=\"{Clean(controller.Id.Value)}\" source={controller.Source} instance={controller.InstanceId} steam={controller.SteamHandle:x16} vid={controller.VendorId:x4} pid={controller.ProductId:x4} path=\"{Clean(controller.Path)}\" motion={controller.HasMotion}");
+            $"name=\"{Clean(controller.Name)}\" id=\"{Clean(controller.Id.Value)}\" source={controller.Source} instance={controller.InstanceId} steam={controller.SteamHandle:x16} vid={controller.VendorId:x4} pid={controller.ProductId:x4} path=\"{Clean(controller.Path)}\" motion={controller.HasMotion} touchpad={controller.HasTouchpad}");
     }
 
     private static string Clean(string? value)

@@ -26,6 +26,7 @@
   <ItemGroup>
     <None Include="appsettings.json" Link="appsettings.json" CopyToOutputDirectory="Always" />
     <None Include="appsettings.example.json" Link="appsettings.example.json" CopyToPublishDirectory="Always" />
+    <None Include="srm-parser.ini" Link="srm/parser.ini" CopyToPublishDirectory="Always" />
   </ItemGroup>
 
 </Project>

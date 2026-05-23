@@ -6,6 +6,8 @@ namespace SteamInputBridge.Inputs.Sdl;
 
 internal static class SdlGamepadStateReader
 {
+    private const int MaxTouchContacts = 2;
+
     // MARK: Publics
     // ========================================================================
 
@@ -69,26 +71,53 @@ internal static class SdlGamepadStateReader
 
     private static ControllerTouchpadState? ReadTouchpad(nint gamepad)
     {
-        if (SDL.GetNumGamepadTouchpads(gamepad) <= 0)
+        int touchpadCount = SDL.GetNumGamepadTouchpads(gamepad);
+        if (touchpadCount <= 0)
         {
             return null;
         }
 
-        ControllerTouchContact touch1 = ReadTouchContact(gamepad, finger: 0);
-        ControllerTouchContact touch2 = SDL.GetNumGamepadTouchpadFingers(gamepad, touchpad: 0) > 1
-            ? ReadTouchContact(gamepad, finger: 1)
-            : default;
+        // DS4/DualSense expose one SDL touchpad with two fingers. Newer SDL
+        // exposes Steam Controller as two touchpads with one finger each.
+        // Flatten both shapes into the two DS4-compatible contacts we forward.
+        ControllerTouchContact touch1 = default;
+        ControllerTouchContact touch2 = default;
+        int contactCount = 0;
 
-        return !touch1.IsTouched && !touch2.IsTouched
+        for (int touchpad = 0; touchpad < touchpadCount && contactCount < MaxTouchContacts; touchpad++)
+        {
+            int fingerCount = SDL.GetNumGamepadTouchpadFingers(gamepad, touchpad);
+            for (int finger = 0; finger < fingerCount && contactCount < MaxTouchContacts; finger++)
+            {
+                ControllerTouchContact contact = ReadTouchContact(gamepad, touchpad, finger);
+                if (!contact.IsTouched)
+                {
+                    continue;
+                }
+
+                if (contactCount == 0)
+                {
+                    touch1 = contact;
+                }
+                else
+                {
+                    touch2 = contact;
+                }
+
+                contactCount++;
+            }
+        }
+
+        return contactCount == 0
             ? null
             : new ControllerTouchpadState(touch1, touch2);
     }
 
-    private static ControllerTouchContact ReadTouchContact(nint gamepad, int finger)
+    private static ControllerTouchContact ReadTouchContact(nint gamepad, int touchpad, int finger)
     {
         return SDL.GetGamepadTouchpadFinger(
             gamepad,
-            touchpad: 0,
+            touchpad: touchpad,
             finger: finger,
             out bool down,
             out float x,

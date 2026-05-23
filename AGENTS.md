@@ -186,8 +186,8 @@ Do not set `LangVersion=latest`.
   use. Do not call `SDL_QuitSubSystem` on reconnect; Steam Input controller
   visibility may not recover inside the already-launched client process.
 - SDL touchpad input should carry touchpad click plus the first two touch
-  contacts. Keep contact coordinates normalized until mapping into a concrete
-  output report.
+  contacts across SDL touchpad surfaces/fingers. Keep contact coordinates
+  normalized until mapping into a concrete output report.
 - The host-side physical controller pump maintains physical slots only. It must
   not create a VIIPER output unless a client route with controller output
   attaches to that physical slot.

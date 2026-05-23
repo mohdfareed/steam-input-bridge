@@ -78,7 +78,7 @@ public sealed class ManualSdlControllerTests
         foreach (SdlControllerInfo controller in controllers)
         {
             TestContext.WriteLine(
-                $"{label}: name=\"{controller.Name}\" id=\"{controller.Id.Value}\" source={controller.Source} steam={controller.SteamHandle:x16} vid={controller.VendorId:x4} pid={controller.ProductId:x4} path=\"{controller.Path}\" motion={controller.HasMotion}");
+                $"{label}: name=\"{controller.Name}\" id=\"{controller.Id.Value}\" source={controller.Source} steam={controller.SteamHandle:x16} vid={controller.VendorId:x4} pid={controller.ProductId:x4} path=\"{controller.Path}\" motion={controller.HasMotion} touchpad={controller.HasTouchpad}");
         }
     }
 }
