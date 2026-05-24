@@ -9,8 +9,9 @@ namespace SteamInputBridge.Hosting.Client.Run.Controllers;
 internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
 {
     private readonly Lock _gate = new();
-    private readonly Dictionary<SdlControllerId, ushort> _controllerIndices = [];
+    private readonly Dictionary<ControllerIndexKey, ushort> _controllerIndices = [];
     private List<ClientControllerRouteSource> _sources = [];
+    private SdlGamepadSource[] _gamepadSources = [];
     private ushort _nextControllerIndex;
 
     public IReadOnlyList<ClientControllerRouteSource> Add(IReadOnlyList<SdlGamepadSource> sources)
@@ -25,10 +26,11 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
             List<ClientControllerRouteSource> entries = [.. _sources];
             foreach (SdlGamepadSource source in sources)
             {
-                entries.Add(new ClientControllerRouteSource(GetOrAddControllerIndex(source.Controller.Id), source));
+                entries.Add(new ClientControllerRouteSource(GetOrAddControllerIndex(source.Controller), source));
             }
 
             _sources = entries;
+            _gamepadSources = CreateGamepadSnapshot(entries);
             return _sources;
         }
     }
@@ -48,6 +50,7 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
             removed = sources[index];
             sources.RemoveAt(index);
             _sources = sources;
+            _gamepadSources = CreateGamepadSnapshot(sources);
             return true;
         }
     }
@@ -66,14 +69,10 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
 
     public IReadOnlyList<SdlGamepadSource> GetGamepadSourcesSnapshot()
     {
-        IReadOnlyList<ClientControllerRouteSource> sources = GetSourcesSnapshot();
-        SdlGamepadSource[] gamepads = new SdlGamepadSource[sources.Count];
-        for (int i = 0; i < sources.Count; i++)
+        lock (_gate)
         {
-            gamepads[i] = sources[i].Source;
+            return _gamepadSources;
         }
-
-        return gamepads;
     }
 
     public IReadOnlyList<ClientControllerRouteSource> GetSourcesSnapshot()
@@ -133,13 +132,28 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
 
             List<ClientControllerRouteSource> retained = [];
             List<ClientControllerRouteSource> removed = [];
+            bool hasCurrentControllers = currentControllers.Count != 0;
             foreach (ClientControllerRouteSource source in _sources)
             {
-                // Steam can briefly report an empty or partial controller list
-                // during virtual-device rebuilds. A missing id is not enough
-                // to unregister a route; explicit SDL removal handles that.
-                if (!currentControllers.TryGetValue(source.Source.Controller.Id, out SdlControllerInfo? current) ||
-                    SdlControllerRoutePolicy.IsSameConnectedController(source.Source.Controller, current))
+                // Keep routes through empty Steam scans, but do not preserve a
+                // stale source when Steam returns another non-empty set. Steam
+                // can reshuffle handles while rebuilding virtual devices; stale
+                // routes are worse than a brief unregister/reopen.
+                if (!currentControllers.TryGetValue(source.Source.Controller.Id, out SdlControllerInfo? current))
+                {
+                    if (hasCurrentControllers)
+                    {
+                        removed.Add(source);
+                    }
+                    else
+                    {
+                        retained.Add(source);
+                    }
+
+                    continue;
+                }
+
+                if (SdlControllerRoutePolicy.IsSameConnectedController(source.Source.Controller, current))
                 {
                     retained.Add(source);
                 }
@@ -155,6 +169,7 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
             }
 
             _sources = retained;
+            _gamepadSources = CreateGamepadSnapshot(retained);
             return removed;
         }
     }
@@ -166,6 +181,7 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
         {
             sources = _sources;
             _sources = [];
+            _gamepadSources = [];
         }
 
         foreach (ClientControllerRouteSource source in sources)
@@ -179,16 +195,56 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
         await ClearAsync().ConfigureAwait(false);
     }
 
-    private ushort GetOrAddControllerIndex(SdlControllerId controllerId)
+    private ushort GetOrAddControllerIndex(SdlControllerInfo controller)
     {
-        if (_controllerIndices.TryGetValue(controllerId, out ushort index))
+        ControllerIndexKey key = ControllerIndexKey.Create(controller);
+        if (_controllerIndices.TryGetValue(key, out ushort index))
         {
             return index;
         }
 
         index = _nextControllerIndex++;
-        _controllerIndices[controllerId] = index;
+        _controllerIndices[key] = index;
         return index;
     }
 
+    private static SdlGamepadSource[] CreateGamepadSnapshot(List<ClientControllerRouteSource> sources)
+    {
+        if (sources.Count == 0)
+        {
+            return [];
+        }
+
+        SdlGamepadSource[] gamepads = new SdlGamepadSource[sources.Count];
+        for (int i = 0; i < sources.Count; i++)
+        {
+            gamepads[i] = sources[i].Source;
+        }
+
+        return gamepads;
+    }
+
+    private readonly record struct ControllerIndexKey(
+        SdlControllerId Id,
+        uint InstanceId,
+        SdlControllerSource Source,
+        ulong SteamHandle,
+        ushort VendorId,
+        ushort ProductId,
+        string Name,
+        string? Path)
+    {
+        public static ControllerIndexKey Create(SdlControllerInfo controller)
+        {
+            return new ControllerIndexKey(
+                controller.Id,
+                controller.InstanceId,
+                controller.Source,
+                controller.SteamHandle,
+                controller.VendorId,
+                controller.ProductId,
+                controller.Name,
+                controller.Path);
+        }
+    }
 }

@@ -31,7 +31,8 @@ public sealed record ControllerSlotStatus(
 public sealed record ControllerClientRegistration(
     ushort ControllerIndex,
     ControllerId ControllerId,
-    ControllerFeatures Features);
+    ControllerFeatures Features,
+    bool CanOwnOutputWithoutPhysical = false);
 
 /// <summary>Routes active-client controller input to game-facing controller outputs.</summary>
 public sealed partial class ControllerBroker(IControllerOutputFactory outputFactory) : IDisposable, IAsyncDisposable
@@ -66,6 +67,15 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
         List<PendingControllerSend> sends = [];
         lock (_gate)
         {
+            Guid? previousClientId = _activeClientId;
+            Guid? nextClientId = clientId.HasValue && _clients.ContainsKey(clientId.Value)
+                ? clientId
+                : null;
+            if (previousClientId != nextClientId && previousClientId.HasValue)
+            {
+                ClearClientStates(previousClientId.Value);
+            }
+
             _activeClientId = clientId.HasValue && _clients.ContainsKey(clientId.Value)
                 ? clientId
                 : null;
@@ -208,8 +218,16 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
                 ControllerSlot slot = GetOrCreateSlot(entry.Value.ControllerId);
                 ControllerEndpointState state =
                     slot.ClientEndpoints.TryGetValue(entry.Key, out ControllerEndpointState current)
-                        ? new ControllerEndpointState(current.State, entry.Value.Features, current.FeedbackSink)
-                        : new ControllerEndpointState(ControllerState.Empty, entry.Value.Features, null);
+                        ? new ControllerEndpointState(
+                            current.State,
+                            entry.Value.Features,
+                            current.FeedbackSink,
+                            entry.Value.CanOwnOutputWithoutPhysical)
+                        : new ControllerEndpointState(
+                            ControllerState.Empty,
+                            entry.Value.Features,
+                            null,
+                            entry.Value.CanOwnOutputWithoutPhysical);
                 slot.ClientEndpoints[entry.Key] = state;
             }
 
@@ -266,15 +284,86 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
                 return;
             }
 
-            ControllerSlot slot = GetOrCreateSlot(physicalControllerId);
-            slot.ClientEndpoints[new ControllerEndpointId(clientId, controllerIndex)] =
-                new ControllerEndpointState(state, features, feedbackSink);
+            // Inactive clients may keep streaming while another game is in
+            // focus. Ignore those frames completely so they cannot become the
+            // next active state's stale output.
+            if (_activeClientId != clientId)
+            {
+                return;
+            }
 
-            RefreshOutput(slot);
+            ControllerSlot slot = GetOrCreateSlot(physicalControllerId);
+            ControllerEndpointId endpointId = new(clientId, controllerIndex);
+            bool hasCurrent = slot.ClientEndpoints.TryGetValue(endpointId, out ControllerEndpointState current);
+            bool replayFeedback =
+                !hasCurrent ||
+                !ReferenceEquals(current.FeedbackSink, feedbackSink) ||
+                current.Features != features;
+            slot.ClientEndpoints[endpointId] = new ControllerEndpointState(
+                state,
+                features,
+                feedbackSink,
+                hasCurrent && current.CanOwnOutputWithoutPhysical);
+
+            if (ShouldTryConnectOutput(slot))
+            {
+                RefreshOutput(slot);
+            }
+
             send = _activeClientId == clientId
                 ? CreateCurrentStateSend(slot)
                 : null;
-            if (_activeClientId == clientId)
+            if (_activeClientId == clientId && replayFeedback)
+            {
+                slot.ReplayFeedback(clientId);
+            }
+        }
+
+        SendOutput(send);
+    }
+
+    /// <summary>Updates an already-registered client-visible controller stream.</summary>
+    public void UpdateClientController(
+        Guid clientId,
+        ushort controllerIndex,
+        ControllerState state,
+        ControllerFeatures features,
+        IControllerFeedbackSink? feedbackSink = null)
+    {
+        ThrowIfDisposed();
+        PendingControllerSend? send;
+
+        lock (_gate)
+        {
+            if (!_clients.ContainsKey(clientId) ||
+                !TryFindSlot(new ControllerEndpointId(clientId, controllerIndex), out ControllerSlot slot))
+            {
+                return;
+            }
+
+            // Inactive clients may keep streaming while another game is in
+            // focus. Ignore those frames completely so they cannot become the
+            // next active state's stale output.
+            if (_activeClientId != clientId)
+            {
+                return;
+            }
+
+            ControllerEndpointId endpointId = new(clientId, controllerIndex);
+            ControllerEndpointState current = slot.ClientEndpoints[endpointId];
+            bool replayFeedback =
+                !ReferenceEquals(current.FeedbackSink, feedbackSink) ||
+                current.Features != features;
+            slot.ClientEndpoints[endpointId] = new ControllerEndpointState(
+                state,
+                features,
+                feedbackSink,
+                current.CanOwnOutputWithoutPhysical);
+
+            send = _activeClientId == clientId
+                ? CreateCurrentStateSend(slot)
+                : null;
+            if (_activeClientId == clientId && replayFeedback)
             {
                 slot.ReplayFeedback(clientId);
             }
@@ -307,11 +396,20 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
         lock (_gate)
         {
             ControllerSlot slot = GetOrCreateSlot(controllerId);
+            bool replayFeedback =
+                slot.Physical is not { } current ||
+                !ReferenceEquals(current.FeedbackSink, feedbackSink) ||
+                current.Features != features;
             slot.Physical = new ControllerEndpointState(state, features, feedbackSink);
+            if (ShouldTryConnectOutput(slot))
+            {
+                RefreshOutput(slot);
+            }
+
             send = _activeClientId.HasValue
                 ? CreateCurrentStateSend(slot)
                 : null;
-            if (_activeClientId.HasValue)
+            if (_activeClientId.HasValue && replayFeedback)
             {
                 slot.ReplayFeedback(_activeClientId.Value);
             }
@@ -335,18 +433,19 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
             }
 
             slot.RemovePhysical();
-            send = _activeClientId.HasValue
-                ? CreateCurrentStateSend(slot)
-                : null;
             if (!slot.HasEndpoints)
             {
                 slot.DisconnectOutput(dispose);
                 _ = _slots.Remove(controllerId);
+                send = null;
             }
             else
             {
                 RefreshOutput(slot, dispose);
                 RetargetFeedback();
+                send = _activeClientId.HasValue
+                    ? CreateCurrentStateSend(slot)
+                    : null;
             }
         }
 
@@ -361,17 +460,14 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
     public void SetControllerOutputEnabled(bool enabled)
     {
         ThrowIfDisposed();
-        List<IControllerOutput> dispose = [];
         List<PendingControllerSend> sends = [];
         lock (_gate)
         {
             _controllerOutputEnabled = enabled;
-            RefreshOutputs(dispose);
             AddCurrentStateSends(sends);
         }
 
         SendOutputs(sends);
-        DisposeOutputs(dispose);
     }
 
     /// <summary>Enables or disables physical-controller motion fallback.</summary>
@@ -477,6 +573,49 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
         }
 
         return slot;
+    }
+
+    private void ClearClientStates(Guid clientId)
+    {
+        foreach (ControllerSlot slot in _slots.Values)
+        {
+            foreach (ControllerEndpointId endpointId in slot.ClientEndpoints.Keys.ToArray())
+            {
+                if (endpointId.ClientId != clientId)
+                {
+                    continue;
+                }
+
+                ControllerEndpointState current = slot.ClientEndpoints[endpointId];
+                slot.ClientEndpoints[endpointId] = new ControllerEndpointState(
+                    ControllerState.Empty,
+                    current.Features,
+                    current.FeedbackSink,
+                    current.CanOwnOutputWithoutPhysical);
+            }
+        }
+    }
+
+    private bool TryFindSlot(ControllerEndpointId endpointId, out ControllerSlot slot)
+    {
+        foreach (ControllerSlot candidate in _slots.Values)
+        {
+            if (candidate.ClientEndpoints.ContainsKey(endpointId))
+            {
+                slot = candidate;
+                return true;
+            }
+        }
+
+        slot = null!;
+        return false;
+    }
+
+    private bool ShouldTryConnectOutput(ControllerSlot slot)
+    {
+        return slot.Output is null &&
+            ((slot.Physical.HasValue && slot.ClientEndpoints.Count != 0) || slot.HasClientOnlyOutputOwner) &&
+            HasOutputClient();
     }
 
     private void PruneEmptySlots(List<IControllerOutput> dispose)

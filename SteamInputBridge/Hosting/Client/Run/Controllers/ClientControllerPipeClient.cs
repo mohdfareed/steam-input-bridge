@@ -14,6 +14,8 @@ internal sealed class ClientControllerPipeClient(
     ClientControllerSourceRegistry sources,
     CancellationTokenSource stop) : IAsyncDisposable
 {
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(2);
+
     private readonly Channel<ControllerInputFrame> _inputWrites = Channel.CreateBounded<ControllerInputFrame>(
         new BoundedChannelOptions(capacity: 128)
         {
@@ -100,10 +102,10 @@ internal sealed class ClientControllerPipeClient(
 
         try
         {
-            await task.ConfigureAwait(false);
+            await task.WaitAsync(StopTimeout).ConfigureAwait(false);
         }
         catch (Exception exception) when (
-            exception is OperationCanceledException or IOException or ObjectDisposedException)
+            exception is OperationCanceledException or IOException or ObjectDisposedException or TimeoutException)
         {
         }
     }

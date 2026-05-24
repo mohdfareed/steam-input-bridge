@@ -20,10 +20,9 @@ internal sealed class ClientControllerSourceRegistrar(
         string profileId,
         CancellationToken cancellationToken)
     {
-        // A controller rescan is not proof that existing routes are gone.
-        // Steam can briefly report empty or partial SDL lists while rebuilding
-        // virtual devices, so only explicit SDL remove events should remove
-        // opened sources before a successful replacement exists.
+        // Empty scans are treated as transient. Non-empty scans are allowed to
+        // replace stale opened sources because Steam can reshuffle/reuse handles
+        // while rebuilding virtual controllers.
         return await AddMissingSourcesAsync(client, profileId, cancellationToken).ConfigureAwait(false);
     }
 

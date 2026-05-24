@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Hosting.Client.Run.Controllers;
 using SteamInputBridge.Inputs.Sdl;
@@ -75,6 +76,76 @@ public sealed class SdlControllerRoutePolicyTests
             [physical]);
 
         Assert.AreSame(physical, match);
+    }
+
+    /// <summary>Candidate narrowing accepts only physically possible Steam-to-host pairs.</summary>
+    [TestMethod]
+    public void PhysicalCounterpartCandidateRequiresCompatibleIdentity()
+    {
+        SdlControllerInfo dualSense = Controller(
+            SdlControllerSource.Physical,
+            0x054c,
+            0x0df2,
+            "ps5",
+            "DualSense Edge Wireless Controller");
+        SdlControllerInfo steamController = Controller(
+            SdlControllerSource.Physical,
+            0x28de,
+            0x1142,
+            "steam",
+            "Steam Controller");
+
+        Assert.IsTrue(SdlControllerRoutePolicy.CanBePhysicalCounterpart(
+            0x054c,
+            0x0ce6,
+            "DualSense Wireless Controller",
+            dualSense));
+        Assert.IsFalse(SdlControllerRoutePolicy.CanBePhysicalCounterpart(
+            0x054c,
+            0x0ce6,
+            "DualSense Wireless Controller",
+            steamController));
+        Assert.IsTrue(SdlControllerRoutePolicy.CanBePhysicalCounterpart(
+            0x28de,
+            0x1302,
+            "Steam Controller",
+            steamController));
+    }
+
+    /// <summary>Steam's generic DualSense id can pair with one host-visible DualSense Edge.</summary>
+    [TestMethod]
+    public void MatchesSingleDualSenseFamilyControllerByName()
+    {
+        SdlControllerInfo physical = Controller(
+            SdlControllerSource.Physical,
+            0x054c,
+            0x0df2,
+            "physical",
+            "DualSense Edge Wireless Controller");
+
+        SdlControllerInfo? match = SdlControllerRoutePolicy.FindPhysicalControllerByDeviceIdentity(
+            0x054c,
+            0x0ce6,
+            "DualSense Wireless Controller",
+            [physical]);
+
+        Assert.AreSame(physical, match);
+    }
+
+    /// <summary>DualSense family fallback refuses to guess when two Sony controllers match.</summary>
+    [TestMethod]
+    public void RejectsMultipleDualSenseFamilyControllersByName()
+    {
+        SdlControllerInfo? match = SdlControllerRoutePolicy.FindPhysicalControllerByDeviceIdentity(
+            0x054c,
+            0x0ce6,
+            "DualSense Wireless Controller",
+            [
+                Controller(SdlControllerSource.Physical, 0x054c, 0x0df2, "one", "DualSense Edge Wireless Controller"),
+                Controller(SdlControllerSource.Physical, 0x054c, 0x0df3, "two", "DualSense Wireless Controller"),
+            ]);
+
+        Assert.IsNull(match);
     }
 
     /// <summary>Valve fallback rejects multiple physical Steam Controllers with the same name.</summary>
@@ -248,6 +319,38 @@ public sealed class SdlControllerRoutePolicyTests
 
         Assert.AreEqual("steam:05de143a9a0d5235", identity.RouteId);
         Assert.IsNull(identity.PhysicalDeviceId);
+    }
+
+    /// <summary>Only the exact real Steam Controller identity can own output without a physical match.</summary>
+    [TestMethod]
+    public void RealSteamControllerCanOwnOutputWithoutPhysical()
+    {
+        ClientControllerInfo controller = new(
+            0,
+            "steam:0001fa99604010e6",
+            "Steam Controller",
+            ControllerFeatures.StandardControls,
+            PhysicalDeviceId: null,
+            VendorId: 0x28de,
+            ProductId: 0x1302);
+
+        Assert.IsTrue(SdlControllerRoutePolicy.CanOwnOutputWithoutPhysical(controller));
+    }
+
+    /// <summary>Generic unresolved Steam DS4 streams cannot own output without a physical match.</summary>
+    [TestMethod]
+    public void SteamDs4CannotOwnOutputWithoutPhysical()
+    {
+        ClientControllerInfo controller = new(
+            0,
+            "steam:0654c5c41534ef2f",
+            "PS4 Controller",
+            ControllerFeatures.StandardControls,
+            PhysicalDeviceId: null,
+            VendorId: 0x054c,
+            ProductId: 0x05c4);
+
+        Assert.IsFalse(SdlControllerRoutePolicy.CanOwnOutputWithoutPhysical(controller));
     }
 
     /// <summary>Strict physical matches still own route and physical device identity.</summary>

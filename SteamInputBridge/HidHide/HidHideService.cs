@@ -11,7 +11,8 @@ internal sealed class HidHideService(
     IHidHideCommandRunner runner,
     ILogger<HidHideService>? logger = null,
     Func<string?>? getCurrentProcessPath = null,
-    Func<IReadOnlyList<string>>? getApplicationAccessPaths = null) : IDisposable
+    Func<IReadOnlyList<string>>? getApplicationAccessPaths = null,
+    HidHideOwnedScopeStore? ownedScopeStore = null) : IDisposable
 {
     private readonly Lock _gate = new();
     private readonly Func<IReadOnlyList<string>> _getApplicationAccessPaths =
@@ -55,6 +56,23 @@ internal sealed class HidHideService(
         lock (_gate)
         {
             ClearCore();
+        }
+    }
+
+    /// <summary>Restores a HidHide scope left by an earlier server lifetime.</summary>
+    public void ClearPreviousOwnedScope()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (ownedScopeStore?.Load() is not { } snapshot)
+            {
+                return;
+            }
+
+            snapshot.Restore(runner);
+            ownedScopeStore.Clear();
+            HidHideLog.Restored(logger);
         }
     }
 
@@ -138,6 +156,7 @@ internal sealed class HidHideService(
             }
 
             _ = runner.Run(args);
+            ownedScopeStore?.Save(snapshot);
             _snapshot = snapshot;
             _scope = scope;
             HidHideLog.Applied(logger, scope.DeviceInstancePaths.Count);
@@ -158,6 +177,7 @@ internal sealed class HidHideService(
         }
 
         _snapshot.Restore(runner);
+        ownedScopeStore?.Clear();
         HidHideLog.Restored(logger);
         _snapshot = null;
         _scope = null;
@@ -194,13 +214,15 @@ internal sealed record HidHideSnapshot(
         IHidHideCommandRunner runner,
         HidHideScope scope)
     {
-        string hiddenDevices = runner.Run(["--dev-list"]);
         return new HidHideSnapshot(
             runner.Run(["--cloak-state"]),
             runner.Run(["--inv-state"]),
             scope.DeviceInstancePaths.ToDictionary(
                 static device => device,
-                device => HidHideCommandOutput.ContainsValue(hiddenDevices, "--dev-hide", device),
+                // Scope devices are owned by this app while the profile runs.
+                // Always unhide them on clear; otherwise a stale hide left by a
+                // previous process lifetime is mistaken for user-owned state.
+                static _ => false,
                 StringComparer.OrdinalIgnoreCase));
     }
 

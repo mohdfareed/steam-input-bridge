@@ -14,6 +14,8 @@ internal sealed class ClientConnection(
 {
     private const string DefaultPipeName = "SteamInputBridge";
 
+    private static readonly TimeSpan PipeConnectTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan KeepAliveRequestTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan KeepAliveDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
 
@@ -60,7 +62,10 @@ internal sealed class ClientConnection(
 
             try
             {
-                await Server.AckAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+                await Server
+                    .AckAsync()
+                    .WaitAsync(KeepAliveRequestTimeout, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (Exception exception) when (IsConnectionFailure(exception))
             {
@@ -120,11 +125,13 @@ internal sealed class ClientConnection(
         NamedPipeClientStream pipe = new(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
         try
         {
-            await pipe.ConnectAsync(cancellationToken).ConfigureAwait(false);
+            await pipe
+                .ConnectAsync((int)PipeConnectTimeout.TotalMilliseconds, cancellationToken)
+                .ConfigureAwait(false);
             IHostServerApi server = JsonRpc.Attach<IHostServerApi>(pipe);
             Guid clientId = await server
                 .ConnectAsync(Environment.ProcessId)
-                .WaitAsync(cancellationToken)
+                .WaitAsync(PipeConnectTimeout, cancellationToken)
                 .ConfigureAwait(false);
 
             _pipe = pipe;
@@ -192,6 +199,7 @@ internal sealed class ClientConnection(
         return exception is IOException
             or EndOfStreamException
             or InvalidOperationException
+            or TimeoutException
             or ConnectionLostException
             or ObjectDisposedException;
     }

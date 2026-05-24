@@ -23,7 +23,8 @@ internal sealed partial class ServerSessions(
     Func<ServerInputStatus>? getInputStatus = null,
     Func<ServerSteamInputStatus>? getSteamInputStatus = null,
     Func<ServerHidHideStatus>? getHidHideStatus = null,
-    Action? routeStateChanged = null)
+    Action? routeStateChanged = null,
+    Action? statusChanged = null)
 {
     private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
 
@@ -34,6 +35,7 @@ internal sealed partial class ServerSessions(
         ConnectedClient client = new(Guid.NewGuid(), processId, DateTimeOffset.UtcNow);
         _clients[client.Id] = client;
         HostingLog.ClientConnected(logger, client.Id, client.ProcessId, _clients.Count);
+        statusChanged?.Invoke();
         return client.Id;
     }
 
@@ -45,6 +47,7 @@ internal sealed partial class ServerSessions(
         mouseForwarding.RemoveClient(clientId);
         await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
         routeStateChanged?.Invoke();
+        statusChanged?.Invoke();
 
         HostingLog.ClientDisconnected(logger, clientId, _clients.Count);
     }
@@ -56,11 +59,13 @@ internal sealed partial class ServerSessions(
         mouseForwarding.RemoveClient(clientId);
         await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
         routeStateChanged?.Invoke();
+        statusChanged?.Invoke();
     }
 
     internal async Task StopClientAsync(Guid clientId)
     {
         ConnectedClient client = GetClient(clientId);
+        _ = GameProcessKiller.Kill(runtime.GetLifecycleOwnedProcesses(clientId));
         if (client.ProcessId != Environment.ProcessId)
         {
             _ = GameProcessKiller.KillProcess(client.ProcessId);

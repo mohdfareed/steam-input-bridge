@@ -48,4 +48,19 @@ internal static partial class HostingLog
         Guid? clientId,
         string profileId,
         string routes);
+
+    [LoggerMessage(EventId = 48, Level = LogLevel.Information, Message = "Passive controller matched: client={ClientId} index={ControllerIndex} physical=\"{PhysicalId}\"")]
+    public static partial void PassiveControllerMatched(
+        ILogger logger,
+        Guid clientId,
+        ushort controllerIndex,
+        string physicalId);
+
+    [LoggerMessage(EventId = 50, Level = LogLevel.Information, Message = "Ignored VIIPER echo controller: client={ClientId} index={ControllerIndex} label=\"{Label}\" route=\"{RouteId}\"")]
+    public static partial void VirtualEchoControllerIgnored(
+        ILogger logger,
+        Guid clientId,
+        ushort controllerIndex,
+        string label,
+        string routeId);
 }

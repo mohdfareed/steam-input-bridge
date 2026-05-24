@@ -12,10 +12,16 @@ namespace SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
 internal interface IPhysicalControllerResolver
 {
-    ClientControllerInfo? ResolveClientController(ClientControllerInfo controller);
+    void SetClientControllers(Guid clientId, IReadOnlyList<ClientControllerInfo> controllers);
+
+    ClientControllerInfo? ResolveClientController(Guid clientId, ClientControllerInfo controller);
+
+    void ObserveClientControllerInput(Guid clientId, ushort controllerIndex, ControllerState state);
+
+    void RemoveClient(Guid clientId);
 }
 
-internal sealed class PhysicalControllerPump(
+internal sealed partial class PhysicalControllerPump(
     ControllerBroker broker,
     ILogger logger,
     ServerControllerInputFilter? inputFilter = null) : IPhysicalControllerResolver, IAsyncDisposable
@@ -59,7 +65,24 @@ internal sealed class PhysicalControllerPump(
         }
     }
 
-    public ClientControllerInfo? ResolveClientController(ClientControllerInfo controller)
+    public void SetClientControllers(Guid clientId, IReadOnlyList<ClientControllerInfo> controllers)
+    {
+        ArgumentNullException.ThrowIfNull(controllers);
+
+        HashSet<ControllerMatchKey> current = [];
+        foreach (ClientControllerInfo controller in controllers)
+        {
+            _ = current.Add(new ControllerMatchKey(clientId, controller.ControllerIndex));
+        }
+
+        lock (_gate)
+        {
+            RemoveClientMatchesExcept(clientId, current, controllers);
+            TrackClientControllerBatchNoLock(clientId, controllers);
+        }
+    }
+
+    public ClientControllerInfo? ResolveClientController(Guid clientId, ClientControllerInfo controller)
     {
         ArgumentNullException.ThrowIfNull(controller);
 
@@ -85,15 +108,34 @@ internal sealed class PhysicalControllerPump(
                 : null;
         }
 
-        SdlControllerInfo? physical = FindPhysicalController(controller);
-        return physical is null
-            ? controller
-            : controller with
-            {
-                PhysicalControllerId = SdlControllerRoutePolicy.GetPhysicalControllerId(physical),
-                Label = physical.Name,
-                PhysicalDeviceId = GetPathControllerId(physical),
-            };
+        if (TryResolveActivityMatch(clientId, controller, out ClientControllerInfo resolved))
+        {
+            return resolved;
+        }
+
+        if (CanUseClientOnlyOutput(clientId, controller))
+        {
+            return controller;
+        }
+
+        TrackPendingMatch(clientId, controller);
+        return null;
+    }
+
+    public void ObserveClientControllerInput(Guid clientId, ushort controllerIndex, ControllerState state)
+    {
+        if (ObserveClientMatchInput(clientId, controllerIndex, state))
+        {
+            ControllersChanged?.Invoke();
+        }
+    }
+
+    public void RemoveClient(Guid clientId)
+    {
+        lock (_gate)
+        {
+            RemoveClientMatches(clientId);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -209,7 +251,9 @@ internal sealed class PhysicalControllerPump(
             foreach (SdlGamepadSource source in openedSources)
             {
                 _sources[source.Controller.Id] = source;
-                UpdateBroker(source, source.ReadCurrentState());
+                ControllerState state = source.ReadCurrentState();
+                UpdateBroker(source, state);
+                InitializePhysicalActivityNoLock(source.Controller, state);
             }
 
             _lastError = null;
@@ -220,6 +264,7 @@ internal sealed class PhysicalControllerPump(
 
     private void RemoveStaleSources(IReadOnlyList<SdlControllerInfo> physicalControllers)
     {
+        ServerControllerInputFilterSnapshot? filter = _inputFilter?.CreateSnapshot();
         Dictionary<SdlControllerId, SdlControllerInfo> current = [];
         foreach (SdlControllerInfo controller in physicalControllers)
         {
@@ -231,8 +276,25 @@ internal sealed class PhysicalControllerPump(
         {
             foreach (KeyValuePair<SdlControllerId, SdlGamepadSource> entry in _sources)
             {
-                if (current.TryGetValue(entry.Key, out SdlControllerInfo? controller) &&
-                    SdlControllerRoutePolicy.IsSameConnectedController(entry.Value.Controller, controller))
+                if (!current.TryGetValue(entry.Key, out SdlControllerInfo? controller))
+                {
+                    // SDL scans can be empty or partial while Windows, Steam,
+                    // HidHide, or VIIPER rebuild device visibility. A missing
+                    // scan entry is not a disconnect; the open source will
+                    // emit GamepadRemoved if the physical device is really gone.
+                    continue;
+                }
+
+                if (SdlControllerRoutePolicy.IsSameConnectedController(entry.Value.Controller, controller))
+                {
+                    continue;
+                }
+
+                // HidHide can briefly change a scoped controller's visible
+                // identity while the profile is being hidden from the game.
+                // Keep the already-open source until SDL reports a real
+                // disconnect.
+                if (filter?.IsCurrentScopeDevice(entry.Value.Controller) == true)
                 {
                     continue;
                 }
@@ -243,6 +305,7 @@ internal sealed class PhysicalControllerPump(
             foreach (SdlGamepadSource source in removed)
             {
                 _ = _sources.Remove(source.Controller.Id);
+                RemovePhysicalActivityNoLock(source.Controller);
                 broker.RemovePhysicalController(GetControllerId(source.Controller));
             }
         }
@@ -256,13 +319,30 @@ internal sealed class PhysicalControllerPump(
 
     private void RemoveSource(SdlGamepadSource source)
     {
+        bool keepRoute = _inputFilter?.CreateSnapshot().IsCurrentScopeDevice(source.Controller) == true;
         lock (_gate)
         {
             _ = _sources.Remove(source.Controller.Id);
-            broker.RemovePhysicalController(GetControllerId(source.Controller));
+            RemovePhysicalActivityNoLock(source.Controller);
+            if (keepRoute)
+            {
+                broker.UpdatePhysicalController(
+                    GetControllerId(source.Controller),
+                    ControllerState.Empty,
+                    source.Features);
+            }
+            else
+            {
+                broker.RemovePhysicalController(GetControllerId(source.Controller));
+            }
         }
 
         source.Dispose();
+        if (keepRoute)
+        {
+            _ = RefreshSources();
+        }
+
         ControllersChanged?.Invoke();
     }
 
@@ -271,6 +351,11 @@ internal sealed class PhysicalControllerPump(
         lock (_gate)
         {
             UpdateBroker(source, state);
+        }
+
+        if (ObservePhysicalMatchInput(source.Controller, state))
+        {
+            ControllersChanged?.Invoke();
         }
     }
 
@@ -285,27 +370,6 @@ internal sealed class PhysicalControllerPump(
 
     // MARK: Matching
     // ========================================================================
-
-    private SdlControllerInfo? FindPhysicalController(ClientControllerInfo controller)
-    {
-        List<SdlControllerInfo> physicalControllers;
-        lock (_gate)
-        {
-            physicalControllers = [];
-            foreach (SdlGamepadSource source in _sources.Values)
-            {
-                physicalControllers.Add(source.Controller);
-            }
-        }
-
-        // Steam handles identify Steam's virtual stream, not the physical slot.
-        // Only rewrite the route when the host sees one unambiguous counterpart.
-        return SdlControllerRoutePolicy.FindPhysicalControllerByDeviceIdentity(
-            controller.VendorId,
-            controller.ProductId,
-            controller.Label,
-            physicalControllers);
-    }
 
     private SdlControllerInfo? FindKnownPhysicalController(ClientControllerInfo controller)
     {
@@ -358,6 +422,7 @@ internal sealed class PhysicalControllerPump(
             _sources.Clear();
             foreach (SdlGamepadSource source in sources)
             {
+                RemovePhysicalActivityNoLock(source.Controller);
                 broker.RemovePhysicalController(GetControllerId(source.Controller));
             }
         }

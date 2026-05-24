@@ -26,12 +26,19 @@ public sealed partial class ActiveClientRegistry
         int clientProcessId,
         string profileId,
         uint? steamAppId,
-        IReadOnlyList<string> receiverProcesses)
+        IReadOnlyList<string> receiverProcesses,
+        bool ownsReceiverProcesses = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentNullException.ThrowIfNull(receiverProcesses);
 
-        ClientState client = new(clientId, clientProcessId, profileId, steamAppId, receiverProcesses);
+        ClientState client = new(
+            clientId,
+            clientProcessId,
+            profileId,
+            steamAppId,
+            receiverProcesses,
+            ownsReceiverProcesses);
         lock (_lock)
         {
             _clients[clientId] = client;
@@ -110,6 +117,18 @@ public sealed partial class ActiveClientRegistry
         {
             ClientState client = GetClient(clientId);
             return [.. client.Processes.Values.Where(process => OwnsProcess(clientId, process.ProcessId))];
+        }
+    }
+
+    /// <summary>Gets receiver processes this client lifecycle owns and may stop.</summary>
+    public IReadOnlyList<ObservedGameProcess> GetLifecycleOwnedProcesses(Guid clientId)
+    {
+        lock (_lock)
+        {
+            ClientState client = GetClient(clientId);
+            return client.OwnsReceiverProcesses
+                ? [.. client.Processes.Values.Where(process => OwnsProcess(clientId, process.ProcessId))]
+                : [];
         }
     }
 

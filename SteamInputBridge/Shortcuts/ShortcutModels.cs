@@ -73,9 +73,12 @@ internal sealed record KeyboardShortcutRegistration(
     int Id,
     KeyboardShortcutCombination Combination);
 
-/// <summary>Receives global keyboard shortcut presses.</summary>
+/// <summary>Receives global keyboard shortcut presses and releases.</summary>
 internal interface IKeyboardShortcutListener : IDisposable
 {
     /// <summary>Replaces the active shortcut registrations.</summary>
-    void Update(IReadOnlyList<KeyboardShortcutRegistration> shortcuts, Action<int> pressed);
+    void Update(
+        IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
+        Action<int> pressed,
+        Action<int> released);
 }

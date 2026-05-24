@@ -40,6 +40,9 @@ public sealed class ServerService : IAsyncDisposable
     private readonly ServerShortcutService? _shortcuts;
     private readonly Func<CancellationToken, Task> _startupCleanup;
 
+    /// <summary>Raised when a server state change should refresh status consumers.</summary>
+    public event EventHandler? StatusChanged;
+
     // MARK: Construction
     // ========================================================================
 
@@ -98,7 +101,8 @@ public sealed class ServerService : IAsyncDisposable
             _hidHideDevices.GetDevicePaths,
             _hidHideDevices.GetDeviceLabels,
             _controllerBroker,
-            _mouseBroker);
+            _mouseBroker,
+            NotifyStatusChanged);
 
         _sessions = new ServerSessions(
             logger,
@@ -110,9 +114,11 @@ public sealed class ServerService : IAsyncDisposable
             () => new ServerInputStatus(_mouseInput.GetStatus(), _physicalControllers.GetStatus()),
             () => _activeClients.GetSteamInputStatus(),
             () => _activeClients.GetHidHideStatus(),
-            () => _activeClients.RefreshHidHide());
+            OnRouteStateChanged,
+            NotifyStatusChanged);
 
         _physicalControllers.ControllersChanged += OnPhysicalControllersChanged;
+        SubscribeShortcutStateChanged();
     }
 
     internal IReadOnlyCollection<ConnectedClient> Clients => _sessions.Clients;
@@ -185,6 +191,8 @@ public sealed class ServerService : IAsyncDisposable
             await orchestrationStop.CancelAsync().ConfigureAwait(false);
             await IgnoreCancellationAsync(orchestrationTask).ConfigureAwait(false);
             _physicalControllers.ControllersChanged -= OnPhysicalControllersChanged;
+            UnsubscribeShortcutStateChanged();
+
             await _mouseInput.DisposeAsync().ConfigureAwait(false);
             await _physicalControllers.DisposeAsync().ConfigureAwait(false);
             _shortcuts?.Dispose();
@@ -210,6 +218,8 @@ public sealed class ServerService : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _physicalControllers.ControllersChanged -= OnPhysicalControllersChanged;
+        UnsubscribeShortcutStateChanged();
+
         await _mouseInput.DisposeAsync().ConfigureAwait(false);
         await _physicalControllers.DisposeAsync().ConfigureAwait(false);
         _shortcuts?.Dispose();
@@ -232,6 +242,27 @@ public sealed class ServerService : IAsyncDisposable
     {
         _controllerPipes.RefreshControllerRoutes();
         _activeClients.RefreshHidHide();
+        NotifyStatusChanged();
+    }
+
+    private void OnRouteStateChanged()
+    {
+        _activeClients.RefreshHidHide();
+    }
+
+    private void NotifyStatusChanged()
+    {
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SubscribeShortcutStateChanged()
+    {
+        _shortcuts?.StateChanged += NotifyStatusChanged;
+    }
+
+    private void UnsubscribeShortcutStateChanged()
+    {
+        _shortcuts?.StateChanged -= NotifyStatusChanged;
     }
 
     private void TrackConnection(ServerConnectionHandle connection)
@@ -256,6 +287,7 @@ public sealed class ServerService : IAsyncDisposable
             // client with only this executable allowed, so do not add Steam
             // here unless a concrete failing route proves it is needed.
             _hidHide.AllowRequiredApplications();
+            _hidHide.ClearPreviousOwnedScope();
             HostingLog.HidHideApplicationAccessRegistered(_logger);
         }
         catch (Exception exception) when (

@@ -1,9 +1,24 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.HidHide;
+using SteamInputBridge.Hosting;
+using SteamInputBridge.Hosting.Server.Orchestration.Active;
 using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
+using SteamInputBridge.Hosting.Server.Pipes;
 using SteamInputBridge.Inputs.Sdl;
+using SteamInputBridge.Runtime;
+using SteamInputBridge.Settings;
+using SteamInputBridge.Settings.Profiles;
+using ForwardingControllerOutput = SteamInputBridge.Forwarding.Controller.ControllerOutput;
 
 namespace SteamInputBridge.Tests;
 
@@ -13,7 +28,6 @@ public sealed class HidHideServiceTests
 {
     private static readonly string[] ApplyThenClearCommands =
     [
-        "--dev-list",
         "--cloak-state",
         "--inv-state",
         "--inv-off --cloak-on --dev-hide dev-1",
@@ -41,9 +55,9 @@ public sealed class HidHideServiceTests
         CollectionAssert.AreEqual(ApplyThenClearCommands, runner.Commands);
     }
 
-    /// <summary>Clear restores a pre-existing hidden device.</summary>
+    /// <summary>Clear unhides current-scope devices even if they were already hidden.</summary>
     [TestMethod]
-    public void ClearRestoresExistingHiddenDevice()
+    public void ClearUnhidesCurrentScopeDevice()
     {
         FakeRunner runner = new(
             devList: "dev-1",
@@ -56,7 +70,7 @@ public sealed class HidHideServiceTests
         firewall.Clear();
 
         Assert.AreEqual(
-            "--dev-hide dev-1 --cloak-on --inv-on",
+            "--dev-unhide dev-1 --cloak-on --inv-on",
             runner.Commands[^1]);
     }
 
@@ -155,7 +169,70 @@ public sealed class HidHideServiceTests
         firewall.Apply(HidHideScope.Create(["dev-1"]));
 
         Assert.AreEqual("--inv-off --cloak-on --dev-hide dev-1", runner.Commands[^1]);
-        Assert.HasCount(4, runner.Commands);
+        Assert.HasCount(3, runner.Commands);
+    }
+
+    /// <summary>Applied scopes are persisted so a later server can clear stale hidden devices.</summary>
+    [TestMethod]
+    public void ApplyPersistsOwnedScopeAndClearRemovesIt()
+    {
+        string directory = CreateTempDirectory();
+        string path = Path.Combine(directory, "scope.json");
+        try
+        {
+            FakeRunner runner = new(
+                devList: "",
+                appList: "SteamInputBridge.exe",
+                cloakState: "off",
+                inverseState: "off");
+            using HidHideService firewall = CreateFirewall(
+                runner,
+                ownedScopeStore: new HidHideOwnedScopeStore(path));
+
+            firewall.Apply(HidHideScope.Create(["dev-1"]));
+            Assert.IsTrue(File.Exists(path));
+
+            firewall.Clear();
+            Assert.IsFalse(File.Exists(path));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>Startup cleanup clears devices hidden by a previous server lifetime.</summary>
+    [TestMethod]
+    public void ClearPreviousOwnedScopeRestoresPersistedScope()
+    {
+        string directory = CreateTempDirectory();
+        string path = Path.Combine(directory, "scope.json");
+        try
+        {
+            HidHideOwnedScopeStore store = new(path);
+            store.Save(new HidHideSnapshot(
+                "off",
+                "off",
+                new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["dev-1"] = false,
+                }));
+            FakeRunner runner = new(
+                devList: "dev-1",
+                appList: "SteamInputBridge.exe",
+                cloakState: "on",
+                inverseState: "off");
+            using HidHideService firewall = CreateFirewall(runner, ownedScopeStore: store);
+
+            firewall.ClearPreviousOwnedScope();
+
+            Assert.AreEqual("--dev-unhide dev-1 --cloak-off --inv-off", runner.Commands[^1]);
+            Assert.IsFalse(File.Exists(path));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     /// <summary>Registers this application only when it is not already allowed.</summary>
@@ -269,6 +346,91 @@ public sealed class HidHideServiceTests
         ServerControllerInputFilter filter = new(new HidHideDeviceCatalog(runner), firewall);
 
         Assert.IsTrue(filter.Allows(Controller(@"\\?\HID#VID_054C&PID_0CE6#ABC")));
+        Assert.IsTrue(filter.CreateSnapshot().IsCurrentScopeDevice(Controller(@"\\?\HID#VID_054C&PID_0CE6#ABC")));
+    }
+
+    /// <summary>HidHide stays active while the client run exists, even without foreground ownership.</summary>
+    [TestMethod]
+    public void CoordinatorKeepsScopeForInactiveClientRun()
+    {
+        FakeRunner runner = new(
+            devList: "",
+            appList: "SteamInputBridge.exe",
+            cloakState: "off",
+            inverseState: "off");
+        using HidHideService firewall = CreateFirewall(runner);
+        using ServiceProvider services = CreateProfileServices();
+        ActiveClientRegistry clients = CreateActiveClient(out Guid clientId);
+        ServerHidHideCoordinator coordinator = new(
+            clients,
+            NullLogger.Instance,
+            services.GetRequiredService<ProfilesService>(),
+            firewall,
+            static _ => ["dev-1"],
+            static _ => [],
+            forwarding: null);
+
+        coordinator.Refresh(clientId);
+        coordinator.Refresh(null);
+
+        Assert.Contains("--inv-off --cloak-on --dev-hide dev-1", runner.Commands);
+        Assert.DoesNotContain("--dev-unhide dev-1 --cloak-off --inv-off", runner.Commands);
+    }
+
+    /// <summary>Client end/disconnect clears the active HidHide scope.</summary>
+    [TestMethod]
+    public void CoordinatorClearsWhenClientRunEnds()
+    {
+        FakeRunner runner = new(
+            devList: "",
+            appList: "SteamInputBridge.exe",
+            cloakState: "off",
+            inverseState: "off");
+        using HidHideService firewall = CreateFirewall(runner);
+        using ServiceProvider services = CreateProfileServices();
+        ActiveClientRegistry clients = CreateActiveClient(out Guid clientId);
+        ServerHidHideCoordinator coordinator = new(
+            clients,
+            NullLogger.Instance,
+            services.GetRequiredService<ProfilesService>(),
+            firewall,
+            static _ => ["dev-1"],
+            static _ => [],
+            forwarding: null);
+
+        coordinator.Refresh(clientId);
+        clients.RemoveClient(clientId);
+        coordinator.Refresh(null);
+
+        Assert.Contains("--inv-off --cloak-on --dev-hide dev-1", runner.Commands);
+        Assert.Contains("--dev-unhide dev-1 --cloak-off --inv-off", runner.Commands);
+    }
+
+    /// <summary>HidHide device selection uses client-registered physical routes.</summary>
+    [TestMethod]
+    public async Task DeviceResolverUsesClientRegisteredPhysicalRoutes()
+    {
+        Guid clientId = Guid.NewGuid();
+        using ControllerBroker broker = new(new FakeControllerOutputFactory());
+        await using ControllerPipeSessions pipes = new(broker, NullLogger.Instance);
+        ServerHidHideDeviceResolver resolver = new(
+            new HidHideDeviceCatalog(new DeviceListRunner(DeviceListJson())),
+            pipes);
+
+        broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
+        _ = pipes.Start(clientId);
+        _ = pipes.RegisterControllers(
+            clientId,
+            [new ClientControllerInfo(
+                0,
+                @"path:\\?\HID#VID_054C&PID_0CE6#ABC",
+                "DualSense",
+                ControllerFeatures.StandardControls,
+                @"path:\\?\HID#VID_054C&PID_0CE6#ABC")]);
+
+        IReadOnlyList<string> devices = resolver.GetDevicePaths(clientId);
+
+        Assert.Contains(@"HID\VID_054C&PID_0CE6\ABC", devices);
     }
 
     private sealed class FakeRunner(
@@ -336,12 +498,53 @@ public sealed class HidHideServiceTests
 
     private static HidHideService CreateFirewall(
         FakeRunner runner,
-        Func<IReadOnlyList<string>>? getApplicationAccessPaths = null)
+        Func<IReadOnlyList<string>>? getApplicationAccessPaths = null,
+        HidHideOwnedScopeStore? ownedScopeStore = null)
     {
         return new HidHideService(
             runner,
             getCurrentProcessPath: static () => "SteamInputBridge.exe",
-            getApplicationAccessPaths: getApplicationAccessPaths);
+            getApplicationAccessPaths: getApplicationAccessPaths,
+            ownedScopeStore: ownedScopeStore);
+    }
+
+    private static ActiveClientRegistry CreateActiveClient(out Guid clientId)
+    {
+        clientId = Guid.NewGuid();
+        ActiveClientRegistry clients = new();
+        clients.RegisterClient(clientId, 100, "game", null, ["Game.exe"]);
+        clients.UpdateClient(clientId, [new ObservedGameProcess(200, "Game.exe")]);
+        clients.RefreshClients(200);
+        return clients;
+    }
+
+    private static ServiceProvider CreateProfileServices()
+    {
+        Dictionary<string, string?> settings = new()
+        {
+            ["SteamInputBridge:Games:game:Title"] = "Game",
+            ["SteamInputBridge:Games:game:Executable"] = @"C:\Games\Game.exe",
+            ["SteamInputBridge:Games:game:ControllerOutput"] = "Ds4",
+            ["SteamInputBridge:Games:game:ReceiverProcesses:0"] = "Game.exe",
+        };
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(settings)
+            .Build();
+        ServiceCollection services = new();
+        _ = services.AddSingleton<ILogger<ApplicationSettingsService>>(
+            NullLogger<ApplicationSettingsService>.Instance);
+        _ = services.AddSingleton<ILogger<ProfilesService>>(
+            NullLogger<ProfilesService>.Instance);
+        _ = services.AddApplicationSettings(configuration, "test-appsettings.json");
+        _ = services.AddProfiles();
+        return services.BuildServiceProvider();
+    }
+
+    private static string CreateTempDirectory()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        return directory;
     }
 
     private sealed class DeviceListRunner(string devices) : IHidHideCommandRunner
@@ -351,6 +554,44 @@ public sealed class HidHideServiceTests
             return string.Join(" ", args) == "--dev-all"
                 ? devices
                 : "";
+        }
+    }
+
+    private sealed class FakeControllerOutputFactory : IControllerOutputFactory
+    {
+        public IControllerOutput Connect(ControllerId controllerId, ForwardingControllerOutput output)
+        {
+            _ = controllerId;
+            _ = output;
+            return new FakeControllerOutput();
+        }
+    }
+
+    private sealed class FakeControllerOutput : IControllerOutput
+    {
+        public void Send(in ControllerState state)
+        {
+            _ = state;
+        }
+
+        public IDisposable ListenFeedback(Action<ControllerFeedback> handler)
+        {
+            _ = handler;
+            return EmptyDisposable.Instance;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class EmptyDisposable : IDisposable
+    {
+        public static EmptyDisposable Instance { get; } = new();
+
+        public void Dispose()
+        {
         }
     }
 }

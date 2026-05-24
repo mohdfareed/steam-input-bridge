@@ -38,6 +38,8 @@ public sealed class ClientConnectionChangedEventArgs(ClientConnectionState state
 /// <summary>App-facing client connection to the local server.</summary>
 public sealed class ClientService : IDisposable, IAsyncDisposable
 {
+    private static readonly TimeSpan ServerRequestTimeout = TimeSpan.FromSeconds(5);
+
     private readonly ClientConnection _connection;
     private bool _disposed;
 
@@ -95,7 +97,7 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
     public Task<ServerStatus> GetStatusAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        return _connection.Server.GetStatusAsync().WaitAsync(cancellationToken);
+        return _connection.Server.GetStatusAsync().WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 
     /// <summary>Starts a profile-backed client run.</summary>
@@ -106,7 +108,7 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
         ThrowIfDisposed();
         return _connection.Server
             .StartRunAsync(request)
-            .WaitAsync(cancellationToken);
+            .WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 
     /// <summary>Registers controller streams this client will send over its controller pipe.</summary>
@@ -117,7 +119,7 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
         ThrowIfDisposed();
         return _connection.Server
             .RegisterClientControllersAsync(controllers)
-            .WaitAsync(cancellationToken);
+            .WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 
     /// <summary>Updates receiver processes observed by this client.</summary>
@@ -128,7 +130,7 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
         ThrowIfDisposed();
         return _connection.Server
             .UpdateRunProcessesAsync(processes)
-            .WaitAsync(cancellationToken);
+            .WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 
     /// <summary>Gets receiver processes currently owned by this client.</summary>
@@ -138,14 +140,14 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
         ThrowIfDisposed();
         return _connection.Server
             .GetOwnedReceiverProcessesAsync()
-            .WaitAsync(cancellationToken);
+            .WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 
     /// <summary>Ends this client's run.</summary>
     public Task EndRunAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        return _connection.Server.EndRunAsync().WaitAsync(cancellationToken);
+        return _connection.Server.EndRunAsync().WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 
     /// <summary>Disconnects from the server.</summary>

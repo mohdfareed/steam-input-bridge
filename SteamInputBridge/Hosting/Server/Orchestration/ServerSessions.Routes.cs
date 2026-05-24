@@ -32,7 +32,8 @@ internal sealed partial class ServerSessions
             client.ProcessId,
             resolved.Id,
             request.SteamAppId,
-            resolved.ReceiverProcesses);
+            resolved.ReceiverProcesses,
+            ownsReceiverProcesses: !string.IsNullOrWhiteSpace(resolved.Executable));
 
         forwarding.RegisterClient(clientId, MapControllerOutput(resolved.ControllerOutput));
         mouseForwarding.RegisterClient(clientId, MapMouseOutput(resolved.MouseOutput));
@@ -40,6 +41,7 @@ internal sealed partial class ServerSessions
             ? string.Empty
             : controllerPipes.Start(clientId);
         routeStateChanged?.Invoke();
+        statusChanged?.Invoke();
 
         return Task.FromResult(new ClientRunLaunch(
             resolved.Id,
@@ -70,6 +72,7 @@ internal sealed partial class ServerSessions
         }
 
         routeStateChanged?.Invoke();
+        statusChanged?.Invoke();
         return Task.CompletedTask;
     }
 
@@ -79,6 +82,7 @@ internal sealed partial class ServerSessions
     {
         runtime.UpdateClient(clientId, processes);
         routeStateChanged?.Invoke();
+        statusChanged?.Invoke();
         return Task.CompletedTask;
     }
 

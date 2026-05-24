@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
@@ -20,11 +19,11 @@ internal sealed class ServerShortcutService(
     private readonly Lock _gate = new();
     private IReadOnlyDictionary<int, IReadOnlyList<ShortcutEntry>> _shortcuts =
         new Dictionary<int, IReadOnlyList<ShortcutEntry>>();
-    private IReadOnlyDictionary<int, KeyboardShortcutCombination> _combinations =
-        new Dictionary<int, KeyboardShortcutCombination>();
-    private Dictionary<ShortcutTarget, CancellationTokenSource> _holds = [];
+    private Dictionary<ShortcutTarget, ShortcutHold> _holds = [];
     private bool _started;
     private bool _disposed;
+
+    public event Action? StateChanged;
 
     public void Start()
     {
@@ -68,13 +67,12 @@ internal sealed class ServerShortcutService(
         lock (_gate)
         {
             _shortcuts = bindings.Shortcuts;
-            _combinations = bindings.Combinations;
             CancelHolds();
         }
 
         try
         {
-            listener.Update(bindings.Registrations, OnShortcutPressed);
+            listener.Update(bindings.Registrations, OnShortcutPressed, OnShortcutReleased);
             HostingLog.ShortcutsRegistered(logger, bindings.Registrations.Count);
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -103,20 +101,13 @@ internal sealed class ServerShortcutService(
                 continue;
             }
 
-            KeyboardShortcutCombination combination;
-            lock (_gate)
-            {
-                _ = _combinations.TryGetValue(id, out combination);
-            }
-
-            ApplyShortcut(shortcut, id, combination);
+            ApplyShortcut(shortcut, id);
         }
     }
 
     private void ApplyShortcut(
         ShortcutEntry shortcut,
-        int id,
-        KeyboardShortcutCombination combination)
+        int id)
     {
         ShortcutValue value = shortcut.Value.GetValueOrDefault();
         foreach (ShortcutTarget target in shortcut.Targets)
@@ -136,10 +127,10 @@ internal sealed class ServerShortcutService(
                     CancelHold(target);
                     break;
                 case ShortcutValue.HoldEnabled:
-                    StartHold(shortcut, id, combination, target, enabledWhileHeld: true);
+                    StartHold(shortcut, id, target, enabledWhileHeld: true);
                     break;
                 case ShortcutValue.HoldDisabled:
-                    StartHold(shortcut, id, combination, target, enabledWhileHeld: false);
+                    StartHold(shortcut, id, target, enabledWhileHeld: false);
                     break;
                 default:
                     return;
@@ -155,63 +146,41 @@ internal sealed class ServerShortcutService(
     private void StartHold(
         ShortcutEntry shortcut,
         int id,
-        KeyboardShortcutCombination combination,
         ShortcutTarget target,
         bool enabledWhileHeld)
     {
-        CancellationTokenSource hold = new();
-        CancellationTokenSource? previous;
         lock (_gate)
         {
-            _ = _holds.TryGetValue(target, out previous);
-            _holds[target] = hold;
+            _holds[target] = new ShortcutHold(id, EnabledOnRelease: !enabledWhileHeld);
         }
-
-        previous?.Cancel();
-        previous?.Dispose();
 
         SetTarget(target, enabledWhileHeld);
         LogShortcut(shortcut, id, target);
-        _ = ReleaseWhenShortcutUpAsync(
-            target,
-            combination,
-            enabledOnRelease: !enabledWhileHeld,
-            hold);
     }
 
-    private async Task ReleaseWhenShortcutUpAsync(
-        ShortcutTarget target,
-        KeyboardShortcutCombination combination,
-        bool enabledOnRelease,
-        CancellationTokenSource hold)
+    private void OnShortcutReleased(int id)
     {
-        try
-        {
-            while (!hold.IsCancellationRequested && KeyboardShortcutState.IsDown(combination))
-            {
-                await Task.Delay(25, hold.Token).ConfigureAwait(false);
-            }
+        List<KeyValuePair<ShortcutTarget, ShortcutHold>> release = [];
 
-            if (!hold.IsCancellationRequested)
-            {
-                SetTarget(target, enabledOnRelease);
-            }
-        }
-        catch (OperationCanceledException)
+        lock (_gate)
         {
-        }
-        finally
-        {
-            lock (_gate)
+            foreach (KeyValuePair<ShortcutTarget, ShortcutHold> hold in _holds)
             {
-                if (_holds.TryGetValue(target, out CancellationTokenSource? current) &&
-                    ReferenceEquals(current, hold))
+                if (hold.Value.ShortcutId == id)
                 {
-                    _ = _holds.Remove(target);
+                    release.Add(hold);
                 }
             }
 
-            hold.Dispose();
+            foreach (KeyValuePair<ShortcutTarget, ShortcutHold> hold in release)
+            {
+                _ = _holds.Remove(hold.Key);
+            }
+        }
+
+        foreach (KeyValuePair<ShortcutTarget, ShortcutHold> hold in release)
+        {
+            SetTarget(hold.Key, hold.Value.EnabledOnRelease);
         }
     }
 
@@ -228,6 +197,8 @@ internal sealed class ServerShortcutService(
             default:
                 throw new ArgumentOutOfRangeException(nameof(target), target, "Unknown shortcut target.");
         }
+
+        StateChanged?.Invoke();
     }
 
     private bool GetTargetEnabled(ShortcutTarget target)
@@ -242,27 +213,14 @@ internal sealed class ServerShortcutService(
 
     private void CancelHold(ShortcutTarget target)
     {
-        CancellationTokenSource? hold;
         lock (_gate)
         {
-            if (!_holds.Remove(target, out hold))
-            {
-                return;
-            }
+            _ = _holds.Remove(target);
         }
-
-        hold.Cancel();
-        hold.Dispose();
     }
 
     private void CancelHolds()
     {
-        foreach (CancellationTokenSource hold in _holds.Values)
-        {
-            hold.Cancel();
-            hold.Dispose();
-        }
-
         _holds = [];
     }
 
@@ -284,4 +242,6 @@ internal sealed class ServerShortcutService(
             ? $"#{index}"
             : entry.Name;
     }
+
+    private readonly record struct ShortcutHold(int ShortcutId, bool EnabledOnRelease);
 }

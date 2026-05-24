@@ -21,7 +21,7 @@ internal sealed partial class AppContext : IDisposable
     private readonly Icon _icon = LoadApplicationIcon();
     private readonly NotifyIcon _tray = new();
     private readonly NativeWindow _window = new();
-    private readonly DispatcherTimer _refreshTimer;
+    private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly CancellationTokenSource _stop = new();
     private readonly AppMenu _menu;
     private Task? _serverTask;
@@ -50,11 +50,7 @@ internal sealed partial class AppContext : IDisposable
             StopClient,
             ShutdownApp);
 
-        _refreshTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(500),
-        };
-        _refreshTimer.Tick += RefreshStatusAsync;
+        _server.StatusChanged += OnServerStatusChanged;
     }
 
     public static AppContext Create()
@@ -81,13 +77,12 @@ internal sealed partial class AppContext : IDisposable
         _tray.Text = AppText.TrayStarting;
         _tray.Visible = true;
         _tray.MouseUp += ShowMenu;
-        _refreshTimer.Start();
         _ = RefreshStatusNowAsync();
     }
 
     public void Dispose()
     {
-        _refreshTimer.Stop();
+        _server.StatusChanged -= OnServerStatusChanged;
         _stop.Cancel();
         _tray.MouseUp -= ShowMenu;
         _tray.Visible = false;
@@ -116,6 +111,7 @@ internal sealed partial class AppContext : IDisposable
     {
         try
         {
+            SrmExport.ExportOnServerStartup(_app.Services);
             await _server.RunAsync(_stop.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -124,14 +120,25 @@ internal sealed partial class AppContext : IDisposable
         catch (Exception exception)
         {
             _serverError = exception.Message;
+            QueueStatusRefresh();
         }
     }
 
-    private async void RefreshStatusAsync(object? sender, EventArgs args)
+    private void OnServerStatusChanged(object? sender, EventArgs args)
     {
         _ = sender;
         _ = args;
-        await RefreshStatusNowAsync().ConfigureAwait(true);
+        QueueStatusRefresh();
+    }
+
+    private void QueueStatusRefresh()
+    {
+        if (_stop.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _ = _dispatcher.BeginInvoke(new Action(() => _ = RefreshStatusNowAsync()));
     }
 
     private async Task RefreshStatusNowAsync()

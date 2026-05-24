@@ -38,7 +38,7 @@ public static class FileLoggingExtensions
 
         string directory = Path.GetFullPath(logDirectory);
         string start = Process.GetCurrentProcess().StartTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-        string fileName = $"app-{start}-{Environment.ProcessId.ToString(CultureInfo.InvariantCulture)}.log";
+        string fileName = $"{start}-{Environment.ProcessId.ToString(CultureInfo.InvariantCulture)}.log";
         return Path.Combine(directory, fileName);
     }
 }

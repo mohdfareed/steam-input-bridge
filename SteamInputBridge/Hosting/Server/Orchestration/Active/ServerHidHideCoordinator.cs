@@ -77,7 +77,8 @@ internal sealed class ServerHidHideCoordinator(
     private bool TryCreateScope(out HidHideScope scope)
     {
         scope = HidHideScope.Create([]);
-        if (profiles is null || forwarding?.GetStatus().ControllerOutputEnabled == false)
+        if (profiles is null ||
+            forwarding?.GetStatus().ControllerOutputEnabled == false)
         {
             return false;
         }
@@ -91,9 +92,11 @@ internal sealed class ServerHidHideCoordinator(
                 profile?.ControllerOutput.GetValueOrDefault(ProfileControllerOutput.None) != ProfileControllerOutput.None;
 
             // HidHide normal mode does not need receiver executable paths.
-            // A client with an owned receiver means its profile is live; the
-            // scope itself is only the physical devices backing that run.
-            if (!needsControllerOutput || client.OwnedProcesses.Count == 0)
+            // The physical controller is hidden for the lifetime of the
+            // profile client, not only while its receiver is foregrounded.
+            // Client end/disconnect clears the runtime client and therefore
+            // clears this scope.
+            if (!needsControllerOutput)
             {
                 continue;
             }

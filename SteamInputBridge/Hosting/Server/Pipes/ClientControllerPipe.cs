@@ -7,8 +7,6 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding;
-using SteamInputBridge.Forwarding.Controller;
-using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
 namespace SteamInputBridge.Hosting.Server.Pipes;
@@ -16,7 +14,7 @@ namespace SteamInputBridge.Hosting.Server.Pipes;
 internal sealed partial class ClientControllerPipe(
     Guid clientId,
     string pipeName,
-    ControllerBroker broker,
+    Forwarding.Controller.Routing.ControllerBroker broker,
     ILogger logger,
     IPhysicalControllerResolver? physicalControllers = null) : IAsyncDisposable
 {
@@ -25,6 +23,7 @@ internal sealed partial class ClientControllerPipe(
     private readonly Dictionary<ushort, ClientControllerInfo> _requestedControllers = [];
     private readonly Dictionary<ushort, ClientControllerInfo> _controllers = [];
     private readonly Dictionary<ushort, long> _inputFrameCounts = [];
+    private readonly Dictionary<ushort, PipeFeedbackSink> _feedbackSinks = [];
     private readonly Channel<ControllerFeedbackFrame> _feedbackWrites =
         Channel.CreateBounded<ControllerFeedbackFrame>(
             new BoundedChannelOptions(capacity: 32)
@@ -60,6 +59,7 @@ internal sealed partial class ClientControllerPipe(
             }
         }
 
+        _physicalControllers?.RemoveClient(clientId);
         await IgnoreExpectedStopAsync(_feedbackTask).ConfigureAwait(false);
         _stop.Dispose();
     }
@@ -86,18 +86,26 @@ internal sealed partial class ClientControllerPipe(
                 while (!_stop.IsCancellationRequested && pipe.IsConnected)
                 {
                     ControllerPipeMessage message = await reader.ReadAsync(_stop.Token).ConfigureAwait(false);
-                    if (message.Type == ControllerPipeFrameType.Input &&
-                        TryGetController(message.Input.ControllerIndex, out ClientControllerInfo? controller) &&
-                        controller is not null)
+                    if (message.Type != ControllerPipeFrameType.Input)
                     {
-                        IncrementInputFrameCount(message.Input.ControllerIndex);
+                        continue;
+                    }
+
+                    _physicalControllers?.ObserveClientControllerInput(
+                        clientId,
+                        message.Input.ControllerIndex,
+                        message.Input.State);
+                    if (TryBeginInputFrame(
+                        message.Input.ControllerIndex,
+                        out ClientControllerInfo controller,
+                        out PipeFeedbackSink feedbackSink))
+                    {
                         broker.UpdateClientController(
                             clientId,
                             message.Input.ControllerIndex,
-                            new ControllerId(controller.PhysicalControllerId, controller.Label),
                             message.Input.State,
                             controller.Features,
-                            new PipeFeedbackSink(this, message.Input.ControllerIndex));
+                            feedbackSink);
                     }
                 }
             }
@@ -121,12 +129,32 @@ internal sealed partial class ClientControllerPipe(
         }
     }
 
-    private void IncrementInputFrameCount(ushort controllerIndex)
+    private bool TryBeginInputFrame(
+        ushort controllerIndex,
+        out ClientControllerInfo controller,
+        out PipeFeedbackSink feedbackSink)
     {
         lock (_controllers)
         {
+            if (!_controllers.TryGetValue(controllerIndex, out ClientControllerInfo? foundController))
+            {
+                controller = null!;
+                feedbackSink = null!;
+                return false;
+            }
+
             _ = _inputFrameCounts.TryGetValue(controllerIndex, out long count);
             _inputFrameCounts[controllerIndex] = count + 1;
+
+            if (!_feedbackSinks.TryGetValue(controllerIndex, out PipeFeedbackSink? sink))
+            {
+                sink = new PipeFeedbackSink(this, controllerIndex);
+                _feedbackSinks[controllerIndex] = sink;
+            }
+
+            controller = foundController;
+            feedbackSink = sink;
+            return true;
         }
     }
 

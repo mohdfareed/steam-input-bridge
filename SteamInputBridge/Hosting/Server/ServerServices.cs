@@ -38,7 +38,8 @@ public static class ServerServices
                 services.GetRequiredService<IHidHideCommandRunner>(),
                 services.GetRequiredService<ILogger<HidHideService>>(),
                 getApplicationAccessPaths: () =>
-                    GetHidHideApplicationAccessPaths(settings.CliPath));
+                    GetHidHideApplicationAccessPaths(settings.CliPath),
+                ownedScopeStore: HidHideOwnedScopeStore.CreateDefault());
         });
 
         // Keyboard shortcuts

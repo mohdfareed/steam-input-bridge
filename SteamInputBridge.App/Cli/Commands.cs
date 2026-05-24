@@ -107,6 +107,7 @@ internal static class Commands
         _ = parseResult;
 
         using IHost app = AppHostSetup.CreateCli();
+        SrmExport.ExportOnServerStartup(app.Services);
         ServerService server = app.Services.GetRequiredService<ServerService>();
         await using (server.ConfigureAwait(false))
         {

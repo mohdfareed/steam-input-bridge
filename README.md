@@ -32,15 +32,9 @@ Steam Input orchestration and local input forwarding.
 
 ## TODO
 
-- [ ] Update SDL dependency to add Steam Controller touchpad support.
-- [ ] Fix un-deterministic identification of Steam Input controllers.
-  - Steam Input shuffles controller IDs whenever a controller is disconnected or reconnected.
-  - This causes unstable mapping to physical controllers.
-  - Restarting the server resolves the issue.
-- [ ] Support multiple controllers of the same model.
-  - Current implementation only support a single physical instance per controller model.
-  - This is due to the identification method revolving around the vendor and product IDs.
-- [ ] Teensy output and firmware.
-- [ ] Packaging and deployment with install script and self-update (auto?).
+- [ ] Overlay indicators for active action set/layer and mic status.
+- [ ] Teensy mouse output and firmware.
+- [ ] Packaging, versioning, deployment with install script and self-update (auto?).
 - [ ] Update README.md and add usage examples and documentation.
-- [ ] Versioning, machine-readable diagnostics, and richer observability.
+- [ ] Update SDL package when Steam Controller touchpad support lands in the native NuGet package.
+- [ ] Machine-readable diagnostics, and richer observability.

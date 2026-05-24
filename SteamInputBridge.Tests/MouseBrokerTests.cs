@@ -27,7 +27,8 @@ public sealed class MouseBrokerTests
         Assert.IsFalse(factory.Outputs[0].Disposed);
 
         broker.SetMouseOutputEnabled(false);
-        Assert.IsTrue(factory.Outputs[0].Disposed);
+        Assert.IsFalse(factory.Outputs[0].Disposed);
+        Assert.AreEqual(MouseReport.Empty, factory.Outputs[0].Reports[^1]);
     }
 
     /// <summary>Mouse reports are sent only when output is active and non-empty.</summary>

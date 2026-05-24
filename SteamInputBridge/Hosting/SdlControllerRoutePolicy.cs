@@ -9,7 +9,11 @@ namespace SteamInputBridge.Hosting;
 internal static class SdlControllerRoutePolicy
 {
     private const ushort ValveVendorId = 0x28de;
+    private const ushort SonyVendorId = 0x054c;
+    private const ushort SteamControllerProductId = 0x1302;
     private const ushort SteamVirtualXInputProductId = 0x11ff;
+    private const string DualSenseName = "DualSense";
+    private const string SteamControllerName = "Steam Controller";
 
     public static SdlControllerRouteIdentity CreateIdentity(
         ushort controllerIndex,
@@ -39,6 +43,20 @@ internal static class SdlControllerRoutePolicy
             controller.ProductId == SteamVirtualXInputProductId &&
             !string.IsNullOrWhiteSpace(controller.Path) &&
             controller.Path.StartsWith("XInput#", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool CanOwnOutputWithoutPhysical(ClientControllerInfo controller)
+    {
+        ArgumentNullException.ThrowIfNull(controller);
+
+        // A real Steam Controller can be visible only as Steam's client-local
+        // SDL stream. Allow that exact identity to create an output slot, while
+        // keeping unresolved generic Steam/DS4 echoes from creating loopbacks.
+        return IsSteamRouteId(controller.PhysicalControllerId) &&
+            string.IsNullOrWhiteSpace(controller.PhysicalDeviceId) &&
+            controller.VendorId == ValveVendorId &&
+            controller.ProductId == SteamControllerProductId &&
+            string.Equals(controller.Label, SteamControllerName, StringComparison.OrdinalIgnoreCase);
     }
 
     public static string GetPhysicalControllerId(SdlControllerInfo controller)
@@ -120,6 +138,32 @@ internal static class SdlControllerRoutePolicy
             : FindPhysicalControllerByDeviceIdentityCore(vendorId, productId, name, physicalControllers);
     }
 
+    public static bool CanBePhysicalCounterpart(
+        ushort vendorId,
+        ushort productId,
+        string? name,
+        SdlControllerInfo physicalController)
+    {
+        ArgumentNullException.ThrowIfNull(physicalController);
+
+        if (physicalController.Source != SdlControllerSource.Physical || vendorId == 0)
+        {
+            return false;
+        }
+
+        bool exactMatch = physicalController.VendorId == vendorId &&
+            productId != 0 &&
+            physicalController.ProductId == productId;
+
+        return exactMatch || (vendorId == ValveVendorId
+            ? physicalController.VendorId == ValveVendorId &&
+                string.Equals(physicalController.Name, name, StringComparison.OrdinalIgnoreCase)
+            : vendorId == SonyVendorId &&
+            physicalController.VendorId == SonyVendorId &&
+            IsDualSenseName(name) &&
+            IsDualSenseName(physicalController.Name));
+    }
+
     private static string GetRouteId(
         ushort controllerIndex,
         SdlControllerInfo controller,
@@ -178,15 +222,33 @@ internal static class SdlControllerRoutePolicy
                 controller.VendorId == vendorId &&
                 controller.ProductId == productId);
 
-        // Valve Steam Controllers expose different Steam/physical product ids.
-        // SDL does not expose enough identity to pair multiple Valve controllers.
-        return exact is not null || vendorId != ValveVendorId
-            ? exact
-            : FindUnique(
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        // Steam Controllers expose different Steam/physical product ids. SDL
+        // does not expose enough identity to pair multiple Valve controllers.
+        if (vendorId == ValveVendorId)
+        {
+            return FindUnique(
                 physicalControllers,
                 controller => controller.Source == SdlControllerSource.Physical &&
                     controller.VendorId == ValveVendorId &&
                     string.Equals(controller.Name, name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Steam Input can report a normal DualSense id while host SDL sees a
+        // DualSense Edge physical id. Pair only one host-visible DualSense so
+        // we keep Steam's remapped buttons and fill missing physical features
+        // without guessing between multiple Sony controllers.
+        return vendorId == SonyVendorId && IsDualSenseName(name)
+            ? FindUnique(
+                physicalControllers,
+                controller => controller.Source == SdlControllerSource.Physical &&
+                    controller.VendorId == SonyVendorId &&
+                    IsDualSenseName(controller.Name))
+            : null;
     }
 
     private static string? GetPathControllerId(SdlControllerInfo controller)
@@ -203,6 +265,16 @@ internal static class SdlControllerRoutePolicy
         // order/count during Steam Input rebuilds, so it is not a trusted
         // physical controller route id and must not create VIIPER slots.
         return IsValveVirtualXInput(controller) && controller.Source == SdlControllerSource.Physical;
+    }
+
+    private static bool IsSteamRouteId(string routeId)
+    {
+        return routeId.StartsWith("steam:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDualSenseName(string? name)
+    {
+        return name?.Contains(DualSenseName, StringComparison.OrdinalIgnoreCase) == true;
     }
 }
 

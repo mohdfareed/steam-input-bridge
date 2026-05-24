@@ -12,6 +12,7 @@ namespace SteamInputBridge.Hosting.Client.Run.Controllers;
 internal sealed class ClientControllerStreams : IAsyncDisposable
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(2);
 
     private readonly CancellationTokenSource _stop = new();
     private readonly ClientControllerSourceRegistry _sources = new();
@@ -74,6 +75,7 @@ internal sealed class ClientControllerStreams : IAsyncDisposable
                 exception is SdlGamepadDisconnectedException or
                     InvalidOperationException or
                     IOException or
+                    TimeoutException or
                     ObjectDisposedException)
             {
                 if (_stop.IsCancellationRequested)
@@ -96,10 +98,13 @@ internal sealed class ClientControllerStreams : IAsyncDisposable
 
         try
         {
-            await task.ConfigureAwait(false);
+            // Shutdown and reconnect must not hang behind SDL/pipe teardown.
+            // The loop has already been cancelled; if a native wait or broken
+            // pipe ignores that briefly, the client run can still release.
+            await task.WaitAsync(StopTimeout).ConfigureAwait(false);
         }
         catch (Exception exception) when (
-            exception is OperationCanceledException or IOException or ObjectDisposedException)
+            exception is OperationCanceledException or IOException or ObjectDisposedException or TimeoutException)
         {
         }
     }

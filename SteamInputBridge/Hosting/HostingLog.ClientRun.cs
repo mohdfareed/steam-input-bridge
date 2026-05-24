@@ -34,4 +34,7 @@ internal static partial class HostingLog
 
     [LoggerMessage(EventId = 30, Level = LogLevel.Information, Message = "Restored server registration for {ProfileId} client={ClientId}")]
     public static partial void RestoredServerRegistration(ILogger logger, string profileId, Guid? clientId);
+
+    [LoggerMessage(EventId = 46, Level = LogLevel.Warning, Message = "Server registration restore failed; retrying: {Message}")]
+    public static partial void ServerRegistrationRestoreRetrying(ILogger logger, string message);
 }

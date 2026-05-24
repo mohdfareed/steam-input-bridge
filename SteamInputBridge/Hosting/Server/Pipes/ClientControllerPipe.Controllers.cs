@@ -20,6 +20,7 @@ internal sealed partial class ClientControllerPipe
                 _requestedControllers[controller.ControllerIndex] = controller;
             }
 
+            _physicalControllers?.SetClientControllers(clientId, controllers);
             List<ClientControllerInfo> resolved = ResolveControllers(_requestedControllers.Values);
             ApplyResolvedControllers(resolved);
             return resolved;
@@ -63,14 +64,6 @@ internal sealed partial class ClientControllerPipe
             PipeName,
             _pipe?.IsConnected == true,
             controllers);
-    }
-
-    private bool TryGetController(ushort controllerIndex, out ClientControllerInfo? controller)
-    {
-        lock (_controllers)
-        {
-            return _controllers.TryGetValue(controllerIndex, out controller);
-        }
     }
 
     private bool HasSameControllers(IReadOnlyList<ClientControllerInfo> controllers)
@@ -154,6 +147,7 @@ internal sealed partial class ClientControllerPipe
             }
 
             _ = _inputFrameCounts.Remove(current.ControllerIndex);
+            _ = _feedbackSinks.Remove(current.ControllerIndex);
         }
 
         foreach (ClientControllerInfo controller in controllers)
@@ -171,7 +165,8 @@ internal sealed partial class ClientControllerPipe
             registrations.Add(new ControllerClientRegistration(
                 controller.ControllerIndex,
                 new ControllerId(controller.PhysicalControllerId, controller.Label),
-                controller.Features));
+                controller.Features,
+                SdlControllerRoutePolicy.CanOwnOutputWithoutPhysical(controller)));
         }
 
         return registrations;
@@ -184,7 +179,7 @@ internal sealed partial class ClientControllerPipe
         {
             ClientControllerInfo? resolvedController = _physicalControllers is null
                 ? controller
-                : _physicalControllers.ResolveClientController(controller);
+                : _physicalControllers.ResolveClientController(clientId, controller);
             if (resolvedController is null)
             {
                 continue;

@@ -1,7 +1,10 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -56,6 +59,11 @@ internal static class ClientServerBootstrapper
             throw new InvalidOperationException("Cannot start the server because the app path is unknown.");
         }
 
+        if (TryStartTrayServerThroughDesktopShell(processPath))
+        {
+            return;
+        }
+
         _ = Process.Start(new ProcessStartInfo
         {
             FileName = processPath,
@@ -68,6 +76,65 @@ internal static class ClientServerBootstrapper
             UseShellExecute = true,
             WindowStyle = ProcessWindowStyle.Hidden,
         });
+    }
+
+    private static bool TryStartTrayServerThroughDesktopShell(string processPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        Type? shellType = Type.GetTypeFromProgID("Shell.Application");
+        if (shellType is null)
+        {
+            return false;
+        }
+
+        object? shell = null;
+        try
+        {
+            shell = Activator.CreateInstance(shellType);
+            if (shell is null)
+            {
+                return false;
+            }
+
+            // Steam-launched clients carry Steam-specific SDL environment.
+            // Ask Explorer's shell COM server to launch the tray app so the
+            // server starts like a desktop/startup launch instead of as a
+            // child of the Steam shortcut process.
+            _ = shellType.InvokeMember(
+                "ShellExecute",
+                BindingFlags.InvokeMethod,
+                binder: null,
+                target: shell,
+                args:
+                [
+                    processPath,
+                    "tray",
+                    System.AppContext.BaseDirectory,
+                    "open",
+                    0,
+                ],
+                culture: CultureInfo.InvariantCulture);
+            return true;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        catch (TargetInvocationException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (shell is not null && Marshal.IsComObject(shell))
+            {
+                _ = Marshal.FinalReleaseComObject(shell);
+            }
+        }
     }
 
     private static async Task WaitForServerPipeAsync(CancellationToken cancellationToken)

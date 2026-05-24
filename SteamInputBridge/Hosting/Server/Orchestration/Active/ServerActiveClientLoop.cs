@@ -25,7 +25,8 @@ internal sealed class ServerActiveClientLoop(
     Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
     ControllerBroker? forwarding = null,
     MouseBroker? mouseForwarding = null,
-    TimeSpan? forwardingInactiveGrace = null)
+    TimeSpan? forwardingInactiveGrace = null,
+    Action? stateChanged = null)
 {
     private readonly ServerSteamInputCoordinator _steamInput = new(clients, logger, steam);
     private readonly ServerHidHideCoordinator _hidHide = new(
@@ -51,7 +52,8 @@ internal sealed class ServerActiveClientLoop(
         Func<Guid, IReadOnlyList<string>>? getHidHideDevices = null,
         Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
         ControllerBroker? forwarding = null,
-        MouseBroker? mouseForwarding = null)
+        MouseBroker? mouseForwarding = null,
+        Action? stateChanged = null)
     {
         return new ServerActiveClientLoop(
             clients,
@@ -65,7 +67,8 @@ internal sealed class ServerActiveClientLoop(
             getHidHideDevices,
             formatHidHideDevices,
             forwarding,
-            mouseForwarding);
+            mouseForwarding,
+            stateChanged: stateChanged);
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -75,13 +78,16 @@ internal sealed class ServerActiveClientLoop(
         {
             _hidHide.Refresh(null);
             int lastForegroundProcessId = -1;
+            // This is the only foreground polling loop in the server. It
+            // centralizes foreground-to-active-client selection so Steam
+            // forcing and forwarding gates do not grow their own timers.
             while (!cancellationToken.IsCancellationRequested)
             {
                 int foregroundProcessId = getForegroundProcessId();
                 if (foregroundProcessId != lastForegroundProcessId)
                 {
                     clients.RefreshClients(foregroundProcessId);
-                    _hidHide.Refresh(clients.GetStatus().ActiveClientId);
+                    stateChanged?.Invoke();
                     lastForegroundProcessId = foregroundProcessId;
                 }
 
@@ -139,7 +145,7 @@ internal sealed class ServerActiveClientLoop(
         ApplyForwardingActiveClient(args.CurrentClientId);
 
         _steamInput.Apply(args.CurrentClientId);
-        _hidHide.Refresh(args.CurrentClientId);
+        stateChanged?.Invoke();
     }
 
     private void ApplyForwardingActiveClient(Guid? clientId)

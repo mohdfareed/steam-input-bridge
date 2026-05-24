@@ -19,10 +19,14 @@ public sealed class GameClient(
     ProfilesService profiles,
     ILogger<GameClient> logger) : IAsyncDisposable
 {
+    private static readonly TimeSpan RestoreRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ControllerStreamStartTimeout = TimeSpan.FromSeconds(5);
+
     private readonly SemaphoreSlim _stateGate = new(1, 1);
     private readonly ClientGameProcessManager _processes = new(logger);
     private readonly ClientReceiverProcessMonitor _receivers = new(logger);
     private ClientRunState? _currentState;
+    private Task? _restoreTask;
     private CancellationToken _runCancellationToken;
     private bool _disposed;
 
@@ -78,14 +82,14 @@ public sealed class GameClient(
                 }
                 finally
                 {
+                    _currentState = null;
                     await EndRunAsync(state).ConfigureAwait(false);
                     await keepAliveStop.CancelAsync().ConfigureAwait(false);
-                    await IgnoreCancellationAsync(keepAlive).ConfigureAwait(false);
+                    await IgnoreExpectedStopAsync(keepAlive).ConfigureAwait(false);
                 }
             }
             finally
             {
-                _currentState = null;
                 AppDomain.CurrentDomain.ProcessExit -= ProcessExit;
                 state.ProcessOwner?.Dispose();
                 state.LaunchedProcess?.Dispose();
@@ -194,8 +198,18 @@ public sealed class GameClient(
 
         if (update.State == ClientConnectionState.Connected && _currentState is not null)
         {
-            _ = Task.Run(RestoreConnectedRunAsync, CancellationToken.None);
+            StartRestoreTask();
         }
+    }
+
+    private void StartRestoreTask()
+    {
+        if (_restoreTask is { IsCompleted: false })
+        {
+            return;
+        }
+
+        _restoreTask = Task.Run(RestoreConnectedRunAsync, CancellationToken.None);
     }
 
     private async Task StartControllerStreamsAsync(
@@ -208,8 +222,24 @@ public sealed class GameClient(
         }
 
         ClientControllerStreams streams = new(logger);
-        await streams.StartAsync(client, state.Launch, cancellationToken).ConfigureAwait(false);
-        state.ControllerStreams = streams;
+        try
+        {
+            using CancellationTokenSource timeout =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ControllerStreamStartTimeout);
+            await streams.StartAsync(client, state.Launch, timeout.Token).ConfigureAwait(false);
+            state.ControllerStreams = streams;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            await streams.DisposeAsync().ConfigureAwait(false);
+            throw new TimeoutException("Timed out connecting the client controller stream pipe.");
+        }
+        catch
+        {
+            await streams.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     private static async Task StopControllerStreamsAsync(ClientRunState state)
@@ -229,23 +259,73 @@ public sealed class GameClient(
             return;
         }
 
-        try
+        string? lastLoggedFailure = null;
+        while (!_runCancellationToken.IsCancellationRequested &&
+            ReferenceEquals(_currentState, state) &&
+            !state.GameStopRequested)
         {
-            await _stateGate.WaitAsync(_runCancellationToken).ConfigureAwait(false);
+            if (client.State != ClientConnectionState.Connected ||
+                state.RegisteredClientId == client.ClientId)
+            {
+                await DelayRestoreRetryAsync().ConfigureAwait(false);
+                continue;
+            }
+
             try
             {
-                _ = await RestoreServerRegistrationAsync(state, _runCancellationToken).ConfigureAwait(false);
+                await _stateGate.WaitAsync(_runCancellationToken).ConfigureAwait(false);
+                try
+                {
+                    if (!ReferenceEquals(_currentState, state))
+                    {
+                        return;
+                    }
+
+                    if (await RestoreServerRegistrationAsync(state, _runCancellationToken).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                }
+                finally
+                {
+                    _ = _stateGate.Release();
+                }
             }
-            finally
+            catch (OperationCanceledException) when (_runCancellationToken.IsCancellationRequested)
             {
-                _ = _stateGate.Release();
+                return;
             }
+            catch (Exception exception) when (IsConnectionFailure(exception))
+            {
+                state.RegisteredClientId = null;
+                if (!string.Equals(lastLoggedFailure, exception.Message, StringComparison.Ordinal))
+                {
+                    HostingLog.ServerRegistrationRestoreRetrying(logger, exception.Message);
+                    lastLoggedFailure = exception.Message;
+                }
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                state.RegisteredClientId = null;
+                if (!string.Equals(lastLoggedFailure, exception.Message, StringComparison.Ordinal))
+                {
+                    HostingLog.ServerRegistrationRestoreRetrying(logger, exception.Message);
+                    lastLoggedFailure = exception.Message;
+                }
+            }
+
+            await DelayRestoreRetryAsync().ConfigureAwait(false);
         }
-        catch (Exception exception) when (
-            exception is OperationCanceledException ||
-                IsConnectionFailure(exception))
+    }
+
+    private async Task DelayRestoreRetryAsync()
+    {
+        try
         {
-            state.RegisteredClientId = null;
+            await Task.Delay(RestoreRetryDelay, _runCancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_runCancellationToken.IsCancellationRequested)
+        {
         }
     }
 
@@ -265,13 +345,28 @@ public sealed class GameClient(
         }
 
         await StopControllerStreamsAsync(state).ConfigureAwait(false);
-        state.Launch = await client
+        ClientRunLaunch launch = await client
             .StartRunAsync(state.Request, cancellationToken)
             .ConfigureAwait(false);
-        state.RegisteredClientId = client.ClientId;
+        state.Launch = launch;
         await StartControllerStreamsAsync(state, cancellationToken).ConfigureAwait(false);
+        state.RegisteredClientId = client.ClientId;
+        await RestoreRunProcessesAsync(state, cancellationToken).ConfigureAwait(false);
         HostingLog.RestoredServerRegistration(logger, state.Launch.ProfileId, client.ClientId);
         return true;
+    }
+
+    private async Task RestoreRunProcessesAsync(
+        ClientRunState state,
+        CancellationToken cancellationToken)
+    {
+        // Server restarts lose active-process claims. The receiver monitor only
+        // sends on process-list changes, so reconnect must push the current
+        // snapshot even when the game kept running unchanged.
+        IReadOnlyList<ObservedGameProcess> observed =
+            GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
+        state.UpdateOwnedReceivers(observed);
+        await client.UpdateRunProcessesAsync(observed, cancellationToken).ConfigureAwait(false);
     }
 
     private uint? ResolveSteamAppId(string profileId, uint? overrideAppId)
@@ -299,13 +394,16 @@ public sealed class GameClient(
         ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
-    private static async Task IgnoreCancellationAsync(Task task)
+    private static async Task IgnoreExpectedStopAsync(Task task)
     {
         try
         {
             await task.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception) when (IsConnectionFailure(exception))
         {
         }
     }
@@ -315,6 +413,7 @@ public sealed class GameClient(
         return exception is IOException
             or EndOfStreamException
             or InvalidOperationException
+            or TimeoutException
             or ConnectionLostException
             or ObjectDisposedException;
     }

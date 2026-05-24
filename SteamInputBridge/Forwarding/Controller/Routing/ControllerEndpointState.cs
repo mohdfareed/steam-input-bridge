@@ -3,7 +3,8 @@ namespace SteamInputBridge.Forwarding.Controller.Routing;
 internal readonly record struct ControllerEndpointState(
     ControllerState State,
     ControllerFeatures Features,
-    IControllerFeedbackSink? FeedbackSink)
+    IControllerFeedbackSink? FeedbackSink,
+    bool CanOwnOutputWithoutPhysical = false)
 {
     public bool Supports(ControllerFeatures feature)
     {

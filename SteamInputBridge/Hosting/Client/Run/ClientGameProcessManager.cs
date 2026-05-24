@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,10 @@ internal sealed class ClientGameProcessManager(ILogger logger)
             return;
         }
 
+        // Receiver processes that already existed before this launch are not
+        // ours. Track only post-launch receiver pids so client shutdown can
+        // close launcher-escaped games without killing unrelated matches.
+        state.CaptureReceiverBaseline(GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses));
         Process process = GameProcessHost.Launch(
             state.Launch.Executable,
             state.Launch.Arguments,
@@ -51,12 +56,14 @@ internal sealed class ClientGameProcessManager(ILogger logger)
             state.GameStopRequested = true;
         }
 
-        int killed = state.LaunchedProcess is null
-            ? 0
-            : GameProcessKiller.KillLaunchedProcess(state.LaunchedProcess);
-        if (state.KillReceivers)
+        IReadOnlyList<ObservedGameProcess> ownedReceivers = state.GetOwnedReceiversSnapshot();
+        int killed = state.KillReceivers
+            ? GameProcessKiller.Kill(GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses))
+            : GameProcessKiller.Kill(ownedReceivers);
+
+        if (state.LaunchedProcess is not null)
         {
-            killed += GameProcessKiller.Kill(GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses));
+            killed += GameProcessKiller.KillLaunchedProcess(state.LaunchedProcess);
         }
 
         HostingLog.StoppedGameProcesses(logger, reason, killed);

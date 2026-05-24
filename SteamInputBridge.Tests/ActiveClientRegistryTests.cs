@@ -158,6 +158,35 @@ public sealed class ActiveClientRegistryTests
         Assert.IsEmpty(status.ReceiverProcesses);
     }
 
+    /// <summary>Only launched-profile clients expose receiver pids for lifecycle cleanup.</summary>
+    [TestMethod]
+    public void LifecycleOwnedProcessesRequireLaunchOwnership()
+    {
+        ActiveClientRegistry runtime = new();
+        Guid launched = Guid.NewGuid();
+        Guid attached = Guid.NewGuid();
+        ObservedGameProcess process = Receiver(100);
+
+        runtime.RegisterClient(
+            launched,
+            Environment.ProcessId,
+            "launched",
+            steamAppId: null,
+            ["game.exe"],
+            ownsReceiverProcesses: true);
+        runtime.RegisterClient(
+            attached,
+            Environment.ProcessId,
+            "attached",
+            steamAppId: null,
+            ["game.exe"]);
+        runtime.UpdateClient(launched, [process]);
+        runtime.UpdateClient(attached, [Receiver(101)]);
+
+        Assert.HasCount(1, runtime.GetLifecycleOwnedProcesses(launched));
+        Assert.IsEmpty(runtime.GetLifecycleOwnedProcesses(attached));
+    }
+
     /// <summary>Checks active-client change events only fire when active state changes.</summary>
     [TestMethod]
     public void ActiveClientChangeEventFiresOnlyOnChange()

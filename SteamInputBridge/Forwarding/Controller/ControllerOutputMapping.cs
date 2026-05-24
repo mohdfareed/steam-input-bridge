@@ -177,10 +177,10 @@ public static class ControllerOutputMapping
 
     private static Ds4DPad ToDs4DPad(ControllerButtons buttons)
     {
-        bool up = buttons.HasFlag(ControllerButtons.DPadUp);
-        bool down = buttons.HasFlag(ControllerButtons.DPadDown);
-        bool left = buttons.HasFlag(ControllerButtons.DPadLeft);
-        bool right = buttons.HasFlag(ControllerButtons.DPadRight);
+        bool up = (buttons & ControllerButtons.DPadUp) != 0;
+        bool down = (buttons & ControllerButtons.DPadDown) != 0;
+        bool left = (buttons & ControllerButtons.DPadLeft) != 0;
+        bool right = (buttons & ControllerButtons.DPadRight) != 0;
 
         bool verticalConflict = up && down;
         bool horizontalConflict = left && right;

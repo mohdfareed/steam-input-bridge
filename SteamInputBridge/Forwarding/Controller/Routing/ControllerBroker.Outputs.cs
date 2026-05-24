@@ -4,6 +4,31 @@ namespace SteamInputBridge.Forwarding.Controller.Routing;
 
 public sealed partial class ControllerBroker
 {
+    /// <summary>Sends a short diagnostic state to every connected output.</summary>
+    public int SendOutputProbe(in ControllerState state)
+    {
+        ThrowIfDisposed();
+        List<IControllerOutput> outputs = [];
+        lock (_gate)
+        {
+            foreach (ControllerSlot slot in _slots.Values)
+            {
+                if (slot.Output is { } output)
+                {
+                    outputs.Add(output);
+                }
+            }
+        }
+
+        foreach (IControllerOutput output in outputs)
+        {
+            ControllerState send = state;
+            output.Send(in send);
+        }
+
+        return outputs.Count;
+    }
+
     private void RefreshOutputs(List<IControllerOutput>? dispose = null)
     {
         foreach (ControllerSlot slot in _slots.Values)
@@ -15,8 +40,16 @@ public sealed partial class ControllerBroker
     private void RefreshOutput(ControllerSlot slot, List<IControllerOutput>? dispose = null)
     {
         ControllerOutput outputKind = GetOutputKind(slot, keepExistingWhenInactive: true);
+        // Unknown Steam streams stay candidates until they are matched to a
+        // physical slot. Physical-only slots therefore do not create virtual
+        // controllers; output appears only after a resolved client endpoint is
+        // attached. Real Steam Controllers are the explicit client-only
+        // exception when no host-visible physical counterpart exists.
+        // Output enable/disable is a report gate, not a device lifecycle
+        // gate. Keep virtual devices connected so Windows and Steam do not
+        // rebuild controller streams when a shortcut disables forwarding.
         bool shouldConnect =
-            _controllerOutputEnabled &&
+            ((slot.Physical.HasValue && slot.ClientEndpoints.Count != 0) || slot.HasClientOnlyOutputOwner) &&
             outputKind != ControllerOutput.None;
 
         if (!shouldConnect)
@@ -31,7 +64,6 @@ public sealed partial class ControllerBroker
     private ControllerOutput GetOutputKind(ControllerSlot slot, bool keepExistingWhenInactive)
     {
         if (_activeClientId.HasValue &&
-            slot.HasClient(_activeClientId) &&
             _clients.TryGetValue(_activeClientId.Value, out ClientEntry? activeClient) &&
             activeClient.ControllerOutput != ControllerOutput.None)
         {
@@ -40,7 +72,7 @@ public sealed partial class ControllerBroker
 
         if (keepExistingWhenInactive &&
             slot.OutputKind != ControllerOutput.None &&
-            HasOutputClient(slot))
+            HasOutputClient())
         {
             return slot.OutputKind;
         }
@@ -57,12 +89,11 @@ public sealed partial class ControllerBroker
         return ControllerOutput.None;
     }
 
-    private bool HasOutputClient(ControllerSlot slot)
+    private bool HasOutputClient()
     {
-        foreach (ControllerEndpointId endpointId in slot.ClientEndpoints.Keys)
+        foreach (ClientEntry client in _clients.Values)
         {
-            if (_clients.TryGetValue(endpointId.ClientId, out ClientEntry? client) &&
-                client.ControllerOutput != ControllerOutput.None)
+            if (client.ControllerOutput != ControllerOutput.None)
             {
                 return true;
             }
@@ -89,7 +120,8 @@ public sealed partial class ControllerBroker
             return null;
         }
 
-        if (!_activeClientId.HasValue ||
+        if (!_controllerOutputEnabled ||
+            !_activeClientId.HasValue ||
             !slot.TryGetMergedState(
                 _activeClientId.Value,
                 GetClientFeatures(),

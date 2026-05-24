@@ -14,6 +14,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     private bool _mouseOutputEnabled = true;
     private bool _pointerOutputEnabled = true;
     private IMouseOutput? _output;
+    private IMouseOutput? _sendOutput;
     private MouseOutput _outputKind;
     private bool _disposed;
 
@@ -30,6 +31,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         {
             _clients[clientId] = mouseOutput;
             dispose = RefreshOutput();
+            UpdateSendOutput();
         }
 
         DisposeOutput(dispose);
@@ -52,6 +54,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
 
             dispose = RefreshOutput();
             clear = _output is not null && !HasActiveOutput() ? _output : null;
+            UpdateSendOutput();
         }
 
         SendEmpty(clear);
@@ -72,6 +75,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
                 : null;
             dispose = RefreshOutput();
             clear = _output is not null && !HasActiveOutput() ? _output : null;
+            UpdateSendOutput();
         }
 
         SendEmpty(clear);
@@ -82,18 +86,16 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     public void SetMouseOutputEnabled(bool enabled)
     {
         ThrowIfDisposed();
-        IMouseOutput? dispose;
         IMouseOutput? clear;
 
         lock (_gate)
         {
             _mouseOutputEnabled = enabled;
             clear = !enabled ? _output : null;
-            dispose = RefreshOutput();
+            UpdateSendOutput();
         }
 
         SendEmpty(clear);
-        DisposeOutput(dispose);
     }
 
     /// <summary>Enables or disables pointer reports without disconnecting the output device.</summary>
@@ -110,6 +112,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
             }
 
             _pointerOutputEnabled = enabled;
+            UpdateSendOutput();
             if (!enabled)
             {
                 output = _output;
@@ -130,12 +133,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     public void Send(in MouseInput input)
     {
         ThrowIfDisposed();
-        IMouseOutput? output;
-
-        lock (_gate)
-        {
-            output = _pointerOutputEnabled && HasActiveOutput() ? _output : null;
-        }
+        IMouseOutput? output = Volatile.Read(ref _sendOutput);
 
         if (output is not null && !input.Report.IsEmpty && !output.FilterInput(in input))
         {
@@ -184,6 +182,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         {
             dispose = _output;
             _output = null;
+            Volatile.Write(ref _sendOutput, null);
             _outputKind = MouseOutput.None;
             _clients.Clear();
         }
@@ -200,7 +199,10 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     private IMouseOutput? RefreshOutput()
     {
         MouseOutput outputKind = GetOutputKind(keepExistingWhenInactive: true);
-        bool shouldConnect = _mouseOutputEnabled && outputKind != MouseOutput.None;
+        // Output enable/disable is a report gate, not a device lifecycle
+        // gate. Keep the virtual mouse connected for the profile run so
+        // Windows and Steam do not see device churn.
+        bool shouldConnect = outputKind != MouseOutput.None;
 
         if (!shouldConnect)
         {
@@ -228,8 +230,18 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         IMouseOutput? output = _output;
         _output = null;
+        Volatile.Write(ref _sendOutput, null);
         _outputKind = MouseOutput.None;
         return output;
+    }
+
+    private void UpdateSendOutput()
+    {
+        // Raw Input can run at 1000 Hz. Lifecycle changes keep this cached so
+        // the report path does not take the broker lock for every packet.
+        Volatile.Write(
+            ref _sendOutput,
+            _mouseOutputEnabled && _pointerOutputEnabled && HasActiveOutput() ? _output : null);
     }
 
     private MouseOutput GetOutputKind(bool keepExistingWhenInactive)

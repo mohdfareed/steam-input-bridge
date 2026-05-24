@@ -98,6 +98,16 @@ internal sealed class ServerControllerInputFilterSnapshot(
             !IsForeignHiddenDevice(device);
     }
 
+    public bool IsCurrentScopeDevice(SdlControllerInfo controller)
+    {
+        ArgumentNullException.ThrowIfNull(controller);
+
+        HidHideDevice? device = FindDeviceBySymbolicLink(controller.Path);
+        return device is not null &&
+            hidHide is not null &&
+            hidHide.IsScopeDevice(device.DeviceInstancePath);
+    }
+
     private HidHideDevice? FindDevice(string? controllerId)
     {
         string? path = GetControllerPath(controllerId);

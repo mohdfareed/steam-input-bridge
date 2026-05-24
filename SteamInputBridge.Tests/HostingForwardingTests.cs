@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -73,6 +74,11 @@ public sealed class HostingForwardingTests
                 ClientRunLaunch launch = await client
                     .StartRunAsync(new StartRunRequest("game", SteamAppId: 123), CancellationToken.None)
                     .ConfigureAwait(false);
+                ControllerId controllerId = new("physical-1", "Physical 1");
+                broker.UpdatePhysicalController(
+                    controllerId,
+                    ControllerState.Empty,
+                    ControllerFeatures.Rumble);
                 await client.RegisterClientControllersAsync(
                         [new ClientControllerInfo(
                             0,
@@ -107,10 +113,26 @@ public sealed class HostingForwardingTests
                             null)))
                     .ConfigureAwait(false);
 
-                await WaitUntilAsync(() => factory.Outputs.Count == 1 &&
-                    factory.Outputs[0].LastState.Standard?.Buttons == ControllerButtons.South)
-                    .ConfigureAwait(false);
-                FakeControllerOutput output = factory.Outputs[0];
+                try
+                {
+                    await WaitUntilAsync(() =>
+                        TryFindOutput(factory, controllerId, out FakeControllerOutput? candidate) &&
+                        candidate is not null &&
+                        candidate.LastState.Standard?.Buttons == ControllerButtons.South)
+                        .ConfigureAwait(false);
+                }
+                catch (TaskCanceledException)
+                {
+                    ControllerBrokerStatus status = broker.GetStatus();
+                    Assert.Fail(
+                        "Timed out waiting for controller pipe input. " +
+                        $"outputs={factory.Outputs.Count}, " +
+                        $"lastButtons={FormatButtons(factory.Outputs)}, " +
+                        $"activeClient={status.ActiveClientId}, " +
+                        $"slots={status.Slots.Count}.");
+                }
+
+                FakeControllerOutput output = FindOutput(factory, controllerId);
 
                 await client.RegisterClientControllersAsync(
                         [new ClientControllerInfo(
@@ -121,7 +143,7 @@ public sealed class HostingForwardingTests
                         CancellationToken.None)
                     .ConfigureAwait(false);
 
-                Assert.HasCount(1, factory.Outputs);
+                Assert.AreSame(output, FindOutput(factory, controllerId));
                 Assert.IsFalse(output.Disposed);
 
                 output.EmitFeedback(new ControllerFeedback(new ControllerRumble(10, 20)));
@@ -162,6 +184,7 @@ public sealed class HostingForwardingTests
             resolver);
 
         broker.RegisterClient(clientId, ForwardingControllerOutput.Xbox360);
+        resolver.Reject = true;
         _ = pipe.RegisterControllers(
             [new ClientControllerInfo(
                 0,
@@ -172,9 +195,9 @@ public sealed class HostingForwardingTests
                 VendorId: 0x054c,
                 ProductId: 0x0df2)]);
 
-        Assert.HasCount(1, factory.Outputs);
-        Assert.AreEqual("steam:05de143a9a0d5235", factory.Outputs[0].ControllerId.Value);
+        Assert.IsEmpty(factory.Outputs);
 
+        resolver.Reject = false;
         resolver.Resolved = new ClientControllerInfo(
             0,
             @"path:\\?\hid#vid_054c&pid_0df2",
@@ -183,26 +206,30 @@ public sealed class HostingForwardingTests
             @"path:\\?\hid#vid_054c&pid_0df2",
             0x054c,
             0x0df2);
+        broker.UpdatePhysicalController(
+            new ControllerId(@"path:\\?\hid#vid_054c&pid_0df2", "DualSense Edge"),
+            ControllerState.Empty,
+            ControllerFeatures.StandardControls);
         pipe.RefreshResolvedControllers();
 
-        Assert.HasCount(2, factory.Outputs);
-        Assert.IsTrue(factory.Outputs[0].Disposed);
-        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", factory.Outputs[1].ControllerId.Value);
+        Assert.HasCount(1, factory.Outputs);
+        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", factory.Outputs[0].ControllerId.Value);
     }
 
-    /// <summary>Unresolved Steam-routed DS4-shaped streams are not dropped by a generic PS4 heuristic.</summary>
+    /// <summary>Unresolved Steam-routed DS4-shaped streams do not create output slots.</summary>
     [TestMethod]
-    public async Task ControllerPipeKeepsUnresolvedSteamDs4ForOwnedTrackingValidation()
+    public async Task ControllerPipeDropsUnresolvedSteamDs4()
     {
         Guid clientId = Guid.NewGuid();
         FakeControllerOutputFactory factory = new();
+        FakePhysicalControllerResolver resolver = new() { Reject = true };
         await using ControllerBroker broker = new(factory);
         await using ClientControllerPipe pipe = new(
             clientId,
             "unused",
             broker,
             NullLogger.Instance,
-            new FakePhysicalControllerResolver());
+            resolver);
 
         broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
         IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
@@ -215,9 +242,84 @@ public sealed class HostingForwardingTests
                 VendorId: 0x054c,
                 ProductId: 0x05c4)]);
 
+        Assert.IsEmpty(registered);
+        Assert.IsEmpty(broker.GetStatus().Slots);
+        Assert.IsEmpty(factory.Outputs);
+    }
+
+    /// <summary>A real Steam Controller stream can create a client-only output slot.</summary>
+    [TestMethod]
+    public async Task ControllerPipeKeepsUnmatchedSteamControllerAsClientOnlySlot()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        await using ControllerBroker broker = new(factory);
+        await using PhysicalControllerPump pump = new(broker, NullLogger.Instance);
+        await using ClientControllerPipe pipe = new(
+            clientId,
+            "unused",
+            broker,
+            NullLogger.Instance,
+            pump);
+
+        broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
+        IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
+            [new ClientControllerInfo(
+                0,
+                "steam:0001fa99604010e6",
+                "Steam Controller",
+                ControllerFeatures.StandardControls | ControllerFeatures.Touchpad,
+                PhysicalDeviceId: null,
+                VendorId: 0x28de,
+                ProductId: 0x1302)]);
+
         Assert.HasCount(1, registered);
-        Assert.HasCount(1, broker.GetStatus().Slots);
         Assert.HasCount(1, factory.Outputs);
+        Assert.AreEqual("steam:0001fa99604010e6", factory.Outputs[0].ControllerId.Value);
+        ControllerBrokerStatus status = broker.GetStatus();
+        Assert.HasCount(1, status.Slots);
+        Assert.IsFalse(status.Slots[0].HasPhysicalEndpoint);
+        Assert.IsTrue(status.Slots[0].OutputConnected);
+    }
+
+    /// <summary>Steam route ids stay pending until the host sees a physical counterpart.</summary>
+    [TestMethod]
+    public async Task PhysicalResolverRejectsUnmatchedSteamRoute()
+    {
+        await using ControllerBroker broker = new(new FakeControllerOutputFactory());
+        await using PhysicalControllerPump pump = new(broker, NullLogger.Instance);
+
+        ClientControllerInfo? resolved = pump.ResolveClientController(Guid.NewGuid(), new ClientControllerInfo(
+            0,
+            "steam:05de143a9a0d5235",
+            "DualSense Edge",
+            ControllerFeatures.StandardControls,
+            PhysicalDeviceId: null,
+            VendorId: 0x054c,
+            ProductId: 0x0df2));
+
+        Assert.IsNull(resolved);
+    }
+
+    /// <summary>A real Steam Controller stream is allowed when no host physical counterpart exists.</summary>
+    [TestMethod]
+    public async Task PhysicalResolverKeepsUnmatchedSteamControllerRoute()
+    {
+        await using ControllerBroker broker = new(new FakeControllerOutputFactory());
+        await using PhysicalControllerPump pump = new(broker, NullLogger.Instance);
+
+        ClientControllerInfo route = new(
+            0,
+            "steam:0001fa99604010e6",
+            "Steam Controller",
+            ControllerFeatures.StandardControls | ControllerFeatures.Touchpad,
+            PhysicalDeviceId: null,
+            VendorId: 0x28de,
+            ProductId: 0x1302);
+
+        ClientControllerInfo? resolved = pump.ResolveClientController(Guid.NewGuid(), route);
+
+        Assert.AreSame(route, resolved);
     }
 
     /// <summary>Server-side route resolver can reject client-visible physical echoes before they create outputs.</summary>
@@ -276,6 +378,10 @@ public sealed class HostingForwardingTests
             NullLogger.Instance,
             resolver);
 
+        broker.UpdatePhysicalController(
+            new ControllerId(@"path:\\?\hid#vid_054c&pid_05c4", "Wireless Controller"),
+            ControllerState.Empty,
+            ControllerFeatures.StandardControls | ControllerFeatures.Rumble);
         broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
         IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
             [new ClientControllerInfo(
@@ -420,6 +526,42 @@ public sealed class HostingForwardingTests
         return $"SteamInputBridge.Tests.{Guid.NewGuid():N}";
     }
 
+    private static string FormatButtons(IReadOnlyList<FakeControllerOutput> outputs)
+    {
+        return outputs.Count == 0
+            ? "none"
+            : string.Join(",", outputs.Select(static output =>
+                output.LastState.Standard?.Buttons.ToString() ?? "none"));
+    }
+
+    private static FakeControllerOutput FindOutput(
+        FakeControllerOutputFactory factory,
+        ControllerId controllerId)
+    {
+        return TryFindOutput(factory, controllerId, out FakeControllerOutput? output) &&
+            output is not null
+            ? output
+            : throw new InvalidOperationException($"Expected output for {controllerId}.");
+    }
+
+    private static bool TryFindOutput(
+        FakeControllerOutputFactory factory,
+        ControllerId controllerId,
+        out FakeControllerOutput? output)
+    {
+        foreach (FakeControllerOutput candidate in factory.Outputs)
+        {
+            if (candidate.ControllerId == controllerId)
+            {
+                output = candidate;
+                return true;
+            }
+        }
+
+        output = null;
+        return false;
+    }
+
     private static async Task IgnoreCancellationAsync(Task task)
     {
         try
@@ -433,30 +575,52 @@ public sealed class HostingForwardingTests
 
     private sealed class FakeControllerOutputFactory : IControllerOutputFactory
     {
-        public List<FakeControllerOutput> Outputs { get; } = [];
+        private readonly Lock _gate = new();
+        private readonly List<FakeControllerOutput> _outputs = [];
+
+        public IReadOnlyList<FakeControllerOutput> Outputs
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _outputs];
+                }
+            }
+        }
 
         public IControllerOutput Connect(ControllerId controllerId, ForwardingControllerOutput output)
         {
             _ = output;
             FakeControllerOutput connected = new(controllerId);
-            Outputs.Add(connected);
+            lock (_gate)
+            {
+                _outputs.Add(connected);
+            }
+
             return connected;
         }
     }
 
     private sealed class FakeControllerOutput(ControllerId controllerId) : IControllerOutput
     {
+        private readonly Lock _gate = new();
         private Action<ControllerFeedback>? _feedback;
+        private ControllerState _lastState;
+        private bool _disposed;
 
         public ControllerId ControllerId { get; } = controllerId;
 
-        public ControllerState LastState { get; private set; }
+        public ControllerState LastState => GetLastState();
 
-        public bool Disposed { get; private set; }
+        public bool Disposed => IsDisposed();
 
         public void Send(in ControllerState state)
         {
-            LastState = state;
+            lock (_gate)
+            {
+                _lastState = state;
+            }
         }
 
         public IDisposable ListenFeedback(Action<ControllerFeedback> handler)
@@ -472,8 +636,28 @@ public sealed class HostingForwardingTests
 
         public ValueTask DisposeAsync()
         {
-            Disposed = true;
+            lock (_gate)
+            {
+                _disposed = true;
+            }
+
             return ValueTask.CompletedTask;
+        }
+
+        private ControllerState GetLastState()
+        {
+            lock (_gate)
+            {
+                return _lastState;
+            }
+        }
+
+        private bool IsDisposed()
+        {
+            lock (_gate)
+            {
+                return _disposed;
+            }
         }
     }
 
@@ -492,9 +676,28 @@ public sealed class HostingForwardingTests
 
         public bool Reject { get; set; }
 
-        public ClientControllerInfo? ResolveClientController(ClientControllerInfo controller)
+        public void SetClientControllers(Guid clientId, IReadOnlyList<ClientControllerInfo> controllers)
         {
+            _ = clientId;
+            _ = controllers;
+        }
+
+        public ClientControllerInfo? ResolveClientController(Guid clientId, ClientControllerInfo controller)
+        {
+            _ = clientId;
             return Reject ? null : Resolved ?? controller;
+        }
+
+        public void ObserveClientControllerInput(Guid clientId, ushort controllerIndex, ControllerState state)
+        {
+            _ = clientId;
+            _ = controllerIndex;
+            _ = state;
+        }
+
+        public void RemoveClient(Guid clientId)
+        {
+            _ = clientId;
         }
     }
 

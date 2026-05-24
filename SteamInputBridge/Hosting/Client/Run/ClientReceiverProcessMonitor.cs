@@ -10,6 +10,8 @@ namespace SteamInputBridge.Hosting.Client.Run;
 
 internal sealed class ClientReceiverProcessMonitor(ILogger logger)
 {
+    private static readonly TimeSpan ReceiverPollInterval = TimeSpan.FromMilliseconds(100);
+
     public async Task WatchAsync(
         ClientRunState state,
         Func<IReadOnlyList<ObservedGameProcess>, CancellationToken, Task> update,
@@ -17,12 +19,19 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
     {
         LogReceiverWatch(state);
 
+        // Receiver discovery is intentionally isolated here. Windows can raise
+        // process start/exit events, but filtering arbitrary profile receiver
+        // names reliably still requires checking the live process table.
         while (!cancellationToken.IsCancellationRequested)
         {
             IReadOnlyList<ObservedGameProcess> observed =
                 GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
-            LogReceiverChange(state, observed);
-            await update(observed, cancellationToken).ConfigureAwait(false);
+            state.UpdateOwnedReceivers(observed);
+            if (HasReceiverChange(state, observed))
+            {
+                LogReceiverChange(state, observed);
+                await update(observed, cancellationToken).ConfigureAwait(false);
+            }
 
             state.SawReceiver |= observed.Count != 0;
             if (state.SawReceiver && observed.Count == 0)
@@ -30,7 +39,7 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
                 return;
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(ReceiverPollInterval, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -45,7 +54,7 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
         HostingLog.WatchingReceiverProcesses(logger, state.Launch.ProfileId, receivers);
     }
 
-    private void LogReceiverChange(
+    private static bool HasReceiverChange(
         ClientRunState state,
         IReadOnlyList<ObservedGameProcess> observed)
     {
@@ -54,10 +63,17 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
             observed.OrderBy(process => process.ProcessId).Select(process => process.ProcessId));
         if (signature == state.LastObservedSignature)
         {
-            return;
+            return false;
         }
 
         state.LastObservedSignature = signature;
+        return true;
+    }
+
+    private void LogReceiverChange(
+        ClientRunState state,
+        IReadOnlyList<ObservedGameProcess> observed)
+    {
         HostingLog.ReceiverProcesses(
             logger,
             state.Launch.ProfileId,

@@ -13,17 +13,21 @@ internal sealed class GlobalKeyboardShortcutListener : IKeyboardShortcutListener
     private bool _disposed;
 
     /// <inheritdoc />
-    public void Update(IReadOnlyList<KeyboardShortcutRegistration> shortcuts, Action<int> pressed)
+    public void Update(
+        IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
+        Action<int> pressed,
+        Action<int> released)
     {
         ArgumentNullException.ThrowIfNull(shortcuts);
         ArgumentNullException.ThrowIfNull(pressed);
+        ArgumentNullException.ThrowIfNull(released);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _session?.Dispose();
         _session = null;
         if (shortcuts.Count != 0)
         {
-            _session = KeyboardShortcutSession.Start(shortcuts, pressed);
+            _session = KeyboardShortcutSession.Start(shortcuts, pressed, released);
         }
     }
 
@@ -45,23 +49,39 @@ internal sealed class KeyboardShortcutSession : IDisposable
 {
     private const uint ModNoRepeat = 0x4000;
     private const uint WmHotkey = 0x0312;
+    private const uint WmKeyUp = 0x0101;
+    private const uint WmSysKeyUp = 0x0105;
     private const uint WmQuit = 0x0012;
     private const uint PmNoRemove = 0x0000;
+    private const int WhKeyboardLl = 13;
 
     private readonly IReadOnlyList<KeyboardShortcutRegistration> _shortcuts;
+    private readonly Dictionary<int, KeyboardShortcutCombination> _combinations = [];
+    private readonly HashSet<int> _pressedShortcuts = [];
     private readonly Action<int> _pressed;
+    private readonly Action<int> _released;
+    private readonly LowLevelKeyboardProc _keyboardHookCallback;
     private readonly ManualResetEventSlim _ready = new();
     private readonly Thread _thread;
     private volatile uint _threadId;
+    private IntPtr _keyboardHook;
     private Exception? _startupError;
     private bool _disposed;
 
     private KeyboardShortcutSession(
         IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-        Action<int> pressed)
+        Action<int> pressed,
+        Action<int> released)
     {
         _shortcuts = shortcuts;
+        foreach (KeyboardShortcutRegistration shortcut in shortcuts)
+        {
+            _combinations[shortcut.Id] = shortcut.Combination;
+        }
+
         _pressed = pressed;
+        _released = released;
+        _keyboardHookCallback = HandleKeyboardHook;
         _thread = new Thread(Run)
         {
             IsBackground = true,
@@ -71,9 +91,10 @@ internal sealed class KeyboardShortcutSession : IDisposable
 
     internal static KeyboardShortcutSession Start(
         IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-        Action<int> pressed)
+        Action<int> pressed,
+        Action<int> released)
     {
-        KeyboardShortcutSession session = new(shortcuts, pressed);
+        KeyboardShortcutSession session = new(shortcuts, pressed, released);
         session._thread.Start();
         session._ready.Wait();
         if (session._startupError is not null)
@@ -102,6 +123,12 @@ internal sealed class KeyboardShortcutSession : IDisposable
         _ = _thread.Join(TimeSpan.FromSeconds(2));
 
         _ready.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    ~KeyboardShortcutSession()
+    {
+        UnregisterKeyboardHook();
     }
 
     private void Run()
@@ -111,15 +138,23 @@ internal sealed class KeyboardShortcutSession : IDisposable
         try
         {
             RegisterShortcuts();
+            _keyboardHook = SetWindowsHookEx(WhKeyboardLl, _keyboardHookCallback, GetModuleHandle(null), 0);
+            if (_keyboardHook == IntPtr.Zero)
+            {
+                throw new Win32Exception(Marshal.GetLastPInvokeError());
+            }
+
             _ready.Set();
 
             while (GetMessage(out NativeMessage message, IntPtr.Zero, 0, 0) > 0)
             {
                 if (message.Message == WmHotkey)
                 {
+                    int shortcutId = (int)message.WParam;
+                    _ = _pressedShortcuts.Add(shortcutId);
                     try
                     {
-                        _pressed((int)message.WParam);
+                        _pressed(shortcutId);
                     }
                     catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
                     {
@@ -134,6 +169,7 @@ internal sealed class KeyboardShortcutSession : IDisposable
         }
         finally
         {
+            UnregisterKeyboardHook();
             UnregisterShortcuts();
         }
     }
@@ -156,6 +192,67 @@ internal sealed class KeyboardShortcutSession : IDisposable
         {
             _ = UnregisterHotKey(IntPtr.Zero, shortcut.Id);
         }
+    }
+
+    private IntPtr HandleKeyboardHook(int code, UIntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0 &&
+            (wParam.ToUInt32() == WmKeyUp || wParam.ToUInt32() == WmSysKeyUp))
+        {
+            ReleaseCompletedShortcuts();
+        }
+
+        return CallNextHookEx(_keyboardHook, code, wParam, lParam);
+    }
+
+    private void ReleaseCompletedShortcuts()
+    {
+        if (_pressedShortcuts.Count == 0)
+        {
+            return;
+        }
+
+        List<int>? released = null;
+        foreach (int shortcutId in _pressedShortcuts)
+        {
+            if (_combinations.TryGetValue(shortcutId, out KeyboardShortcutCombination combination) &&
+                KeyboardShortcutState.IsDown(combination))
+            {
+                continue;
+            }
+
+            released ??= [];
+            released.Add(shortcutId);
+        }
+
+        if (released is null)
+        {
+            return;
+        }
+
+        foreach (int shortcutId in released)
+        {
+            _ = _pressedShortcuts.Remove(shortcutId);
+            try
+            {
+                _released(shortcutId);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
+            {
+            }
+        }
+    }
+
+    private void UnregisterKeyboardHook()
+    {
+        IntPtr hook = _keyboardHook;
+        if (hook == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _keyboardHook = IntPtr.Zero;
+        _ = UnhookWindowsHookEx(hook);
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -195,9 +292,35 @@ internal sealed class KeyboardShortcutSession : IDisposable
         UIntPtr wParam,
         IntPtr lParam);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern IntPtr SetWindowsHookEx(
+        int idHook,
+        LowLevelKeyboardProc callback,
+        IntPtr hInstance,
+        uint threadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern IntPtr CallNextHookEx(
+        IntPtr hook,
+        int code,
+        UIntPtr wParam,
+        IntPtr lParam);
+
     [DllImport("kernel32.dll")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern uint GetCurrentThreadId();
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern IntPtr GetModuleHandle(string? moduleName);
+
+    private delegate IntPtr LowLevelKeyboardProc(int code, UIntPtr wParam, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct NativeMessage

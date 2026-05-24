@@ -55,7 +55,8 @@ internal sealed class ClientState(
     int clientProcessId,
     string profileId,
     uint? steamAppId,
-    IReadOnlyList<string> receiverProcesses)
+    IReadOnlyList<string> receiverProcesses,
+    bool ownsReceiverProcesses)
 {
     public Guid ClientId { get; } = clientId;
 
@@ -66,6 +67,8 @@ internal sealed class ClientState(
     public uint? SteamAppId { get; } = steamAppId;
 
     public IReadOnlyList<string> ReceiverProcesses { get; } = receiverProcesses;
+
+    public bool OwnsReceiverProcesses { get; } = ownsReceiverProcesses;
 
     public Dictionary<int, ObservedGameProcess> Processes { get; } = [];
 }
