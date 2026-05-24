@@ -14,15 +14,16 @@ internal sealed class ClientControllerSourceRegistrar(
 {
     private string? _lastScanSignature;
     private string? _lastRouteSignature;
-    private bool? _allowGenericSteamDs4;
 
     public async Task<IReadOnlyList<SdlGamepadSource>> RefreshSourcesAsync(
         ClientService client,
         string profileId,
         CancellationToken cancellationToken)
     {
-        await sources.ClearAsync().ConfigureAwait(false);
-        await client.RegisterClientControllersAsync([], cancellationToken).ConfigureAwait(false);
+        // A controller rescan is not proof that existing routes are gone.
+        // Steam can briefly report empty or partial SDL lists while rebuilding
+        // virtual devices, so only explicit SDL remove events should remove
+        // opened sources before a successful replacement exists.
         return await AddMissingSourcesAsync(client, profileId, cancellationToken).ConfigureAwait(false);
     }
 
@@ -40,7 +41,6 @@ internal sealed class ClientControllerSourceRegistrar(
             visibleControllers = ClientControllerRoutePlanner.FilterForwardable(controllers);
             physicalControllers = ClientControllerRoutePlanner.GetPhysicalControllers(visibleControllers);
             selectedControllers = ClientControllerRoutePlanner.SelectClientControllers(visibleControllers);
-            selectedControllers = FilterSteamDs4Loopbacks(selectedControllers);
             DisposeStaleSources(sources.RemoveStale(selectedControllers));
             List<SdlControllerInfo> missingControllers = [];
             openIds = sources.GetOpenSourceIds();
@@ -84,32 +84,6 @@ internal sealed class ClientControllerSourceRegistrar(
         {
             source.Source.Dispose();
         }
-    }
-
-    private IReadOnlyList<SdlControllerInfo> FilterSteamDs4Loopbacks(
-        IReadOnlyList<SdlControllerInfo> selectedControllers)
-    {
-        if (!_allowGenericSteamDs4.HasValue && selectedControllers.Count != 0)
-        {
-            _allowGenericSteamDs4 = HasGenericSteamDs4(selectedControllers);
-        }
-
-        return ClientControllerRoutePlanner.FilterSteamDs4Loopbacks(
-            selectedControllers,
-            _allowGenericSteamDs4 == true);
-    }
-
-    private static bool HasGenericSteamDs4(IReadOnlyList<SdlControllerInfo> controllers)
-    {
-        foreach (SdlControllerInfo controller in controllers)
-        {
-            if (SdlControllerRoutePolicy.IsGenericSteamDs4(controller))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     public void RemoveSource(

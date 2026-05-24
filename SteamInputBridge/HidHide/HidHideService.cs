@@ -10,31 +10,30 @@ namespace SteamInputBridge.HidHide;
 internal sealed class HidHideService(
     IHidHideCommandRunner runner,
     ILogger<HidHideService>? logger = null,
-    Func<string?>? getCurrentProcessPath = null) : IDisposable
+    Func<string?>? getCurrentProcessPath = null,
+    Func<IReadOnlyList<string>>? getApplicationAccessPaths = null) : IDisposable
 {
     private readonly Lock _gate = new();
-    private readonly Func<string?> _getCurrentProcessPath =
-        getCurrentProcessPath ?? (static () => Environment.ProcessPath);
+    private readonly Func<IReadOnlyList<string>> _getApplicationAccessPaths =
+        getApplicationAccessPaths ?? (() => GetDefaultApplicationAccessPaths(getCurrentProcessPath));
     private HidHideSnapshot? _snapshot;
     private HidHideScope? _scope;
     private bool _disposed;
 
-    /// <summary>Registers the current executable with HidHide's allowed application list.</summary>
-    public void AllowCurrentProcess()
+    /// <summary>Registers required executables with HidHide's allowed application list.</summary>
+    public void AllowRequiredApplications()
     {
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            if (_getCurrentProcessPath() is not { Length: > 0 } processPath)
-            {
-                return;
-            }
-
             string applications = runner.Run(["--app-list"]);
-            if (!HidHideCommandOutput.ContainsValue(applications, "--app-reg", processPath))
+            foreach (string processPath in _getApplicationAccessPaths())
             {
-                _ = runner.Run(["--app-reg", processPath]);
+                if (!HidHideCommandOutput.ContainsValue(applications, "--app-reg", processPath))
+                {
+                    _ = runner.Run(["--app-reg", processPath]);
+                }
             }
         }
     }
@@ -80,6 +79,18 @@ internal sealed class HidHideService(
         }
     }
 
+    /// <summary>Gets whether a device is part of the current app-owned HidHide scope.</summary>
+    public bool IsScopeDevice(string deviceInstancePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deviceInstancePath);
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _scope?.Contains(deviceInstancePath) == true;
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -111,25 +122,13 @@ internal sealed class HidHideService(
         }
 
         ClearCore();
-        string currentProcessPath = _getCurrentProcessPath() ??
-            throw new InvalidOperationException("Current process path is required for HidHide scope access.");
-        HidHideSnapshot snapshot = HidHideSnapshot.Capture(runner, scope, [currentProcessPath]);
+        HidHideSnapshot snapshot = HidHideSnapshot.Capture(runner, scope);
         try
         {
-            // Normal mode uses HidHide's application list as the allow list.
-            // Server startup keeps this executable allowed; scope changes only
-            // hide devices and temporarily remove other applications from that
-            // global allow list.
+            // The HidHide app list is user-owned global state. Scope changes
+            // must only change device hiding and mode flags; server startup is
+            // responsible for adding this executable to the allowlist.
             List<string> args = [];
-            foreach (string app in snapshot.ExistingRegisteredApplications)
-            {
-                if (!snapshot.PermanentAllowedApplications.Contains(app))
-                {
-                    args.Add("--app-unreg");
-                    args.Add(app);
-                }
-            }
-
             args.Add("--inv-off");
             args.Add("--cloak-on");
             foreach (string device in scope.DeviceInstancePaths)
@@ -163,6 +162,12 @@ internal sealed class HidHideService(
         _snapshot = null;
         _scope = null;
     }
+
+    private static IReadOnlyList<string> GetDefaultApplicationAccessPaths(Func<string?>? getCurrentProcessPath)
+    {
+        string? processPath = getCurrentProcessPath?.Invoke() ?? Environment.ProcessPath;
+        return string.IsNullOrWhiteSpace(processPath) ? [] : [processPath];
+    }
 }
 
 /// <summary>Current HidHide state.</summary>
@@ -183,43 +188,25 @@ internal sealed record HidHideFirewallStatus(
 internal sealed record HidHideSnapshot(
     string CloakState,
     string InverseState,
-    IReadOnlyDictionary<string, bool> HiddenDevices,
-    IReadOnlySet<string> PermanentAllowedApplications,
-    IReadOnlyList<string> ExistingRegisteredApplications)
+    IReadOnlyDictionary<string, bool> HiddenDevices)
 {
     internal static HidHideSnapshot Capture(
         IHidHideCommandRunner runner,
-        HidHideScope scope,
-        IReadOnlyList<string> permanentAllowedApplications)
+        HidHideScope scope)
     {
         string hiddenDevices = runner.Run(["--dev-list"]);
-        string registeredApps = runner.Run(["--app-list"]);
-        IReadOnlyList<string> existingRegisteredApplications =
-            HidHideCommandOutput.ReadValues(registeredApps, "--app-reg");
-
         return new HidHideSnapshot(
             runner.Run(["--cloak-state"]),
             runner.Run(["--inv-state"]),
             scope.DeviceInstancePaths.ToDictionary(
                 static device => device,
                 device => HidHideCommandOutput.ContainsValue(hiddenDevices, "--dev-hide", device),
-                StringComparer.OrdinalIgnoreCase),
-            permanentAllowedApplications.ToHashSet(StringComparer.OrdinalIgnoreCase),
-            existingRegisteredApplications);
+                StringComparer.OrdinalIgnoreCase));
     }
 
     internal void Restore(IHidHideCommandRunner runner)
     {
         List<string> args = [];
-        foreach (string app in ExistingRegisteredApplications)
-        {
-            if (!PermanentAllowedApplications.Contains(app))
-            {
-                args.Add("--app-reg");
-                args.Add(app);
-            }
-        }
-
         foreach ((string device, bool hidden) in HiddenDevices)
         {
             args.Add(hidden ? "--dev-hide" : "--dev-unhide");

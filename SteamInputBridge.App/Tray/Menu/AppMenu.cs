@@ -102,7 +102,6 @@ internal sealed partial class AppMenu(
             NativeMenuItem.Status("PID", client.ClientProcessId.ToString(CultureInfo.InvariantCulture)),
             NativeMenuItem.Status("Steam App", AppText.AppId(client.SteamAppId)),
             NativeMenuItem.Status("Receivers", AppText.Processes(client.ObservedProcesses)),
-            NativeMenuItem.Status("Blocked", AppText.Processes(client.BlockedProcesses)),
             NativeMenuItem.Separator,
         ];
 

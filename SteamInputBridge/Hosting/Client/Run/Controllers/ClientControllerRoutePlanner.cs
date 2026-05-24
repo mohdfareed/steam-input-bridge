@@ -48,27 +48,6 @@ internal static class ClientControllerRoutePlanner
         return SelectUniqueControllers(selected);
     }
 
-    public static IReadOnlyList<SdlControllerInfo> FilterSteamDs4Loopbacks(
-        IReadOnlyList<SdlControllerInfo> controllers,
-        bool allowGenericSteamDs4)
-    {
-        if (allowGenericSteamDs4)
-        {
-            return controllers;
-        }
-
-        List<SdlControllerInfo> filtered = [];
-        foreach (SdlControllerInfo controller in controllers)
-        {
-            if (!SdlControllerRoutePolicy.IsGenericSteamDs4(controller))
-            {
-                filtered.Add(controller);
-            }
-        }
-
-        return filtered;
-    }
-
     public static ClientControllerRoutePlan CreatePlan(
         IReadOnlyList<ClientControllerRouteSource> sources,
         IReadOnlyList<SdlControllerInfo> physicalControllers)
@@ -146,12 +125,6 @@ internal static class ClientControllerRoutePlanner
             preference += 2;
         }
 
-        if (SdlControllerRoutePolicy.IsGenericSteamDs4(controller))
-        {
-            preference--;
-        }
-
         return controller.HasMotion || controller.HasTouchpad ? preference + 1 : preference;
     }
-
 }

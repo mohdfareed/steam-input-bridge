@@ -40,6 +40,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         ThrowIfDisposed();
         IMouseOutput? dispose;
+        IMouseOutput? clear;
 
         lock (_gate)
         {
@@ -50,8 +51,10 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
             }
 
             dispose = RefreshOutput();
+            clear = _output is not null && !HasActiveOutput() ? _output : null;
         }
 
+        SendEmpty(clear);
         DisposeOutput(dispose);
     }
 
@@ -60,6 +63,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         ThrowIfDisposed();
         IMouseOutput? dispose;
+        IMouseOutput? clear;
 
         lock (_gate)
         {
@@ -67,8 +71,10 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
                 ? clientId
                 : null;
             dispose = RefreshOutput();
+            clear = _output is not null && !HasActiveOutput() ? _output : null;
         }
 
+        SendEmpty(clear);
         DisposeOutput(dispose);
     }
 
@@ -77,13 +83,16 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
     {
         ThrowIfDisposed();
         IMouseOutput? dispose;
+        IMouseOutput? clear;
 
         lock (_gate)
         {
             _mouseOutputEnabled = enabled;
+            clear = !enabled ? _output : null;
             dispose = RefreshOutput();
         }
 
+        SendEmpty(clear);
         DisposeOutput(dispose);
     }
 
@@ -203,6 +212,12 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
             IMouseOutput? dispose = DisconnectOutput();
             _output = outputFactory.Connect(outputKind);
             _outputKind = outputKind;
+            ValueTask send = _output.SendAsync(MouseReport.Empty);
+            if (!send.IsCompletedSuccessfully)
+            {
+                _ = ObserveSendAsync(send);
+            }
+
             return dispose;
         }
 
@@ -285,6 +300,20 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
         catch (Exception exception) when (
             exception is InvalidOperationException or ObjectDisposedException)
         {
+        }
+    }
+
+    private static void SendEmpty(IMouseOutput? output)
+    {
+        if (output is null)
+        {
+            return;
+        }
+
+        ValueTask send = output.SendAsync(MouseReport.Empty);
+        if (!send.IsCompletedSuccessfully)
+        {
+            _ = ObserveSendAsync(send);
         }
     }
 

@@ -27,6 +27,12 @@ internal sealed record HidHideScope(
             StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>Gets whether the normalized scope contains a device path.</summary>
+    public bool Contains(string deviceInstancePath)
+    {
+        return DeviceInstancePaths.Contains(deviceInstancePath, StringComparer.OrdinalIgnoreCase);
+    }
+
     private static string[] Normalize(IEnumerable<string> values)
     {
         return [.. values

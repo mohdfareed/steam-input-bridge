@@ -12,16 +12,18 @@ namespace SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 
 internal interface IPhysicalControllerResolver
 {
-    ClientControllerInfo ResolveClientController(ClientControllerInfo controller);
+    ClientControllerInfo? ResolveClientController(ClientControllerInfo controller);
 }
 
 internal sealed class PhysicalControllerPump(
     ControllerBroker broker,
-    ILogger logger) : IPhysicalControllerResolver, IAsyncDisposable
+    ILogger logger,
+    ServerControllerInputFilter? inputFilter = null) : IPhysicalControllerResolver, IAsyncDisposable
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
     private readonly Lock _gate = new();
     private readonly Dictionary<SdlControllerId, SdlGamepadSource> _sources = [];
+    private readonly ServerControllerInputFilter? _inputFilter = inputFilter;
     private CancellationTokenSource? _stop;
     private Task? _task;
     private bool _running;
@@ -57,14 +59,30 @@ internal sealed class PhysicalControllerPump(
         }
     }
 
-    public ClientControllerInfo ResolveClientController(ClientControllerInfo controller)
+    public ClientControllerInfo? ResolveClientController(ClientControllerInfo controller)
     {
         ArgumentNullException.ThrowIfNull(controller);
+
+        ServerControllerInputFilterSnapshot? filter = _inputFilter?.CreateSnapshot();
+        if (filter?.Allows(controller) == false)
+        {
+            return null;
+        }
 
         if (!IsSteamRoute(controller.PhysicalControllerId) ||
             !string.IsNullOrWhiteSpace(controller.PhysicalDeviceId))
         {
-            return controller;
+            return GetControllerPathId(controller.PhysicalDeviceId) is null &&
+                GetControllerPathId(controller.PhysicalControllerId) is null
+                ? controller
+                : FindKnownPhysicalController(controller) is { } knownPhysical
+                ? controller with
+                {
+                    PhysicalControllerId = SdlControllerRoutePolicy.GetPhysicalControllerId(knownPhysical),
+                    Label = knownPhysical.Name,
+                    PhysicalDeviceId = GetPathControllerId(knownPhysical),
+                }
+                : null;
         }
 
         SdlControllerInfo? physical = FindPhysicalController(controller);
@@ -289,6 +307,32 @@ internal sealed class PhysicalControllerPump(
             physicalControllers);
     }
 
+    private SdlControllerInfo? FindKnownPhysicalController(ClientControllerInfo controller)
+    {
+        string? pathId = GetControllerPathId(controller.PhysicalDeviceId) ??
+            GetControllerPathId(controller.PhysicalControllerId);
+        if (pathId is null)
+        {
+            return null;
+        }
+
+        lock (_gate)
+        {
+            foreach (SdlGamepadSource source in _sources.Values)
+            {
+                if (string.Equals(
+                        SdlControllerRoutePolicy.GetPhysicalControllerId(source.Controller),
+                        pathId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return source.Controller;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private HashSet<SdlControllerId> GetOpenSourceIds()
     {
         lock (_gate)
@@ -332,14 +376,17 @@ internal sealed class PhysicalControllerPump(
         }
     }
 
-    private static List<SdlControllerInfo> SelectPhysicalControllers(
+    private List<SdlControllerInfo> SelectPhysicalControllers(
         IReadOnlyList<SdlControllerInfo> controllers)
     {
+        _inputFilter?.Observe(controllers);
+        ServerControllerInputFilterSnapshot? filter = _inputFilter?.CreateSnapshot();
         List<SdlControllerInfo> physicalControllers = [];
         foreach (SdlControllerInfo controller in controllers)
         {
             if (controller.Source == SdlControllerSource.Physical &&
-                SdlControllerRoutePolicy.IsForwardable(controller))
+                SdlControllerRoutePolicy.IsForwardable(controller) &&
+                filter?.Allows(controller) != false)
             {
                 physicalControllers.Add(controller);
             }
@@ -358,6 +405,14 @@ internal sealed class PhysicalControllerPump(
         return string.IsNullOrWhiteSpace(controller.Path)
             ? null
             : SdlControllerRoutePolicy.GetPhysicalControllerId(controller);
+    }
+
+    private static string? GetControllerPathId(string? controllerId)
+    {
+        return !string.IsNullOrWhiteSpace(controllerId) &&
+            controllerId.StartsWith("path:", StringComparison.OrdinalIgnoreCase)
+            ? controllerId
+            : null;
     }
 
     private static bool IsSteamRoute(string routeId)

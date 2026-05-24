@@ -94,7 +94,6 @@ internal static class ServerStatusTextFormatter
             PrintLine(sb, $"receivers: {FormatList(client.ReceiverProcesses)}", 4);
             PrintLine(sb, $"observed:  {FormatProcesses(client.ObservedProcesses)}", 4);
             PrintLine(sb, $"owned:     {FormatProcesses(client.OwnedProcesses)}", 4);
-            PrintLine(sb, $"blocked:   {FormatProcesses(client.BlockedProcesses)}", 4);
         }
 
         return sb.ToString();

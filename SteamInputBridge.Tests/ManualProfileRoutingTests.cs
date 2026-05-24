@@ -155,8 +155,9 @@ public sealed class ManualProfileRoutingTests
             hidHideSettings.Enabled ? services.GetRequiredService<HidHideService>() : null,
             hidHideSettings.Enabled ? services.GetRequiredService<HidHideDeviceCatalog>() : null,
             services.GetRequiredService<ServerShortcutService>(),
-            viiper.ReclaimDevicesAsync,
-            pipeName);
+            ownedVirtualControllers: services.GetRequiredService<OwnedVirtualControllerRegistry>(),
+            startupCleanup: viiper.ReclaimDevicesAsync,
+            pipeName: pipeName);
     }
 
     private static uint? ResolveSteamAppId()

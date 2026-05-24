@@ -53,6 +53,12 @@ internal sealed class HidHideDeviceCatalog(IHidHideCommandRunner runner)
     /// <summary>Finds a HidHide device instance path by symbolic device path.</summary>
     public string? FindDeviceInstancePath(string? symbolicLink)
     {
+        return FindDeviceBySymbolicLink(symbolicLink)?.DeviceInstancePath;
+    }
+
+    /// <summary>Finds a HidHide device by symbolic device path.</summary>
+    public HidHideDevice? FindDeviceBySymbolicLink(string? symbolicLink)
+    {
         if (string.IsNullOrWhiteSpace(symbolicLink))
         {
             return null;
@@ -64,7 +70,7 @@ internal sealed class HidHideDeviceCatalog(IHidHideCommandRunner runner)
             if (NormalizeDevicePath(device.SymbolicLink) == normalized &&
                 !string.IsNullOrWhiteSpace(device.DeviceInstancePath))
             {
-                return device.DeviceInstancePath;
+                return device;
             }
         }
 

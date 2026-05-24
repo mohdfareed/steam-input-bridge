@@ -49,7 +49,7 @@ public static class ControllerOutputMapping
 
         return new Ds4Report(
             buttons,
-            hasStandard ? ToDs4DPad(standard.Buttons) : Ds4DPad.Neutral,
+            hasStandard ? ToDs4DPad(standard.Buttons) : Ds4DPad.None,
             hasStandard ? ToDs4Axis(standard.LeftX) : (sbyte)0,
             hasStandard ? ToDs4Axis(standard.LeftY) : (sbyte)0,
             hasStandard ? ToDs4Axis(standard.RightX) : (sbyte)0,
@@ -185,7 +185,7 @@ public static class ControllerOutputMapping
         bool verticalConflict = up && down;
         bool horizontalConflict = left && right;
         return verticalConflict || horizontalConflict
-            ? Ds4DPad.Neutral
+            ? Ds4DPad.None
             : (up, down, left, right) switch
             {
                 (true, false, false, true) => Ds4DPad.UpRight,
@@ -196,7 +196,7 @@ public static class ControllerOutputMapping
                 (false, true, false, false) => Ds4DPad.Down,
                 (false, false, true, false) => Ds4DPad.Left,
                 (false, false, false, true) => Ds4DPad.Right,
-                _ => Ds4DPad.Neutral,
+                _ => Ds4DPad.None,
             };
     }
 

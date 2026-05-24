@@ -191,6 +191,9 @@ Do not set `LangVersion=latest`.
 - The host-side physical controller pump maintains physical slots only. It must
   not create a VIIPER output unless a client route with controller output
   attaches to that physical slot.
+- The host-side physical controller pump is authoritative for path-based
+  physical routes. A client-provided physical path should not become a route
+  unless the host can currently see the same physical controller.
 - Do not treat a Steam-launched client as able to read Steam-hidden physical
   controllers. If missing physical features are needed while Steam hides the
   device, solve that outside the Steam-hidden client path.
@@ -223,17 +226,13 @@ Do not set `LangVersion=latest`.
 - VIIPER DS4 output maps touchpad click and the first two normalized touch
   contacts into DS4 touchpad fields. Pressure is preserved in canonical state
   and controller pipe frames, but the VIIPER DS4 input report does not use it.
-- Do not filter DS4 VIIPER loopback by `054C:05C4` alone because that is also
-  a real DS4 identity. Require an app-owned name/path signal when treating a
-  DS4-shaped SDL controller as VIIPER-owned.
-- After host-side physical resolution, drop unresolved Steam-routed
-  `054C:05C4` `PS4 Controller` streams. Steam can echo a VIIPER DS4 output
-  back into the client as a generic PS4 stream; a real DS4 should resolve to a
-  host-visible physical counterpart before it is allowed to create a route.
-- In Steam-launched clients, use the first non-empty controller scan as the
-  generic Steam DS4 baseline. If it had no generic Steam `PS4 Controller`, later
-  generic Steam `054C:05C4` `PS4 Controller` entries are VIIPER DS4 echoes and
-  should not be opened.
+- VIIPER DS4 d-pad is a direction bitfield, not a USB HID hat value. Neutral
+  is `0`; do not send HID hat neutral `8`.
+- Do not identify VIIPER loopback by controller VID/PID alone because Xbox and
+  DS4 outputs intentionally use real USB ids. Prefer exact owned SDL path/id or
+  app-owned name/path markers; document any fallback heuristic in `NOTES.md`.
+- Do not add generic `PS4 Controller` filtering to hide VIIPER DS4 echoes; it
+  masks exact owned-device tracking failures.
 - DS4 feedback through VIIPER supports normal small/large motor rumble plus
   lightbar RGB and flash on/off. Do not treat DS4 as DualSense advanced
   haptics/adaptive trigger support.
@@ -251,21 +250,27 @@ Do not set `LangVersion=latest`.
 - Current HidHide experimentation uses normal mode, not inverse mode: scoped
   physical devices are hidden globally, and this executable is kept on
   HidHide's app list.
-- Register this executable with HidHide once at server startup. Do not add and
-  remove it on every scope change.
+- Register this executable and HidHideCLI.exe with HidHide once at server
+  startup. The integration uses HidHideCLI.exe for every read/write, so it must
+  stay allowed after cloak mode is enabled. Do not add and remove either path on
+  every scope change.
 - Normal-mode HidHide scopes are device-based. Do not require receiver
   executable paths to apply a scope; some games do not expose process paths to
   this app.
 - Do not add Steam to the temporary HidHide app list just because profiles run
   through Steam. Manual testing showed Steam Input still feeds the client while
   only this executable is listed.
-- Restore previous HidHide cloak/inverse state, hidden devices, and app-list
-  entries when clearing a scope. Treat the app list as user-owned global state.
+- Restore previous HidHide cloak/inverse state and scoped hidden devices when
+  clearing a scope. Treat the app list as user-owned global state; do not prune
+  or restore other app entries.
 - Profiles should select output behavior, not store HidHide device paths.
 - HidHide firewall behavior should derive hidden physical devices from running
   client receiver scopes, not foreground focus. Hide the union of physical
   controllers used by clients with controller output enabled from those clients'
   owned receiver executables.
+- HidHide-hidden devices owned by other tools must not become input routes just
+  because this executable is on HidHide's allowlist. Hidden devices are accepted
+  only when they are part of this app's active scope.
 - VIIPER devices should not leak to unrelated processes; expose them only where
   the active profile needs them.
 

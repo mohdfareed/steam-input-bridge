@@ -132,35 +132,36 @@ public enum Ds4Buttons
     R3 = 0x8000,
 }
 
-/// <summary>DualShock 4 USB d-pad hat value.</summary>
+/// <summary>DualShock 4 VIIPER d-pad bitfield.</summary>
+[Flags]
 public enum Ds4DPad
 {
+    /// <summary>D-pad released.</summary>
+    None = 0,
+
     /// <summary>D-pad up.</summary>
-    Up = 0,
-
-    /// <summary>D-pad up/right.</summary>
-    UpRight = 1,
-
-    /// <summary>D-pad right.</summary>
-    Right = 2,
-
-    /// <summary>D-pad down/right.</summary>
-    DownRight = 3,
+    Up = 0x01,
 
     /// <summary>D-pad down.</summary>
-    Down = 4,
-
-    /// <summary>D-pad down/left.</summary>
-    DownLeft = 5,
+    Down = 0x02,
 
     /// <summary>D-pad left.</summary>
-    Left = 6,
+    Left = 0x04,
+
+    /// <summary>D-pad right.</summary>
+    Right = 0x08,
+
+    /// <summary>D-pad up/right.</summary>
+    UpRight = Up | Right,
+
+    /// <summary>D-pad down/right.</summary>
+    DownRight = Down | Right,
+
+    /// <summary>D-pad down/left.</summary>
+    DownLeft = Down | Left,
 
     /// <summary>D-pad up/left.</summary>
-    UpLeft = 7,
-
-    /// <summary>D-pad released.</summary>
-    Neutral = 8,
+    UpLeft = Up | Left,
 }
 
 /// <summary>DualShock 4 controller state report.</summary>
@@ -198,7 +199,7 @@ public readonly record struct Ds4Report(
     /// <summary>Centered controller state.</summary>
     public static Ds4Report Empty => new(
         Ds4Buttons.None,
-        Ds4DPad.Neutral,
+        Ds4DPad.None,
         0,
         0,
         0,
@@ -221,7 +222,7 @@ public readonly record struct Ds4Report(
     /// <summary>Gets whether the report carries no active input.</summary>
     public bool IsEmpty =>
         Buttons == Ds4Buttons.None &&
-        DPad == Ds4DPad.Neutral &&
+        DPad == Ds4DPad.None &&
         LeftX == 0 &&
         LeftY == 0 &&
         RightX == 0 &&

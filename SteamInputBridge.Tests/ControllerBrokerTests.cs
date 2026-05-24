@@ -172,7 +172,8 @@ public sealed class ControllerBrokerTests
             ControllerFeatures.StandardControls);
 
         Assert.HasCount(1, factory.Outputs);
-        Assert.AreEqual(0, factory.SingleOutput.SendCount);
+        Assert.AreEqual(1, factory.SingleOutput.SendCount);
+        Assert.IsNull(factory.SingleOutput.LastState.Standard);
     }
 
     /// <summary>Controller registration connects output before the first input frame.</summary>
@@ -191,7 +192,8 @@ public sealed class ControllerBrokerTests
             ControllerFeatures.StandardControls);
 
         Assert.HasCount(1, factory.Outputs);
-        Assert.AreEqual(0, factory.SingleOutput.SendCount);
+        Assert.AreEqual(1, factory.SingleOutput.SendCount);
+        Assert.IsNull(factory.SingleOutput.LastState.Standard);
         ControllerBrokerStatus status = broker.GetStatus();
         Assert.HasCount(1, status.Slots);
         Assert.AreEqual(1, status.Slots[0].ClientEndpointCount);
@@ -284,7 +286,7 @@ public sealed class ControllerBrokerTests
             ControllerFeatures.StandardControls);
 
         Assert.HasCount(1, factory.Outputs);
-        Assert.AreEqual(1, factory.SingleOutput.SendCount);
+        Assert.AreEqual(2, factory.SingleOutput.SendCount);
         Assert.IsNull(factory.SingleOutput.LastState.Standard);
     }
 

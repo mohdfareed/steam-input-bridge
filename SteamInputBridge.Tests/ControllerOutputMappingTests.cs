@@ -149,8 +149,9 @@ public sealed class ControllerOutputMappingTests
         Ds4Report report = ControllerOutputMapping.ToDs4Report(ControllerState.Empty);
 
         Assert.IsTrue(report.IsEmpty);
-        Assert.AreEqual(Ds4DPad.Neutral, report.DPad);
+        Assert.AreEqual(Ds4DPad.None, report.DPad);
         Assert.AreEqual(Ds4Report.DefaultAccelZ, report.AccelZ);
+        Assert.AreEqual((byte)0, ViiperDs4Output.MapReport(report).Dpad);
     }
 
     /// <summary>Maps Xbox rumble bytes to canonical feedback intensities.</summary>

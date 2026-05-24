@@ -44,8 +44,9 @@ public sealed class MouseBrokerTests
         broker.Send(new MouseInput(MouseReport.Empty, "mouse"));
         broker.Send(new MouseInput(new MouseReport(MouseButtons.Left, 1, 2, 0), "mouse"));
 
-        Assert.HasCount(1, factory.Outputs[0].Reports);
-        Assert.AreEqual(MouseButtons.Left, factory.Outputs[0].Reports[0].Buttons);
+        Assert.HasCount(2, factory.Outputs[0].Reports);
+        Assert.AreEqual(MouseReport.Empty, factory.Outputs[0].Reports[0]);
+        Assert.AreEqual(MouseButtons.Left, factory.Outputs[0].Reports[1].Buttons);
     }
 
     /// <summary>Pointer gate stops reports without disconnecting the output device.</summary>
@@ -64,14 +65,34 @@ public sealed class MouseBrokerTests
         broker.Send(new MouseInput(new MouseReport(MouseButtons.Left, 2, 0, 0), "mouse"));
 
         Assert.IsFalse(factory.Outputs[0].Disposed);
-        Assert.HasCount(2, factory.Outputs[0].Reports);
-        Assert.AreEqual(MouseReport.Empty, factory.Outputs[0].Reports[1]);
+        Assert.HasCount(3, factory.Outputs[0].Reports);
+        Assert.AreEqual(MouseReport.Empty, factory.Outputs[0].Reports[0]);
+        Assert.AreEqual(MouseReport.Empty, factory.Outputs[0].Reports[2]);
 
         broker.SetPointerOutputEnabled(true);
         broker.Send(new MouseInput(new MouseReport(MouseButtons.None, 3, 0, 0), "mouse"));
 
+        Assert.HasCount(4, factory.Outputs[0].Reports);
+        Assert.AreEqual(3, factory.Outputs[0].Reports[3].DeltaX);
+    }
+
+    /// <summary>Active-client loss clears held mouse buttons and movement without disconnecting the output.</summary>
+    [TestMethod]
+    public void ClearsOutputWhenActiveClientClears()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeMouseOutputFactory factory = new();
+        using MouseBroker broker = new(factory);
+
+        broker.RegisterClient(clientId, MouseOutput.Viiper);
+        broker.SetActiveClient(clientId);
+        broker.Send(new MouseInput(new MouseReport(MouseButtons.Left, 1, 0, 0), "mouse"));
+
+        broker.SetActiveClient(null);
+
+        Assert.IsFalse(factory.Outputs[0].Disposed);
         Assert.HasCount(3, factory.Outputs[0].Reports);
-        Assert.AreEqual(3, factory.Outputs[0].Reports[2].DeltaX);
+        Assert.AreEqual(MouseReport.Empty, factory.Outputs[0].Reports[2]);
     }
 
     /// <summary>Mouse reports filtered by the active output are not forwarded.</summary>
@@ -90,8 +111,9 @@ public sealed class MouseBrokerTests
         broker.Send(new MouseInput(new MouseReport(MouseButtons.None, 1, 0, 0), "loopback"));
         broker.Send(new MouseInput(new MouseReport(MouseButtons.None, 2, 0, 0), "real"));
 
-        Assert.HasCount(1, factory.Outputs[0].Reports);
-        Assert.AreEqual(2, factory.Outputs[0].Reports[0].DeltaX);
+        Assert.HasCount(2, factory.Outputs[0].Reports);
+        Assert.AreEqual(MouseReport.Empty, factory.Outputs[0].Reports[0]);
+        Assert.AreEqual(2, factory.Outputs[0].Reports[1].DeltaX);
     }
 
     /// <summary>Raw Input mouse forwarding accepts only Steam Input-style mouse packets.</summary>

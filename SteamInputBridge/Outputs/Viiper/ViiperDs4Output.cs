@@ -109,6 +109,8 @@ public sealed class ViiperDs4Output : IControllerOutput, IDisposable
             Stickrx = report.RightX,
             Stickry = report.RightY,
             Buttons = (ushort)report.Buttons,
+            // VIIPER's DS4 stream takes d-pad as a direction bitfield, not
+            // the USB HID hat value. Neutral must be 0, not DS4 HID hat 8.
             Dpad = (byte)report.DPad,
             Triggerl2 = report.LeftTrigger,
             Triggerr2 = report.RightTrigger,

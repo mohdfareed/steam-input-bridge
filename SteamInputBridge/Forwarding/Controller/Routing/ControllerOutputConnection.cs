@@ -26,6 +26,8 @@ internal sealed class ControllerOutputConnection
         Output = factory.Connect(controllerId, outputKind);
         OutputKind = outputKind;
         _feedbackSubscription = Output.ListenFeedback(feedback);
+        ControllerState state = ControllerState.Empty;
+        Output.Send(in state);
     }
 
     public void Disconnect(List<IControllerOutput>? dispose = null)

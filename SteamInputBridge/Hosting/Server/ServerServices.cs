@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -23,15 +24,27 @@ public static class ServerServices
     /// <summary>Adds the local server.</summary>
     public static IServiceCollection AddApplicationServer(this IServiceCollection services)
     {
+        // Runtime state
         _ = services.AddSingleton<ActiveClientRegistry>();
+
+        // HidHide firewall
         _ = services.AddSingleton<IHidHideCommandRunner>(static services =>
             new HidHideCliRunner(services.GetRequiredService<IOptions<HidHideSettings>>().Value.CliPath));
         _ = services.AddSingleton<HidHideDeviceCatalog>();
         _ = services.AddSingleton(static services =>
-            new HidHideService(
+        {
+            HidHideSettings settings = services.GetRequiredService<IOptions<HidHideSettings>>().Value;
+            return new HidHideService(
                 services.GetRequiredService<IHidHideCommandRunner>(),
-                services.GetRequiredService<ILogger<HidHideService>>()));
+                services.GetRequiredService<ILogger<HidHideService>>(),
+                getApplicationAccessPaths: () =>
+                    GetHidHideApplicationAccessPaths(settings.CliPath));
+        });
+
+        // Keyboard shortcuts
         _ = services.AddSingleton<IKeyboardShortcutListener, GlobalKeyboardShortcutListener>();
+
+        // Virtual outputs
         _ = services.AddSingleton(static services =>
         {
             ViiperSettings settings = services.GetRequiredService<IOptions<ViiperSettings>>().Value;
@@ -43,14 +56,21 @@ public static class ServerServices
                 Logger = loggerFactory.CreateLogger<ViiperOutputFactory>(),
             });
         });
+        _ = services.AddSingleton<OwnedVirtualControllerRegistry>();
         _ = services.AddSingleton<IControllerOutputFactory>(
-            static services => services.GetRequiredService<ViiperOutputFactory>());
+            static services => new TrackingControllerOutputFactory(
+                services.GetRequiredService<ViiperOutputFactory>(),
+                services.GetRequiredService<OwnedVirtualControllerRegistry>()));
         _ = services.AddSingleton<TeensyOutputFactory>();
         _ = services.AddSingleton<ServerMouseOutputFactory>();
         _ = services.AddSingleton<IMouseOutputFactory>(
             static services => services.GetRequiredService<ServerMouseOutputFactory>());
+
+        // Forwarding state
         _ = services.AddSingleton<ControllerBroker>();
         _ = services.AddSingleton<MouseBroker>();
+
+        // Server orchestration
         _ = services.AddSingleton<ServerShortcutService>();
         _ = services.AddSingleton(static services =>
         {
@@ -67,14 +87,14 @@ public static class ServerServices
                 hidHideSettings.Enabled ? services.GetRequiredService<HidHideService>() : null,
                 hidHideSettings.Enabled ? services.GetRequiredService<HidHideDeviceCatalog>() : null,
                 services.GetRequiredService<ServerShortcutService>(),
-                viiper.ReclaimDevicesAsync);
+                ownedVirtualControllers: services.GetRequiredService<OwnedVirtualControllerRegistry>(),
+                startupCleanup: viiper.ReclaimDevicesAsync);
         });
         return services;
     }
 
-    private sealed class ServerMouseOutputFactory(
-        ViiperOutputFactory viiper,
-        TeensyOutputFactory teensy) : IMouseOutputFactory
+    private sealed class ServerMouseOutputFactory(ViiperOutputFactory viiper, TeensyOutputFactory teensy)
+        : IMouseOutputFactory
     {
         public IMouseOutput Connect(ForwardingMouseOutput output)
         {
@@ -86,5 +106,25 @@ public static class ServerServices
                 _ => throw new NotSupportedException($"Unsupported mouse output: {output}."),
             };
         }
+    }
+
+    private static List<string> GetHidHideApplicationAccessPaths(string cliPath)
+    {
+        // The server needs access to hidden devices, and the integration also
+        // launches HidHideCLI.exe for every read/write. Keeping the CLI allowed
+        // prevents the app from locking its own management path out after cloak
+        // mode is enabled.
+        List<string> paths = [];
+        if (Environment.ProcessPath is { Length: > 0 } processPath)
+        {
+            paths.Add(processPath);
+        }
+
+        if (!string.IsNullOrWhiteSpace(cliPath))
+        {
+            paths.Add(cliPath);
+        }
+
+        return paths;
     }
 }

@@ -1,6 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using SteamInputBridge.HidHide;
+using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
+using SteamInputBridge.Inputs.Sdl;
 
 namespace SteamInputBridge.Tests;
 
@@ -11,7 +14,6 @@ public sealed class HidHideServiceTests
     private static readonly string[] ApplyThenClearCommands =
     [
         "--dev-list",
-        "--app-list",
         "--cloak-state",
         "--inv-state",
         "--inv-off --cloak-on --dev-hide dev-1",
@@ -22,7 +24,7 @@ public sealed class HidHideServiceTests
     private static readonly string[] StatusHiddenDevices = ["dev-1", "dev-2"];
     private static readonly string[] StatusRegisteredApplications = ["app-1"];
 
-    /// <summary>Applies normal-mode scope and restores previous device/app state.</summary>
+    /// <summary>Applies normal-mode scope and restores previous device/mode state.</summary>
     [TestMethod]
     public void ApplyThenClearRestoresPreviousState()
     {
@@ -39,9 +41,9 @@ public sealed class HidHideServiceTests
         CollectionAssert.AreEqual(ApplyThenClearCommands, runner.Commands);
     }
 
-    /// <summary>Clear restores pre-existing registrations instead of removing them.</summary>
+    /// <summary>Clear restores a pre-existing hidden device.</summary>
     [TestMethod]
-    public void ClearRestoresExistingHiddenDeviceAndRegisteredApp()
+    public void ClearRestoresExistingHiddenDevice()
     {
         FakeRunner runner = new(
             devList: "dev-1",
@@ -54,13 +56,13 @@ public sealed class HidHideServiceTests
         firewall.Clear();
 
         Assert.AreEqual(
-            "--app-reg app-1 --dev-hide dev-1 --cloak-on --inv-on",
+            "--dev-hide dev-1 --cloak-on --inv-on",
             runner.Commands[^1]);
     }
 
-    /// <summary>Normal scopes temporarily remove unrelated app-list entries.</summary>
+    /// <summary>Normal scopes do not mutate unrelated app-list entries.</summary>
     [TestMethod]
-    public void ApplyTemporarilyRemovesOtherApplications()
+    public void ApplyDoesNotMutateApplicationList()
     {
         FakeRunner runner = new(
             devList: "",
@@ -71,12 +73,12 @@ public sealed class HidHideServiceTests
 
         firewall.Apply(HidHideScope.Create(["dev-1"]));
         Assert.AreEqual(
-            "--app-unreg tool.exe --app-unreg app-1 --inv-off --cloak-on --dev-hide dev-1",
+            "--inv-off --cloak-on --dev-hide dev-1",
             runner.Commands[^1]);
 
         firewall.Clear();
         Assert.AreEqual(
-            "--app-reg tool.exe --app-reg app-1 --dev-unhide dev-1 --cloak-off --inv-off",
+            "--dev-unhide dev-1 --cloak-off --inv-off",
             runner.Commands[^1]);
     }
 
@@ -153,23 +155,26 @@ public sealed class HidHideServiceTests
         firewall.Apply(HidHideScope.Create(["dev-1"]));
 
         Assert.AreEqual("--inv-off --cloak-on --dev-hide dev-1", runner.Commands[^1]);
-        Assert.HasCount(5, runner.Commands);
+        Assert.HasCount(4, runner.Commands);
     }
 
     /// <summary>Registers this application only when it is not already allowed.</summary>
     [TestMethod]
-    public void CurrentApplicationAccessRegistersMissingApp()
+    public void RequiredApplicationAccessRegistersMissingApps()
     {
         FakeRunner runner = new(
             devList: "",
             appList: "existing-app",
             cloakState: "off",
             inverseState: "off");
-        using HidHideService access = CreateFirewall(runner);
+        using HidHideService access = CreateFirewall(
+            runner,
+            getApplicationAccessPaths: static () => ["SteamInputBridge.exe", "HidHideCLI.exe"]);
 
-        access.AllowCurrentProcess();
+        access.AllowRequiredApplications();
 
-        Assert.AreEqual("--app-reg SteamInputBridge.exe", runner.Commands[^1]);
+        Assert.AreEqual("--app-reg SteamInputBridge.exe", runner.Commands[^2]);
+        Assert.AreEqual("--app-reg HidHideCLI.exe", runner.Commands[^1]);
     }
 
     /// <summary>Leaves existing application registration alone.</summary>
@@ -183,7 +188,7 @@ public sealed class HidHideServiceTests
             inverseState: "off");
         using HidHideService access = CreateFirewall(runner);
 
-        access.AllowCurrentProcess();
+        access.AllowRequiredApplications();
 
         CollectionAssert.AreEqual(AppListCommand, runner.Commands);
     }
@@ -199,7 +204,7 @@ public sealed class HidHideServiceTests
             inverseState: "off");
         using HidHideService access = CreateFirewall(runner);
 
-        access.AllowCurrentProcess();
+        access.AllowRequiredApplications();
 
         Assert.AreEqual("--app-reg SteamInputBridge.exe", runner.Commands[^1]);
     }
@@ -233,11 +238,45 @@ public sealed class HidHideServiceTests
         Assert.AreEqual(@"HID\VID_054C&PID_0CE6\ABC", path);
     }
 
+    /// <summary>Foreign HidHide-hidden devices are not accepted as input routes.</summary>
+    [TestMethod]
+    public void InputFilterRejectsForeignHiddenDevice()
+    {
+        FakeRunner runner = new(
+            devList: @"HID\VID_054C&PID_0CE6\ABC",
+            appList: "SteamInputBridge.exe",
+            cloakState: "on",
+            inverseState: "off",
+            devAll: DeviceListJson());
+        using HidHideService firewall = CreateFirewall(runner);
+        ServerControllerInputFilter filter = new(new HidHideDeviceCatalog(runner), firewall);
+
+        Assert.IsFalse(filter.Allows(Controller(@"\\?\HID#VID_054C&PID_0CE6#ABC")));
+    }
+
+    /// <summary>Devices hidden by the current app scope remain accepted as owned input routes.</summary>
+    [TestMethod]
+    public void InputFilterAllowsOwnedHiddenDevice()
+    {
+        FakeRunner runner = new(
+            devList: @"HID\VID_054C&PID_0CE6\ABC",
+            appList: "SteamInputBridge.exe",
+            cloakState: "on",
+            inverseState: "off",
+            devAll: DeviceListJson());
+        using HidHideService firewall = CreateFirewall(runner);
+        firewall.Apply(HidHideScope.Create([@"HID\VID_054C&PID_0CE6\ABC"]));
+        ServerControllerInputFilter filter = new(new HidHideDeviceCatalog(runner), firewall);
+
+        Assert.IsTrue(filter.Allows(Controller(@"\\?\HID#VID_054C&PID_0CE6#ABC")));
+    }
+
     private sealed class FakeRunner(
         string devList,
         string appList,
         string cloakState,
-        string inverseState) : IHidHideCommandRunner
+        string inverseState,
+        string devAll = "") : IHidHideCommandRunner
     {
         public List<string> Commands { get; } = [];
 
@@ -247,6 +286,7 @@ public sealed class HidHideServiceTests
             Commands.Add(command);
             return command switch
             {
+                "--dev-all" => devAll,
                 "--dev-list" => devList,
                 "--app-list" => appList,
                 "--cloak-state" => cloakState,
@@ -256,9 +296,52 @@ public sealed class HidHideServiceTests
         }
     }
 
-    private static HidHideService CreateFirewall(FakeRunner runner)
+    private static SdlControllerInfo Controller(string path)
     {
-        return new HidHideService(runner, getCurrentProcessPath: static () => "SteamInputBridge.exe");
+        SdlControllerInfo controller = new(
+            default,
+            InstanceId: 1,
+            "DualSense Wireless Controller",
+            SdlControllerSource.Physical,
+            SteamHandle: 0,
+            VendorId: 0x054c,
+            ProductId: 0x0ce6,
+            path,
+            HasGyro: true,
+            HasAccelerometer: true);
+        return controller with { Id = SdlControllerId.Create(controller) };
+    }
+
+    private static string DeviceListJson()
+    {
+        return """
+            [
+              {
+                "friendlyName": "DualSense",
+                "devices": [
+                  {
+                    "present": true,
+                    "gamingDevice": true,
+                    "vendor": "054C",
+                    "product": "0CE6",
+                    "usage": "0005",
+                    "symbolicLink": "\\\\?\\HID#VID_054C&PID_0CE6#ABC",
+                    "deviceInstancePath": "HID\\VID_054C&PID_0CE6\\ABC"
+                  }
+                ]
+              }
+            ]
+            """;
+    }
+
+    private static HidHideService CreateFirewall(
+        FakeRunner runner,
+        Func<IReadOnlyList<string>>? getApplicationAccessPaths = null)
+    {
+        return new HidHideService(
+            runner,
+            getCurrentProcessPath: static () => "SteamInputBridge.exe",
+            getApplicationAccessPaths: getApplicationAccessPaths);
     }
 
     private sealed class DeviceListRunner(string devices) : IHidHideCommandRunner

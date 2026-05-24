@@ -190,9 +190,9 @@ public sealed class HostingForwardingTests
         Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", factory.Outputs[1].ControllerId.Value);
     }
 
-    /// <summary>Unresolved Steam-routed PS4 streams are VIIPER DS4 loopback and do not create routes.</summary>
+    /// <summary>Unresolved Steam-routed DS4-shaped streams are not dropped by a generic PS4 heuristic.</summary>
     [TestMethod]
-    public async Task ControllerPipeDropsUnresolvedSteamDs4Loopback()
+    public async Task ControllerPipeKeepsUnresolvedSteamDs4ForOwnedTrackingValidation()
     {
         Guid clientId = Guid.NewGuid();
         FakeControllerOutputFactory factory = new();
@@ -214,6 +214,37 @@ public sealed class HostingForwardingTests
                 PhysicalDeviceId: null,
                 VendorId: 0x054c,
                 ProductId: 0x05c4)]);
+
+        Assert.HasCount(1, registered);
+        Assert.HasCount(1, broker.GetStatus().Slots);
+        Assert.HasCount(1, factory.Outputs);
+    }
+
+    /// <summary>Server-side route resolver can reject client-visible physical echoes before they create outputs.</summary>
+    [TestMethod]
+    public async Task ControllerPipeDropsRejectedClientController()
+    {
+        Guid clientId = Guid.NewGuid();
+        FakeControllerOutputFactory factory = new();
+        FakePhysicalControllerResolver resolver = new() { Reject = true };
+        await using ControllerBroker broker = new(factory);
+        await using ClientControllerPipe pipe = new(
+            clientId,
+            "unused",
+            broker,
+            NullLogger.Instance,
+            resolver);
+
+        broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
+        IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
+            [new ClientControllerInfo(
+                0,
+                @"path:\\?\hid#vid_054c&pid_05c4#virtual",
+                "PS4 Controller",
+                ControllerFeatures.StandardControls,
+                @"path:\\?\hid#vid_054c&pid_05c4#virtual",
+                0x054c,
+                0x05c4)]);
 
         Assert.IsEmpty(registered);
         Assert.IsEmpty(broker.GetStatus().Slots);
@@ -459,9 +490,11 @@ public sealed class HostingForwardingTests
     {
         public ClientControllerInfo? Resolved { get; set; }
 
-        public ClientControllerInfo ResolveClientController(ClientControllerInfo controller)
+        public bool Reject { get; set; }
+
+        public ClientControllerInfo? ResolveClientController(ClientControllerInfo controller)
         {
-            return Resolved ?? controller;
+            return Reject ? null : Resolved ?? controller;
         }
     }
 

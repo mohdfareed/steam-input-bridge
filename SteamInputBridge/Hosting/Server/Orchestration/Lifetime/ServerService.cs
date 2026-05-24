@@ -65,6 +65,7 @@ public sealed class ServerService : IAsyncDisposable
         HidHideService? hidHide = null,
         HidHideDeviceCatalog? hidHideDevices = null,
         ServerShortcutService? shortcuts = null,
+        OwnedVirtualControllerRegistry? ownedVirtualControllers = null,
         Func<CancellationToken, Task>? startupCleanup = null,
         string? pipeName = null)
     {
@@ -80,7 +81,8 @@ public sealed class ServerService : IAsyncDisposable
         _hidHide = hidHide;
         _controllerBroker = forwarding ?? new ControllerBroker(new NoopControllerOutputFactory());
         _mouseBroker = mouseForwarding ?? new MouseBroker(new NoopMouseOutputFactory());
-        _physicalControllers = new PhysicalControllerPump(_controllerBroker, logger);
+        ServerControllerInputFilter controllerInputFilter = new(hidHideDevices, hidHide, ownedVirtualControllers);
+        _physicalControllers = new PhysicalControllerPump(_controllerBroker, logger, controllerInputFilter);
         _controllerPipes = new ControllerPipeSessions(_controllerBroker, logger, _physicalControllers);
         _hidHideDevices = new ServerHidHideDeviceResolver(
             hidHideDevices,
@@ -247,13 +249,13 @@ public sealed class ServerService : IAsyncDisposable
         try
         {
             // HidHide normal mode uses one global app allow list. Keep this
-            // process on that list for the server lifetime; scopes should only
-            // hide devices and temporarily remove other apps.
+            // required executables on that list for the server lifetime; scopes
+            // should only hide devices and toggle mode flags.
             //
             // Steam-launched profile testing showed Steam Input still feeds the
             // client with only this executable allowed, so do not add Steam
             // here unless a concrete failing route proves it is needed.
-            _hidHide.AllowCurrentProcess();
+            _hidHide.AllowRequiredApplications();
             HostingLog.HidHideApplicationAccessRegistered(_logger);
         }
         catch (Exception exception) when (

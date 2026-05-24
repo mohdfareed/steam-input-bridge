@@ -92,6 +92,8 @@ internal static class Commands
         uint? steamAppId = parseResult.GetValue<uint?>("--app-id");
         bool kill = parseResult.GetValue<bool>("--kill");
 
+        await ClientServerBootstrapper.EnsureServerStartedAsync(cancellationToken).ConfigureAwait(false);
+
         using IHost app = createHost();
         GameClient game = app.Services.GetRequiredService<GameClient>();
         await using (game.ConfigureAwait(false))
