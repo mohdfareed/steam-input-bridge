@@ -20,19 +20,19 @@ Steam Input orchestration and local input forwarding.
 
 - .NET 10 SDK
 
-## Runtime Timing
+## Usage
 
-- Foreground active-client checks: `100ms`
-- Receiver process checks: `100ms`
-- Client keepalive and reconnect retry: `1000ms`
-- SDL controller discovery/reopen retry: `1000ms`
-- SDL event wait wake/cancel timeout: `100ms`
-- Tray status refresh: `500ms`
-- Tray shutdown cleanup wait: `5s`
+Shortcut `Targets` can include `Motion`, `Pointer`, `Mic`, and `#RRGGBB`
+overlay colors. The tray shows a top-right action color dot while color targets
+are active, plus a mic dot when the system mic is muted or actively used.
+
+## FIXME
+
+- [ ] HidHide implementation is unstable. Conflicts with tools like DSX.
+- [ ] HidHide sometimes does not hide the physical controller (for example, 2xKO).
 
 ## TODO
 
-- [ ] Overlay indicators for active action set/layer and mic status.
 - [ ] Teensy mouse output and firmware.
 - [ ] Packaging, versioning, deployment with install script and self-update (auto?).
 - [ ] Update README.md and add usage examples and documentation.

@@ -86,6 +86,12 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
         return _connection.ConnectAsync(cancellationToken);
     }
 
+    internal Task ReconnectAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _connection.ReconnectNowAsync(cancellationToken);
+    }
+
     /// <summary>Keeps the client alive until cancellation and reconnects when the server restarts.</summary>
     public Task WaitAsync(CancellationToken cancellationToken)
     {

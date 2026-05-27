@@ -14,7 +14,8 @@ internal sealed record HidHideDevice(
     string Usage,
     string Description,
     string SymbolicLink,
-    string DeviceInstancePath);
+    string DeviceInstancePath,
+    string BaseContainerDeviceInstancePath);
 
 /// <summary>Lists HidHide devices and matches them to transport paths.</summary>
 internal sealed class HidHideDeviceCatalog(IHidHideCommandRunner runner)
@@ -43,7 +44,8 @@ internal sealed class HidHideDeviceCatalog(IHidHideCommandRunner runner)
                     GetString(device, "usage"),
                     GetString(device, "description"),
                     GetString(device, "symbolicLink"),
-                    GetString(device, "deviceInstancePath")));
+                    GetString(device, "deviceInstancePath"),
+                    GetString(device, "baseContainerDeviceInstancePath")));
             }
         }
 

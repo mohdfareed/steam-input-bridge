@@ -24,23 +24,32 @@ function Deploy-App {
         [string] $OutputPath
     )
 
-    if (Test-Path $OutputPath) {
-        Remove-Item -LiteralPath $OutputPath -Recurse -Force
+    $publishPath = Join-Path ([System.IO.Path]::GetTempPath()) "SteamInputBridge.publish.$([System.Guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $publishPath -Force | Out-Null
+
+    try {
+        dotnet publish $ProjectPath `
+            --configuration $Configuration `
+            --runtime $Runtime `
+            --output $publishPath `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:PublishDocumentationFile=false `
+            -p:DebugType=embedded
+
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+
+        New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+        Copy-Item -Path (Join-Path $publishPath "*") -Destination $OutputPath -Recurse -Force
     }
-
-    dotnet publish $ProjectPath `
-        --configuration $Configuration `
-        --runtime $Runtime `
-        --output $OutputPath `
-        --self-contained true `
-        -p:PublishSingleFile=true `
-        -p:IncludeNativeLibrariesForSelfExtract=true `
-        -p:EnableCompressionInSingleFile=true `
-        -p:PublishDocumentationFile=false `
-        -p:DebugType=embedded
-
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+    finally {
+        if (Test-Path $publishPath) {
+            Remove-Item -LiteralPath $publishPath -Recurse -Force
+        }
     }
 
     Write-Host "Deployed SteamInputBridge to $OutputPath"

@@ -145,7 +145,7 @@ internal sealed class HidHideService(
         {
             // The HidHide app list is user-owned global state. Scope changes
             // must only change device hiding and mode flags; server startup is
-            // responsible for adding this executable to the allowlist.
+            // responsible for adding this app and HidHideCLI.
             List<string> args = [];
             args.Add("--inv-off");
             args.Add("--cloak-on");

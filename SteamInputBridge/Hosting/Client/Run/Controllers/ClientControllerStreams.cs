@@ -46,6 +46,7 @@ internal sealed class ClientControllerStreams : IAsyncDisposable
         await _pipe.DisposeAsync().ConfigureAwait(false);
         await IgnoreExpectedStopAsync(_inputTask).ConfigureAwait(false);
         await _sources.DisposeAsync().ConfigureAwait(false);
+        _registrar.Dispose();
         _stop.Dispose();
     }
 

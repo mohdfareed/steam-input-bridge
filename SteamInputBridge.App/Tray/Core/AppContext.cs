@@ -22,6 +22,8 @@ internal sealed partial class AppContext : IDisposable
     private readonly NotifyIcon _tray = new();
     private readonly NativeWindow _window = new();
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+    private readonly DispatcherTimer _overlayTimer;
+    private readonly StatusOverlayWindow _overlay = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly AppMenu _menu;
     private Task? _serverTask;
@@ -50,6 +52,12 @@ internal sealed partial class AppContext : IDisposable
             StopClient,
             ShutdownApp);
 
+        _overlayTimer = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(200),
+            DispatcherPriority.Background,
+            OnOverlayTimer,
+            _dispatcher);
+        _overlayTimer.Stop();
         _server.StatusChanged += OnServerStatusChanged;
     }
 
@@ -78,12 +86,17 @@ internal sealed partial class AppContext : IDisposable
         _tray.Visible = true;
         _tray.MouseUp += ShowMenu;
         _ = RefreshStatusNowAsync();
+        RefreshOverlayNow();
+        _overlayTimer.Start();
     }
 
     public void Dispose()
     {
         _server.StatusChanged -= OnServerStatusChanged;
         _stop.Cancel();
+        _overlayTimer.Stop();
+        _overlayTimer.Tick -= OnOverlayTimer;
+        _overlay.Close();
         _tray.MouseUp -= ShowMenu;
         _tray.Visible = false;
         _tray.Dispose();
@@ -129,6 +142,7 @@ internal sealed partial class AppContext : IDisposable
         _ = sender;
         _ = args;
         QueueStatusRefresh();
+        _ = _dispatcher.BeginInvoke(new Action(RefreshOverlayNow));
     }
 
     private void QueueStatusRefresh()
@@ -181,6 +195,31 @@ internal sealed partial class AppContext : IDisposable
     {
         await RefreshStatusNowAsync().ConfigureAwait(true);
         _menu.Show(Cursor.Position, _window.Handle, _status, _serverError);
+    }
+
+    private void OnOverlayTimer(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        RefreshOverlayNow();
+    }
+
+    private void RefreshOverlayNow()
+    {
+        if (_stop.IsCancellationRequested || _serverTask?.IsFaulted == true)
+        {
+            _overlay.Update(OverlayStatus.Hidden);
+            return;
+        }
+
+        try
+        {
+            _overlay.Update(_server.GetOverlayStatus());
+        }
+        catch (ObjectDisposedException)
+        {
+            _overlay.Update(OverlayStatus.Hidden);
+        }
     }
 
     private static bool IsExpectedStop(AggregateException exception)

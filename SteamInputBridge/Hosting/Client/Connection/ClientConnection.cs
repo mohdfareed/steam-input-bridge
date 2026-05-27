@@ -18,6 +18,7 @@ internal sealed class ClientConnection(
     private static readonly TimeSpan KeepAliveRequestTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan KeepAliveDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
+    private const int MissedKeepAliveReconnectThreshold = 3;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private NamedPipeClientStream? _pipe;
@@ -54,6 +55,7 @@ internal sealed class ClientConnection(
     internal async Task WaitAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
+        int missedKeepAlives = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
             await Task
@@ -66,14 +68,41 @@ internal sealed class ClientConnection(
                     .AckAsync()
                     .WaitAsync(KeepAliveRequestTimeout, cancellationToken)
                     .ConfigureAwait(false);
+                missedKeepAlives = 0;
+            }
+            catch (TimeoutException)
+            {
+                // A slow/busy server can miss a keepalive while the pipe is
+                // still healthy, but repeated misses usually mean the old
+                // JSON-RPC request is stuck behind a restarted or wedged pipe.
+                // Reconnect after a short grace instead of keeping a dead
+                // profile run alive forever.
+                HostingLog.ServerKeepAliveMissed(logger);
+                missedKeepAlives++;
+                if (missedKeepAlives < MissedKeepAliveReconnectThreshold)
+                {
+                    continue;
+                }
+
+                await ClearAsync().ConfigureAwait(false);
+                await ReconnectAsync(cancellationToken).ConfigureAwait(false);
+                missedKeepAlives = 0;
             }
             catch (Exception exception) when (IsConnectionFailure(exception))
             {
+                missedKeepAlives = 0;
                 HostingLog.ServerConnectionLost(logger, exception.Message);
                 await ClearAsync().ConfigureAwait(false);
                 await ReconnectAsync(cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    internal async Task ReconnectNowAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await ClearAsync().ConfigureAwait(false);
+        await ReconnectAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal async ValueTask DisposeAsync()

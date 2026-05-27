@@ -26,7 +26,7 @@ internal static class KeyboardShortcutState
             (alternateVirtualKey.HasValue && IsKeyDown(alternateVirtualKey.Value));
     }
 
-    private static bool IsKeyDown(ushort virtualKey)
+    internal static bool IsKeyDown(ushort virtualKey)
     {
         return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
     }

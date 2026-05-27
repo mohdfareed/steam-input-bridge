@@ -26,15 +26,18 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
         {
             IReadOnlyList<ObservedGameProcess> observed =
                 GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
-            state.UpdateOwnedReceivers(observed);
-            if (HasReceiverChange(state, observed))
+            // For launched profiles, pre-existing receiver processes are not
+            // this run. They must not keep the client alive or claim focus on
+            // the server; only receivers that appear after launch are reported.
+            IReadOnlyList<ObservedGameProcess> receivers = state.UpdateReceivers(observed);
+            if (HasReceiverChange(state, receivers))
             {
-                LogReceiverChange(state, observed);
-                await update(observed, cancellationToken).ConfigureAwait(false);
+                LogReceiverChange(state, receivers);
+                await update(receivers, cancellationToken).ConfigureAwait(false);
             }
 
-            state.SawReceiver |= observed.Count != 0;
-            if (state.SawReceiver && observed.Count == 0)
+            state.SawReceiver |= receivers.Count != 0;
+            if (state.SawReceiver && receivers.Count == 0)
             {
                 return;
             }

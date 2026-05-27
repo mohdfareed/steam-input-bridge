@@ -56,9 +56,12 @@ internal sealed class ClientGameProcessManager(ILogger logger)
             state.GameStopRequested = true;
         }
 
-        IReadOnlyList<ObservedGameProcess> ownedReceivers = state.GetOwnedReceiversSnapshot();
+        IReadOnlyList<ObservedGameProcess> currentReceivers =
+            GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
+        IReadOnlyList<ObservedGameProcess> ownedReceivers =
+            state.GetOwnedReceiversSnapshot(currentReceivers);
         int killed = state.KillReceivers
-            ? GameProcessKiller.Kill(GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses))
+            ? GameProcessKiller.Kill(currentReceivers)
             : GameProcessKiller.Kill(ownedReceivers);
 
         if (state.LaunchedProcess is not null)

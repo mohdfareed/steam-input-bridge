@@ -24,11 +24,12 @@ internal static class AppText
 
     public static string TrayText(ServerStatus? status, string? serverError)
     {
+        int runningClientCount = status?.Runtime.Clients.Count ?? 0;
         return serverError is not null
             ? "Steam Input Bridge stopped"
             : status is null
             ? TrayStarting
-            : $"Steam Input Bridge ({status.ConnectedClientCount} clients)";
+            : $"Steam Input Bridge ({runningClientCount} clients)";
     }
 
     public static string AppId(uint? appId)

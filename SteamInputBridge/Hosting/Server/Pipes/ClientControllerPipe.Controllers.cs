@@ -8,7 +8,7 @@ namespace SteamInputBridge.Hosting.Server.Pipes;
 
 internal sealed partial class ClientControllerPipe
 {
-    public IReadOnlyList<ClientControllerInfo> RegisterControllers(IReadOnlyList<ClientControllerInfo> controllers)
+    public ControllerRegistrationResult RegisterControllers(IReadOnlyList<ClientControllerInfo> controllers)
     {
         ArgumentNullException.ThrowIfNull(controllers);
 
@@ -22,21 +22,17 @@ internal sealed partial class ClientControllerPipe
 
             _physicalControllers?.SetClientControllers(clientId, controllers);
             List<ClientControllerInfo> resolved = ResolveControllers(_requestedControllers.Values);
-            ApplyResolvedControllers(resolved);
-            return resolved;
+            bool changed = ApplyResolvedControllers(resolved);
+            return new ControllerRegistrationResult(resolved, changed);
         }
     }
 
-    public void RefreshResolvedControllers()
+    public bool RefreshResolvedControllers()
     {
         lock (_controllers)
         {
-            if (_requestedControllers.Count == 0)
-            {
-                return;
-            }
-
-            ApplyResolvedControllers(ResolveControllers(_requestedControllers.Values));
+            return _requestedControllers.Count != 0 &&
+                ApplyResolvedControllers(ResolveControllers(_requestedControllers.Values));
         }
     }
 
@@ -120,11 +116,11 @@ internal sealed partial class ClientControllerPipe
             : 0;
     }
 
-    private void ApplyResolvedControllers(IReadOnlyList<ClientControllerInfo> controllers)
+    private bool ApplyResolvedControllers(IReadOnlyList<ClientControllerInfo> controllers)
     {
         if (HasSameControllers(controllers))
         {
-            return;
+            return false;
         }
 
         UpdateInputFrameCounts(controllers);
@@ -135,6 +131,8 @@ internal sealed partial class ClientControllerPipe
         {
             _controllers[controller.ControllerIndex] = controller;
         }
+
+        return true;
     }
 
     private void UpdateInputFrameCounts(IReadOnlyList<ClientControllerInfo> controllers)
@@ -191,3 +189,7 @@ internal sealed partial class ClientControllerPipe
         return resolved;
     }
 }
+
+internal readonly record struct ControllerRegistrationResult(
+    IReadOnlyList<ClientControllerInfo> Controllers,
+    bool Changed);

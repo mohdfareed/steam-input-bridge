@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using SteamInputBridge.Hosting.Client.Run.Controllers;
 using SteamInputBridge.Runtime;
 
@@ -35,32 +34,44 @@ internal sealed class ClientRunState(
 
     public bool GameStopRequested { get; set; }
 
-    private HashSet<int> ReceiverBaseline { get; } = [];
+    private HashSet<int> ReceiverBaselineProcessIds { get; } = [];
 
-    private List<ObservedGameProcess> OwnedReceivers { get; set; } = [];
+    private Dictionary<int, ObservedGameProcess> OwnedReceivers { get; } = [];
 
     public void CaptureReceiverBaseline(IReadOnlyList<ObservedGameProcess> receivers)
     {
         lock (StopGate)
         {
-            ReceiverBaseline.Clear();
+            ReceiverBaselineProcessIds.Clear();
             foreach (ObservedGameProcess receiver in receivers)
             {
-                _ = ReceiverBaseline.Add(receiver.ProcessId);
+                _ = ReceiverBaselineProcessIds.Add(receiver.ProcessId);
             }
         }
     }
 
-    public void UpdateOwnedReceivers(IReadOnlyList<ObservedGameProcess> receivers)
+    public IReadOnlyList<ObservedGameProcess> UpdateReceivers(IReadOnlyList<ObservedGameProcess> receivers)
     {
         if (LaunchedProcess is null)
         {
-            return;
+            return receivers;
         }
 
         lock (StopGate)
         {
-            OwnedReceivers = [.. receivers.Where(receiver => !ReceiverBaseline.Contains(receiver.ProcessId))];
+            List<ObservedGameProcess> current = [];
+            foreach (ObservedGameProcess receiver in receivers)
+            {
+                if (ReceiverBaselineProcessIds.Contains(receiver.ProcessId))
+                {
+                    continue;
+                }
+
+                current.Add(receiver);
+                OwnedReceivers[receiver.ProcessId] = receiver;
+            }
+
+            return current;
         }
     }
 
@@ -68,7 +79,34 @@ internal sealed class ClientRunState(
     {
         lock (StopGate)
         {
-            return [.. OwnedReceivers];
+            return [.. OwnedReceivers.Values];
+        }
+    }
+
+    public IReadOnlyList<ObservedGameProcess> GetOwnedReceiversSnapshot(
+        IReadOnlyList<ObservedGameProcess> currentReceivers)
+    {
+        ArgumentNullException.ThrowIfNull(currentReceivers);
+
+        if (LaunchedProcess is null)
+        {
+            return [];
+        }
+
+        lock (StopGate)
+        {
+            // Receiver monitors can miss the final handoff from a launcher.
+            // At shutdown, own any currently-running receiver that appeared
+            // after our pre-launch baseline.
+            foreach (ObservedGameProcess receiver in currentReceivers)
+            {
+                if (!ReceiverBaselineProcessIds.Contains(receiver.ProcessId))
+                {
+                    OwnedReceivers[receiver.ProcessId] = receiver;
+                }
+            }
+
+            return [.. OwnedReceivers.Values];
         }
     }
 }

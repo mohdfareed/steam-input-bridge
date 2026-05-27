@@ -1,11 +1,17 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Hosting.Client.Connection;
 using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
+using SteamInputBridge.Runtime;
+using StreamJsonRpc;
 
 namespace SteamInputBridge.Tests;
 
@@ -65,6 +71,33 @@ public sealed class ServerClientTests
         await clientStop.CancelAsync().ConfigureAwait(false);
         await IgnoreCancellationAsync(clientWait).ConfigureAwait(false);
         await StopServerAsync(serverTwoStop, serverTwoTask).ConfigureAwait(false);
+    }
+
+    /// <summary>Checks that a slow keepalive response does not tear down a healthy pipe.</summary>
+    [TestMethod]
+    public async Task ClientKeepsConnectionWhenAckTimesOut()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource serverStop = new();
+        Task serverTask = RunSlowAckServerAsync(pipeName, serverStop.Token);
+
+        await using ClientService client = CreateClient(pipeName);
+        List<ClientConnectionState> states = [];
+        client.ConnectionChanged += (_, args) => states.Add(args.State);
+        await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
+
+        using CancellationTokenSource clientStop = new();
+        Task clientWait = client.WaitAsync(clientStop.Token);
+
+        await Task.Delay(TimeSpan.FromSeconds(4)).ConfigureAwait(false);
+
+        Assert.AreEqual(ClientConnectionState.Connected, client.State);
+        CollectionAssert.DoesNotContain(states, ClientConnectionState.Disconnected);
+
+        await clientStop.CancelAsync().ConfigureAwait(false);
+        await IgnoreCancellationAsync(clientWait).ConfigureAwait(false);
+        await serverStop.CancelAsync().ConfigureAwait(false);
+        await IgnoreCancellationAsync(serverTask).ConfigureAwait(false);
     }
 
     /// <summary>Checks that server status is returned over the client connection.</summary>
@@ -144,6 +177,26 @@ public sealed class ServerClientTests
         return $"SteamInputBridge.Tests.{Guid.NewGuid():N}";
     }
 
+    private static async Task RunSlowAckServerAsync(
+        string pipeName,
+        CancellationToken cancellationToken)
+    {
+        await using NamedPipeServerStream pipe = new(
+            pipeName,
+            PipeDirection.InOut,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous);
+        using CancellationTokenRegistration registration = cancellationToken.Register(static target =>
+        {
+            ((Stream)target!).Dispose();
+        }, pipe);
+
+        await pipe.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using JsonRpc rpc = JsonRpc.Attach(pipe, new SlowAckServer());
+        await rpc.Completion.ConfigureAwait(false);
+    }
+
     private static async Task StopServerAsync(CancellationTokenSource stop, Task serverTask)
     {
         await stop.CancelAsync().ConfigureAwait(false);
@@ -159,6 +212,9 @@ public sealed class ServerClientTests
         catch (OperationCanceledException)
         {
         }
+        catch (Exception exception) when (exception is ObjectDisposedException or IOException)
+        {
+        }
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -167,6 +223,50 @@ public sealed class ServerClientTests
         while (!condition())
         {
             await Task.Delay(10, timeout.Token).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class SlowAckServer : IHostServerApi
+    {
+        public Task<Guid> ConnectAsync(int processId)
+        {
+            _ = processId;
+            return Task.FromResult(Guid.NewGuid());
+        }
+
+        public async Task AckAsync()
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        }
+
+        public Task<ServerStatus> GetStatusAsync()
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ClientRunLaunch> StartRunAsync(StartRunRequest request)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task RegisterClientControllersAsync(IReadOnlyList<ClientControllerInfo> controllers)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task UpdateRunProcessesAsync(IReadOnlyList<ObservedGameProcess> processes)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync()
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task EndRunAsync()
+        {
+            throw new NotSupportedException();
         }
     }
 }

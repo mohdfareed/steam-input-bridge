@@ -38,4 +38,7 @@ internal static partial class HostingLog
 
     [LoggerMessage(EventId = 45, Level = LogLevel.Warning, Message = "Startup cleanup did not finish: {Message}")]
     public static partial void StartupCleanupDidNotFinish(ILogger logger, string message);
+
+    [LoggerMessage(EventId = 46, Level = LogLevel.Debug, Message = "Server keepalive missed; keeping the existing connection.")]
+    public static partial void ServerKeepAliveMissed(ILogger logger);
 }

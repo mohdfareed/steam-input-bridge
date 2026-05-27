@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Hosting.Server.Pipes;
 using SteamInputBridge.Runtime;
 using SteamInputBridge.Settings.Profiles;
 using ForwardingControllerOutput = SteamInputBridge.Forwarding.Controller.ControllerOutput;
@@ -60,14 +61,19 @@ internal sealed partial class ServerSessions
         IReadOnlyList<ClientControllerInfo> controllers)
     {
         _ = GetClient(clientId);
-        IReadOnlyList<ClientControllerInfo> registered = controllerPipes.RegisterControllers(clientId, controllers);
+        ControllerRegistrationResult registration = controllerPipes.RegisterControllers(clientId, controllers);
+        if (!registration.Changed)
+        {
+            return Task.CompletedTask;
+        }
+
         if (logger.IsEnabled(LogLevel.Information))
         {
-            string routes = FormatControllerRegistrations(registered);
+            string routes = FormatControllerRegistrations(registration.Controllers);
             HostingLog.ClientControllersRegistered(
                 logger,
                 clientId,
-                registered.Count,
+                registration.Controllers.Count,
                 routes);
         }
 
@@ -81,7 +87,6 @@ internal sealed partial class ServerSessions
         IReadOnlyList<ObservedGameProcess> processes)
     {
         runtime.UpdateClient(clientId, processes);
-        routeStateChanged?.Invoke();
         statusChanged?.Invoke();
         return Task.CompletedTask;
     }

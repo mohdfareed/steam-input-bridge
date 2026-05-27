@@ -26,6 +26,13 @@ public sealed class ServerActiveClientLoopTests
         "steam://forceinputappid/0",
     ];
 
+    private static readonly string[] ExpectedSteamClearWithForwardingClearUrls =
+    [
+        "steam://forceinputappid/0",
+        "steam://forceinputappid/123",
+        "steam://forceinputappid/0",
+    ];
+
     /// <summary>Checks foreground pid updates active-client state and fan-out events.</summary>
     [TestMethod]
     public async Task ForegroundPidUpdatesActiveClientState()
@@ -165,9 +172,9 @@ public sealed class ServerActiveClientLoopTests
         }
     }
 
-    /// <summary>Forwarding tolerates short foreground misses without keeping Steam forcing active.</summary>
+    /// <summary>Forwarding clears as soon as the foreground receiver is no longer active.</summary>
     [TestMethod]
-    public async Task ForwardingClearUsesGraceAfterActiveClientClears()
+    public async Task ForwardingClearsImmediatelyAfterActiveClientClears()
     {
         ActiveClientRegistry runtime = new();
         Guid clientId = Guid.NewGuid();
@@ -184,8 +191,7 @@ public sealed class ServerActiveClientLoopTests
             TimeSpan.FromMilliseconds(5),
             activeClientChanged: null,
             NullLogger.Instance,
-            forwarding: broker,
-            forwardingInactiveGrace: TimeSpan.FromMilliseconds(250));
+            forwarding: broker);
 
         using CancellationTokenSource stop = new();
         Task task = activeClients.RunAsync(stop.Token);
@@ -200,8 +206,60 @@ public sealed class ServerActiveClientLoopTests
             await WaitUntilAsync(() => runtime.GetStatus().ActiveClientId is null)
                 .ConfigureAwait(false);
 
-            Assert.AreEqual(clientId, broker.GetStatus().ActiveClientId);
+            await WaitUntilAsync(() => broker.GetStatus().ActiveClientId is null)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            await stop.CancelAsync().ConfigureAwait(false);
+            await IgnoreCancellationAsync(task).ConfigureAwait(false);
+        }
+    }
 
+    /// <summary>Steam forcing and forwarding both clear on focus loss.</summary>
+    [TestMethod]
+    public async Task SteamInputAndForwardingClearImmediatelyOnFocusLoss()
+    {
+        ActiveClientRegistry runtime = new();
+        Guid clientId = Guid.NewGuid();
+        runtime.RegisterClient(clientId, Environment.ProcessId, "game", steamAppId: 123, ["game.exe"]);
+        runtime.UpdateClient(clientId, [new ObservedGameProcess(123, "game.exe")]);
+
+        using ControllerBroker broker = new(new NoopControllerOutputFactory());
+        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
+
+        int foregroundProcessId = 0;
+        List<string> urls = [];
+        SteamInputClient steam = new((url, _) =>
+        {
+            urls.Add(url.AbsoluteUri);
+            return ValueTask.CompletedTask;
+        });
+        ServerActiveClientLoop activeClients = new(
+            runtime,
+            () => Volatile.Read(ref foregroundProcessId),
+            TimeSpan.FromMilliseconds(5),
+            activeClientChanged: null,
+            logger: null,
+            steam,
+            forwarding: broker);
+
+        using CancellationTokenSource stop = new();
+        Task task = activeClients.RunAsync(stop.Token);
+
+        try
+        {
+            Volatile.Write(ref foregroundProcessId, 123);
+            await WaitUntilAsync(() => urls.Count >= 2 && broker.GetStatus().ActiveClientId == clientId)
+                .ConfigureAwait(false);
+
+            Volatile.Write(ref foregroundProcessId, 0);
+            await WaitUntilAsync(() => urls.Count >= 3).ConfigureAwait(false);
+
+            CollectionAssert.AreEqual(
+                ExpectedSteamClearWithForwardingClearUrls,
+                urls);
+            Assert.IsFalse(activeClients.GetSteamInputStatus().Forced);
             await WaitUntilAsync(() => broker.GetStatus().ActiveClientId is null)
                 .ConfigureAwait(false);
         }

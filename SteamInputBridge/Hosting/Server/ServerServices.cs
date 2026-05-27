@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -11,9 +13,11 @@ using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 using SteamInputBridge.Outputs.Teensy;
 using SteamInputBridge.Outputs.Viiper;
 using SteamInputBridge.Runtime;
+using SteamInputBridge.Runtime.Audio;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Settings.Profiles;
 using SteamInputBridge.Shortcuts;
+using SteamInputBridge.Steam.GameCatalog;
 using ForwardingMouseOutput = SteamInputBridge.Forwarding.Mouse.MouseOutput;
 
 namespace SteamInputBridge.Hosting.Server;
@@ -44,6 +48,10 @@ public static class ServerServices
 
         // Keyboard shortcuts
         _ = services.AddSingleton<IKeyboardShortcutListener, GlobalKeyboardShortcutListener>();
+        _ = services.AddSingleton<IMicrophoneControl>(
+            static _ => OperatingSystem.IsWindows()
+                ? new WindowsMicrophoneControl()
+                : new NoopMicrophoneControl());
 
         // Virtual outputs
         _ = services.AddSingleton(static services =>
@@ -111,21 +119,89 @@ public static class ServerServices
 
     private static List<string> GetHidHideApplicationAccessPaths(string cliPath)
     {
-        // The server needs access to hidden devices, and the integration also
-        // launches HidHideCLI.exe for every read/write. Keeping the CLI allowed
-        // prevents the app from locking its own management path out after cloak
-        // mode is enabled.
         List<string> paths = [];
-        if (Environment.ProcessPath is { Length: > 0 } processPath)
-        {
-            paths.Add(processPath);
-        }
-
-        if (!string.IsNullOrWhiteSpace(cliPath))
-        {
-            paths.Add(cliPath);
-        }
+        AddPath(paths, Environment.ProcessPath);
+        AddPath(paths, cliPath);
+        AddSteamPaths(paths);
 
         return paths;
+    }
+
+    private static void AddSteamPaths(List<string> paths)
+    {
+        string? steamExe = FindProcessPath("steam");
+        AddExistingPath(paths, steamExe);
+
+        string? steamPath = Path.GetDirectoryName(steamExe) ??
+            FindDefaultSteamPath() ??
+            SteamLocator.FindSteamPath();
+        if (string.IsNullOrWhiteSpace(steamPath))
+        {
+            return;
+        }
+
+        // Steam Input is owned by the Steam client process and may use the
+        // Steam service for device access. Do not allowlist steamwebhelper.exe;
+        // it is the CEF UI process, not the controller reader.
+        AddExistingPath(paths, Path.Combine(steamPath, "steam.exe"));
+        AddExistingPath(paths, Path.Combine(steamPath, "bin", "SteamService.exe"));
+    }
+
+    private static string? FindProcessPath(string processName)
+    {
+        foreach (Process process in Process.GetProcessesByName(processName))
+        {
+            try
+            {
+                return process.MainModule?.FileName;
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or
+                    NotSupportedException or
+                    System.ComponentModel.Win32Exception)
+            {
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FindDefaultSteamPath()
+    {
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            "Steam");
+        return Directory.Exists(path) ? path : null;
+    }
+
+    private static void AddExistingPath(List<string> paths, string? path)
+    {
+        if (!string.IsNullOrWhiteSpace(path) &&
+            File.Exists(path))
+        {
+            AddPath(paths, path);
+        }
+    }
+
+    private static void AddPath(List<string> paths, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        foreach (string existing in paths)
+        {
+            if (string.Equals(existing, path, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        paths.Add(path);
     }
 }

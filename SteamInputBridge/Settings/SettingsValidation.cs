@@ -74,8 +74,8 @@ internal static class SettingsValidation
                 failures.Add($"{prefix}:targets is required.");
             }
 
-            HashSet<ShortcutTarget> entryTargets = [];
-            foreach (ShortcutTarget target in shortcut.Targets)
+            HashSet<ShortcutTargetSpec> entryTargets = [];
+            foreach (ShortcutTargetSpec target in shortcut.Targets)
             {
                 if (!entryTargets.Add(target))
                 {

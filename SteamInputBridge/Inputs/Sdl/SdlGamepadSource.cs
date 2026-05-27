@@ -161,6 +161,11 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
 
     internal bool ProcessEvent(SDL.Event sdlEvent)
     {
+        if (!IsConnected)
+        {
+            throw new SdlGamepadDisconnectedException($"SDL controller \"{Controller.Name}\" was disconnected.");
+        }
+
         SDL.EventType eventType = (SDL.EventType)sdlEvent.Type;
         if (eventType == SDL.EventType.GamepadUpdateComplete &&
             sdlEvent.GDevice.Which == Controller.InstanceId)

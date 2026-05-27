@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
+using SteamInputBridge.Hosting.Server.Orchestration;
+using SteamInputBridge.Runtime.Audio;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
 
@@ -14,12 +17,14 @@ internal sealed class ServerShortcutService(
     IKeyboardShortcutListener listener,
     ControllerBroker controllers,
     MouseBroker mouse,
+    IMicrophoneControl microphone,
     ILogger<ServerShortcutService> logger) : IDisposable
 {
     private readonly Lock _gate = new();
     private IReadOnlyDictionary<int, IReadOnlyList<ShortcutEntry>> _shortcuts =
         new Dictionary<int, IReadOnlyList<ShortcutEntry>>();
-    private Dictionary<ShortcutTarget, ShortcutHold> _holds = [];
+    private Dictionary<ShortcutTargetKey, ShortcutHold> _holds = [];
+    private List<ShortcutColorSource> _actionColors = [];
     private bool _started;
     private bool _disposed;
 
@@ -46,9 +51,22 @@ internal sealed class ServerShortcutService(
         }
 
         settings.Changed -= OnSettingsChanged;
-        CancelHolds();
+        ClearShortcutState();
         listener.Dispose();
         _disposed = true;
+    }
+
+    public OverlayStatus GetOverlayStatus()
+    {
+        string? actionColor;
+        lock (_gate)
+        {
+            actionColor = _actionColors.Count == 0
+                ? null
+                : _actionColors[^1].Color;
+        }
+
+        return new OverlayStatus(microphone.GetStatus(), actionColor);
     }
 
     private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)
@@ -64,16 +82,21 @@ internal sealed class ServerShortcutService(
             (entry, index, exception) =>
                 HostingLog.ShortcutSkipped(logger, ShortcutName(entry, index), exception.Message));
 
+        bool shortcutStateChanged;
         lock (_gate)
         {
             _shortcuts = bindings.Shortcuts;
-            CancelHolds();
+            shortcutStateChanged = ClearShortcutStateLocked();
         }
 
         try
         {
             listener.Update(bindings.Registrations, OnShortcutPressed, OnShortcutReleased);
             HostingLog.ShortcutsRegistered(logger, bindings.Registrations.Count);
+            if (shortcutStateChanged)
+            {
+                StateChanged?.Invoke();
+            }
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
@@ -110,21 +133,21 @@ internal sealed class ServerShortcutService(
         int id)
     {
         ShortcutValue value = shortcut.Value.GetValueOrDefault();
-        foreach (ShortcutTarget target in shortcut.Targets)
+        foreach (ShortcutTargetSpec target in shortcut.Targets)
         {
             switch (value)
             {
                 case ShortcutValue.Enabled:
-                    SetTarget(target, enabled: true);
-                    CancelHold(target);
+                    SetTarget(id, target, enabled: true);
+                    CancelHold(new ShortcutTargetKey(id, target));
                     break;
                 case ShortcutValue.Disabled:
-                    SetTarget(target, enabled: false);
-                    CancelHold(target);
+                    SetTarget(id, target, enabled: false);
+                    CancelHold(new ShortcutTargetKey(id, target));
                     break;
                 case ShortcutValue.Toggle:
-                    SetTarget(target, !GetTargetEnabled(target));
-                    CancelHold(target);
+                    SetTarget(id, target, !GetTargetEnabled(id, target));
+                    CancelHold(new ShortcutTargetKey(id, target));
                     break;
                 case ShortcutValue.HoldEnabled:
                     StartHold(shortcut, id, target, enabledWhileHeld: true);
@@ -146,53 +169,74 @@ internal sealed class ServerShortcutService(
     private void StartHold(
         ShortcutEntry shortcut,
         int id,
-        ShortcutTarget target,
+        ShortcutTargetSpec target,
         bool enabledWhileHeld)
     {
+        ShortcutTargetKey key = new(id, target);
         lock (_gate)
         {
-            _holds[target] = new ShortcutHold(id, EnabledOnRelease: !enabledWhileHeld);
+            _holds[key] = new ShortcutHold(EnabledOnRelease: !enabledWhileHeld);
         }
 
-        SetTarget(target, enabledWhileHeld);
+        SetTarget(id, target, enabledWhileHeld);
         LogShortcut(shortcut, id, target);
     }
 
     private void OnShortcutReleased(int id)
     {
-        List<KeyValuePair<ShortcutTarget, ShortcutHold>> release = [];
+        List<KeyValuePair<ShortcutTargetKey, ShortcutHold>> release = [];
 
         lock (_gate)
         {
-            foreach (KeyValuePair<ShortcutTarget, ShortcutHold> hold in _holds)
+            foreach (KeyValuePair<ShortcutTargetKey, ShortcutHold> hold in _holds)
             {
-                if (hold.Value.ShortcutId == id)
+                if (hold.Key.ShortcutId == id)
                 {
                     release.Add(hold);
                 }
             }
 
-            foreach (KeyValuePair<ShortcutTarget, ShortcutHold> hold in release)
+            foreach (KeyValuePair<ShortcutTargetKey, ShortcutHold> hold in release)
             {
                 _ = _holds.Remove(hold.Key);
             }
         }
 
-        foreach (KeyValuePair<ShortcutTarget, ShortcutHold> hold in release)
+        foreach (KeyValuePair<ShortcutTargetKey, ShortcutHold> hold in release)
         {
-            SetTarget(hold.Key, hold.Value.EnabledOnRelease);
+            SetTarget(id, hold.Key.Target, hold.Value.EnabledOnRelease);
         }
     }
 
-    private void SetTarget(ShortcutTarget target, bool enabled)
+    private void SetTarget(
+        int shortcutId,
+        ShortcutTargetSpec target,
+        bool enabled)
     {
-        switch (target)
+        if (target.Color is { Length: > 0 } color)
+        {
+            SetActionColor(shortcutId, color, enabled);
+            return;
+        }
+
+        switch (target.Target)
         {
             case ShortcutTarget.Motion:
                 controllers.SetPhysicalMotionEnabled(enabled);
                 break;
             case ShortcutTarget.Pointer:
                 mouse.SetPointerOutputEnabled(enabled);
+                break;
+            case ShortcutTarget.Mic:
+                try
+                {
+                    microphone.SetEnabled(enabled);
+                }
+                catch (Exception exception) when (exception is COMException or InvalidOperationException)
+                {
+                    HostingLog.MicrophoneShortcutFailed(logger, exception.Message);
+                }
+
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(target), target, "Unknown shortcut target.");
@@ -201,17 +245,51 @@ internal sealed class ServerShortcutService(
         StateChanged?.Invoke();
     }
 
-    private bool GetTargetEnabled(ShortcutTarget target)
+    private bool GetTargetEnabled(
+        int shortcutId,
+        ShortcutTargetSpec target)
     {
-        return target switch
+        if (target.Color is { Length: > 0 } color)
+        {
+            lock (_gate)
+            {
+                return _actionColors.Contains(new ShortcutColorSource(shortcutId, color));
+            }
+        }
+
+        return target.Target switch
         {
             ShortcutTarget.Motion => controllers.GetStatus().PhysicalMotionEnabled,
             ShortcutTarget.Pointer => mouse.GetStatus().PointerOutputEnabled,
+            ShortcutTarget.Mic => microphone.GetStatus() is { Available: true, Muted: false },
             _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Unknown shortcut target."),
         };
     }
 
-    private void CancelHold(ShortcutTarget target)
+    private void SetActionColor(
+        int shortcutId,
+        string color,
+        bool enabled)
+    {
+        ShortcutColorSource source = new(shortcutId, color);
+        bool changed;
+        lock (_gate)
+        {
+            changed = _actionColors.Remove(source);
+            if (enabled)
+            {
+                _actionColors.Add(source);
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            StateChanged?.Invoke();
+        }
+    }
+
+    private void CancelHold(ShortcutTargetKey target)
     {
         lock (_gate)
         {
@@ -219,12 +297,29 @@ internal sealed class ServerShortcutService(
         }
     }
 
-    private void CancelHolds()
+    private void ClearShortcutState()
     {
-        _holds = [];
+        bool changed;
+        lock (_gate)
+        {
+            changed = ClearShortcutStateLocked();
+        }
+
+        if (changed)
+        {
+            StateChanged?.Invoke();
+        }
     }
 
-    private void LogShortcut(ShortcutEntry shortcut, int id, ShortcutTarget target)
+    private bool ClearShortcutStateLocked()
+    {
+        _holds = [];
+        bool changed = _actionColors.Count != 0;
+        _actionColors = [];
+        return changed;
+    }
+
+    private void LogShortcut(ShortcutEntry shortcut, int id, ShortcutTargetSpec target)
     {
         if (!logger.IsEnabled(LogLevel.Information) ||
             !shortcut.Value.HasValue)
@@ -243,5 +338,9 @@ internal sealed class ServerShortcutService(
             : entry.Name;
     }
 
-    private readonly record struct ShortcutHold(int ShortcutId, bool EnabledOnRelease);
+    private readonly record struct ShortcutTargetKey(int ShortcutId, ShortcutTargetSpec Target);
+
+    private readonly record struct ShortcutHold(bool EnabledOnRelease);
+
+    private readonly record struct ShortcutColorSource(int ShortcutId, string Color);
 }

@@ -29,7 +29,7 @@ internal sealed class ControllerPipeSessions(
         return pipeName;
     }
 
-    public IReadOnlyList<ClientControllerInfo> RegisterControllers(
+    public ControllerRegistrationResult RegisterControllers(
         Guid clientId,
         IReadOnlyList<ClientControllerInfo> controllers)
     {
@@ -55,12 +55,15 @@ internal sealed class ControllerPipeSessions(
         return status;
     }
 
-    public void RefreshControllerRoutes()
+    public bool RefreshControllerRoutes()
     {
+        bool changed = false;
         foreach (ClientControllerPipe pipe in _pipes.Values)
         {
-            pipe.RefreshResolvedControllers();
+            changed |= pipe.RefreshResolvedControllers();
         }
+
+        return changed;
     }
 
     public async ValueTask DisposeAsync()

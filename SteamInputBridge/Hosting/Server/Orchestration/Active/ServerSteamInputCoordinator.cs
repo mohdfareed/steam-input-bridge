@@ -24,7 +24,7 @@ internal sealed class ServerSteamInputCoordinator(
 
     public void Apply(Guid? clientId)
     {
-        if (logger is null || steam is null)
+        if (steam is null)
         {
             return;
         }
@@ -32,18 +32,30 @@ internal sealed class ServerSteamInputCoordinator(
         try
         {
             uint? appId = FindSteamAppId(clients.GetStatus(), clientId);
-            HostingLog.ClearingForcedSteamInputAppId(logger);
+            if (logger is not null)
+            {
+                HostingLog.ClearingForcedSteamInputAppId(logger);
+            }
+
             steam.ForceConfigAsync(null).AsTask().GetAwaiter().GetResult();
 
             if (appId.HasValue)
             {
-                HostingLog.ForcingSteamInputAppId(logger, appId.Value, clientId);
+                if (logger is not null)
+                {
+                    HostingLog.ForcingSteamInputAppId(logger, appId.Value, clientId);
+                }
+
                 steam.ForceConfigAsync(appId.Value).AsTask().GetAwaiter().GetResult();
                 SetStatus(new ServerSteamInputStatus(true, appId.Value, clientId, null));
             }
             else
             {
-                HostingLog.NoSteamInputAppIdToForce(logger);
+                if (logger is not null)
+                {
+                    HostingLog.NoSteamInputAppIdToForce(logger);
+                }
+
                 SetStatus(new ServerSteamInputStatus(false, null, clientId, null));
             }
         }
@@ -52,7 +64,11 @@ internal sealed class ServerSteamInputCoordinator(
                 ArgumentException or
                 System.ComponentModel.Win32Exception)
         {
-            HostingLog.SteamInputForcingFailed(logger, clientId, exception.Message);
+            if (logger is not null)
+            {
+                HostingLog.SteamInputForcingFailed(logger, clientId, exception.Message);
+            }
+
             SetStatus(new ServerSteamInputStatus(false, null, clientId, exception.Message));
         }
     }

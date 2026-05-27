@@ -18,6 +18,9 @@ internal static partial class HostingLog
     public static partial void ShortcutApplied(
         ILogger logger,
         string name,
-        ShortcutTarget target,
+        ShortcutTargetSpec target,
         ShortcutValue value);
+
+    [LoggerMessage(EventId = 39, Level = LogLevel.Warning, Message = "Could not set microphone shortcut state: {Message}")]
+    public static partial void MicrophoneShortcutFailed(ILogger logger, string message);
 }

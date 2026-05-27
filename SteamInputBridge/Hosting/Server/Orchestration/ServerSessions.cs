@@ -23,6 +23,7 @@ internal sealed partial class ServerSessions(
     Func<ServerInputStatus>? getInputStatus = null,
     Func<ServerSteamInputStatus>? getSteamInputStatus = null,
     Func<ServerHidHideStatus>? getHidHideStatus = null,
+    Func<OverlayStatus>? getOverlayStatus = null,
     Action? routeStateChanged = null,
     Action? statusChanged = null)
 {

@@ -266,13 +266,14 @@ internal sealed partial class PhysicalControllerPump
 
     private bool TryFindAutomaticMatchNoLock(out AutomaticMatch match)
     {
-        HashSet<string> matchedPhysicalIds = GetMatchedPhysicalIdsNoLock();
+        HashSet<string> matchedPhysicalIds = [];
         Dictionary<ControllerMatchKey, List<PhysicalCandidate>> streamCandidates = [];
-        Dictionary<string, List<ControllerMatchKey>> physicalCandidates =
-            new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<PhysicalClientCandidate, List<ControllerMatchKey>> physicalCandidates = [];
 
         foreach (KeyValuePair<ControllerMatchKey, PendingMatch> pending in _pendingMatches)
         {
+            matchedPhysicalIds.Clear();
+            matchedPhysicalIds.UnionWith(GetMatchedPhysicalIdsNoLock(pending.Key.ClientId));
             List<PhysicalCandidate> candidates = [];
             foreach (SdlGamepadSource source in _sources.Values)
             {
@@ -284,10 +285,11 @@ internal sealed partial class PhysicalControllerPump
                 }
 
                 candidates.Add(new PhysicalCandidate(physicalId));
-                if (!physicalCandidates.TryGetValue(physicalId, out List<ControllerMatchKey>? keys))
+                PhysicalClientCandidate candidateKey = new(pending.Key.ClientId, physicalId);
+                if (!physicalCandidates.TryGetValue(candidateKey, out List<ControllerMatchKey>? keys))
                 {
                     keys = [];
-                    physicalCandidates[physicalId] = keys;
+                    physicalCandidates[candidateKey] = keys;
                 }
 
                 keys.Add(pending.Key);
@@ -307,7 +309,8 @@ internal sealed partial class PhysicalControllerPump
             }
 
             PhysicalCandidate physical = entry.Value[0];
-            if (!physicalCandidates.TryGetValue(physical.Id, out List<ControllerMatchKey>? keys) ||
+            PhysicalClientCandidate candidateKey = new(entry.Key.ClientId, physical.Id);
+            if (!physicalCandidates.TryGetValue(candidateKey, out List<ControllerMatchKey>? keys) ||
                 keys.Count != 1)
             {
                 continue;
@@ -327,7 +330,7 @@ internal sealed partial class PhysicalControllerPump
         out PassiveActivityMatch match)
     {
         List<PassiveActivityMatch> candidates = [];
-        HashSet<string> matchedPhysicalIds = GetMatchedPhysicalIdsNoLock();
+        HashSet<string> matchedPhysicalIds = [];
 
         foreach (KeyValuePair<ControllerMatchKey, PendingMatch> pending in _pendingMatches)
         {
@@ -337,6 +340,8 @@ internal sealed partial class PhysicalControllerPump
                 continue;
             }
 
+            matchedPhysicalIds.Clear();
+            matchedPhysicalIds.UnionWith(GetMatchedPhysicalIdsNoLock(pending.Key.ClientId));
             foreach (SdlGamepadSource source in _sources.Values)
             {
                 string physicalId = SdlControllerRoutePolicy.GetPhysicalControllerId(source.Controller);
@@ -551,14 +556,15 @@ internal sealed partial class PhysicalControllerPump
             IsSameIdentity(attempted, identity);
     }
 
-    private HashSet<string> GetMatchedPhysicalIdsNoLock()
+    private HashSet<string> GetMatchedPhysicalIdsNoLock(Guid clientId)
     {
         HashSet<string> physicalIds = new(StringComparer.OrdinalIgnoreCase);
-        foreach (MatchedController match in _matches.Values)
+        foreach (KeyValuePair<ControllerMatchKey, MatchedController> match in _matches)
         {
-            if (FindPhysicalControllerByIdNoLock(match.PhysicalControllerId) is not null)
+            if (match.Key.ClientId == clientId &&
+                FindPhysicalControllerByIdNoLock(match.Value.PhysicalControllerId) is not null)
             {
-                _ = physicalIds.Add(match.PhysicalControllerId);
+                _ = physicalIds.Add(match.Value.PhysicalControllerId);
             }
         }
 
@@ -766,6 +772,8 @@ internal sealed partial class PhysicalControllerPump
     private readonly record struct PassiveActivityMatch(ControllerMatchKey Key, string PhysicalControllerId);
 
     private readonly record struct PhysicalCandidate(string Id);
+
+    private readonly record struct PhysicalClientCandidate(Guid ClientId, string PhysicalId);
 
     private readonly record struct VirtualEchoMatch(
         Guid ClientId,

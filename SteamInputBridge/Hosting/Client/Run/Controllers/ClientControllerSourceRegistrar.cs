@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -10,10 +11,13 @@ namespace SteamInputBridge.Hosting.Client.Run.Controllers;
 
 internal sealed class ClientControllerSourceRegistrar(
     ClientControllerSourceRegistry sources,
-    ILogger logger)
+    ILogger logger) : IDisposable
 {
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private string? _lastScanSignature;
     private string? _lastRouteSignature;
+    private Guid? _lastRegisteredClientId;
+    private IReadOnlyList<ClientControllerInfo> _lastRegisteredControllers = [];
 
     public async Task<IReadOnlyList<SdlGamepadSource>> RefreshSourcesAsync(
         ClientService client,
@@ -23,10 +27,18 @@ internal sealed class ClientControllerSourceRegistrar(
         // Empty scans are treated as transient. Non-empty scans are allowed to
         // replace stale opened sources because Steam can reshuffle/reuse handles
         // while rebuilding virtual controllers.
-        return await AddMissingSourcesAsync(client, profileId, cancellationToken).ConfigureAwait(false);
+        await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await AddMissingSourcesAsync(client, profileId, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = _refreshGate.Release();
+        }
     }
 
-    public async Task<IReadOnlyList<SdlGamepadSource>> AddMissingSourcesAsync(
+    private async Task<IReadOnlyList<SdlGamepadSource>> AddMissingSourcesAsync(
         ClientService client,
         string profileId,
         CancellationToken cancellationToken)
@@ -63,7 +75,7 @@ internal sealed class ClientControllerSourceRegistrar(
                 physicalControllers);
             LogRoutesIfChanged(client.ClientId, profileId, routeSources, plan);
 
-            await client.RegisterClientControllersAsync(plan.Controllers, cancellationToken).ConfigureAwait(false);
+            await RegisterControllersIfChangedAsync(client, plan.Controllers, cancellationToken).ConfigureAwait(false);
             return sources.GetGamepadSourcesSnapshot();
         }
         catch
@@ -105,7 +117,20 @@ internal sealed class ClientControllerSourceRegistrar(
         string profileId,
         CancellationToken cancellationToken)
     {
-        _ = AddMissingSourcesAsync(client, profileId, cancellationToken).GetAwaiter().GetResult();
+        _refreshGate.Wait(cancellationToken);
+        try
+        {
+            _ = AddMissingSourcesAsync(client, profileId, cancellationToken).GetAwaiter().GetResult();
+        }
+        finally
+        {
+            _ = _refreshGate.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshGate.Dispose();
     }
 
     private void RefreshControllerRegistration(
@@ -119,7 +144,23 @@ internal sealed class ClientControllerSourceRegistrar(
             ClientControllerRoutePlanner.GetPhysicalControllers(
                 ClientControllerRoutePlanner.FilterForwardable(SdlControllerCatalog.GetControllers())));
         LogRoutesIfChanged(client.ClientId, profileId, routeSources, plan);
-        client.RegisterClientControllersAsync(plan.Controllers, cancellationToken).GetAwaiter().GetResult();
+        RegisterControllersIfChangedAsync(client, plan.Controllers, cancellationToken).GetAwaiter().GetResult();
+    }
+
+    private async Task RegisterControllersIfChangedAsync(
+        ClientService client,
+        IReadOnlyList<ClientControllerInfo> controllers,
+        CancellationToken cancellationToken)
+    {
+        if (_lastRegisteredClientId == client.ClientId &&
+            controllers.SequenceEqual(_lastRegisteredControllers))
+        {
+            return;
+        }
+
+        await client.RegisterClientControllersAsync(controllers, cancellationToken).ConfigureAwait(false);
+        _lastRegisteredClientId = client.ClientId;
+        _lastRegisteredControllers = [.. controllers];
     }
 
     private void LogScanIfChanged(

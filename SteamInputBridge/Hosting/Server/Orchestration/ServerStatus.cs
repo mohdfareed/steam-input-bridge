@@ -42,6 +42,28 @@ public sealed record ServerStatus(int ConnectedClientCount)
 
     /// <summary>Connected controller stream pipe status.</summary>
     public IReadOnlyList<ControllerPipeStatus> ControllerPipes { get; init; } = [];
+
+    /// <summary>Tray overlay indicator status.</summary>
+    public OverlayStatus Overlay { get; init; } = OverlayStatus.Hidden;
+}
+
+/// <summary>Tray overlay indicator status.</summary>
+public sealed record OverlayStatus(MicrophoneOverlayStatus Microphone, string? ActionColor)
+{
+    /// <summary>Hidden overlay state.</summary>
+    public static OverlayStatus Hidden { get; } = new(MicrophoneOverlayStatus.Unavailable, null);
+}
+
+/// <summary>Microphone indicator status.</summary>
+public sealed record MicrophoneOverlayStatus(
+    bool Available,
+    bool Muted,
+    bool ActivityReliable,
+    bool InputActive)
+{
+    /// <summary>No usable microphone state.</summary>
+    public static MicrophoneOverlayStatus Unavailable { get; } =
+        new(Available: false, Muted: false, ActivityReliable: false, InputActive: false);
 }
 
 /// <summary>Server-owned input source status.</summary>

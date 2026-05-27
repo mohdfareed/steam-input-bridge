@@ -141,7 +141,13 @@ public sealed class SettingsValidationTests
             Assert.AreEqual(ControllerOutput.Ds4, profile.ControllerOutput);
             Assert.AreEqual(MouseOutput.Viiper, profile.MouseOutput);
             CollectionAssert.AreEqual(
-                new[] { ShortcutTarget.Motion, ShortcutTarget.Pointer },
+                new[]
+                {
+                    ShortcutTargetSpec.Named(ShortcutTarget.Motion),
+                    ShortcutTargetSpec.Named(ShortcutTarget.Pointer),
+                    ShortcutTargetSpec.Named(ShortcutTarget.Mic),
+                    ShortcutTargetSpec.OverlayColor("#808080"),
+                },
                 settings.Current.Shortcuts[0].Targets.ToArray());
             Assert.AreEqual(ShortcutValue.Toggle, settings.Current.Shortcuts[0].Value);
         }
@@ -243,7 +249,12 @@ public sealed class SettingsValidationTests
             Assert.HasCount(1, settings.Current.Shortcuts);
             Assert.IsNull(settings.Current.Shortcuts[0].Name);
             CollectionAssert.AreEqual(
-                new[] { ShortcutTarget.Motion, ShortcutTarget.Pointer },
+                new[]
+                {
+                    ShortcutTargetSpec.Named(ShortcutTarget.Motion),
+                    ShortcutTargetSpec.Named(ShortcutTarget.Pointer),
+                    ShortcutTargetSpec.OverlayColor("#808080"),
+                },
                 settings.Current.Shortcuts[0].Targets.ToArray());
         }
         finally
@@ -368,8 +379,10 @@ public sealed class SettingsValidationTests
               {
                 "Keys": "Num1",
                 "Targets": [
-                  "motion",
-                  "POINTER"
+                "motion",
+                  "POINTER",
+                  "voice",
+                  "#808080"
                 ],
                 "Value": "toggle"
               }
@@ -451,7 +464,8 @@ public sealed class SettingsValidationTests
                 "Keys": "Ctrl+Alt+F15",
                 "Targets": [
                   "Motion",
-                  "Pointer"
+                  "Pointer",
+                  "#808080"
                 ],
                 "Value": "Enabled"
               }

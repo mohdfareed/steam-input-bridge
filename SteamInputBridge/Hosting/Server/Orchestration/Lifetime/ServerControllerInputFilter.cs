@@ -13,7 +13,9 @@ internal sealed class ServerControllerInputFilter(
     HidHideService? hidHide,
     OwnedVirtualControllerRegistry? ownedVirtualControllers = null)
 {
-    private static readonly IReadOnlySet<DeviceIdentity> EmptyHiddenDevices = new HashSet<DeviceIdentity>();
+    private static readonly HiddenHidHideDevices EmptyHiddenDevices = new(
+        new HashSet<DeviceIdentity>(),
+        new HashSet<DeviceIdentity>());
 
     public bool Allows(SdlControllerInfo controller)
     {
@@ -32,14 +34,32 @@ internal sealed class ServerControllerInputFilter(
 
     public ServerControllerInputFilterSnapshot CreateSnapshot()
     {
+        IReadOnlyList<HidHideDevice> devices = ListHidHideDevices();
         return new ServerControllerInputFilterSnapshot(
-            hidHideDevices,
             hidHide,
             ownedVirtualControllers,
-            GetHiddenDevices());
+            devices,
+            GetHiddenDevices(devices));
     }
 
-    private IReadOnlySet<DeviceIdentity> GetHiddenDevices()
+    private IReadOnlyList<HidHideDevice> ListHidHideDevices()
+    {
+        if (hidHideDevices is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            return hidHideDevices.ListDevices();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or JsonException)
+        {
+            return [];
+        }
+    }
+
+    private HiddenHidHideDevices GetHiddenDevices(IReadOnlyList<HidHideDevice> devices)
     {
         if (hidHide is null)
         {
@@ -48,16 +68,23 @@ internal sealed class ServerControllerInputFilter(
 
         try
         {
-            HashSet<DeviceIdentity> devices = [];
-            foreach (string device in hidHide.GetStatus().HiddenDevices)
+            HashSet<DeviceIdentity> hidden = [];
+            HashSet<DeviceIdentity> hiddenContainers = [];
+            foreach (string path in hidHide.GetStatus().HiddenDevices)
             {
-                if (DeviceIdentity.FromDeviceInstancePath(device) is { } identity)
+                if (DeviceIdentity.FromDeviceInstancePath(path) is { } identity)
                 {
-                    _ = devices.Add(identity);
+                    _ = hidden.Add(identity);
+                }
+
+                if (ServerControllerInputFilterPaths.FindByInstancePath(devices, path) is { } device &&
+                    DeviceIdentity.FromDeviceInstancePath(device.BaseContainerDeviceInstancePath) is { } container)
+                {
+                    _ = hiddenContainers.Add(container);
                 }
             }
 
-            return devices;
+            return new HiddenHidHideDevices(hidden, hiddenContainers);
         }
         catch (Exception exception) when (exception is InvalidOperationException or JsonException)
         {
@@ -67,10 +94,10 @@ internal sealed class ServerControllerInputFilter(
 }
 
 internal sealed class ServerControllerInputFilterSnapshot(
-    HidHideDeviceCatalog? hidHideDevices,
     HidHideService? hidHide,
     OwnedVirtualControllerRegistry? ownedVirtualControllers,
-    IReadOnlySet<DeviceIdentity> hiddenDevices)
+    IReadOnlyList<HidHideDevice> devices,
+    HiddenHidHideDevices hiddenDevices)
 {
     public bool Allows(SdlControllerInfo controller)
     {
@@ -121,23 +148,40 @@ internal sealed class ServerControllerInputFilterSnapshot(
             return null;
         }
 
-        try
+        string normalized = ServerControllerInputFilterPaths.Normalize(path);
+        foreach (HidHideDevice device in devices)
         {
-            return hidHideDevices?.FindDeviceBySymbolicLink(path);
+            if (ServerControllerInputFilterPaths.Normalize(device.SymbolicLink) == normalized &&
+                !string.IsNullOrWhiteSpace(device.DeviceInstancePath))
+            {
+                return device;
+            }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or JsonException)
-        {
-            return null;
-        }
+
+        return null;
     }
 
     private bool IsForeignHiddenDevice(HidHideDevice? device)
     {
         return device is not null &&
             hidHide is not null &&
-            DeviceIdentity.FromDeviceInstancePath(device.DeviceInstancePath) is { } identity &&
-            hiddenDevices.Contains(identity) &&
+            IsHiddenDevice(device) &&
             !hidHide.IsScopeDevice(device.DeviceInstancePath);
+    }
+
+    private bool IsHiddenDevice(HidHideDevice device)
+    {
+        bool deviceHidden =
+            DeviceIdentity.FromDeviceInstancePath(device.DeviceInstancePath) is { } identity &&
+            hiddenDevices.DeviceInstancePaths.Contains(identity);
+        bool containerHidden =
+            DeviceIdentity.FromDeviceInstancePath(device.BaseContainerDeviceInstancePath) is { } container &&
+            hiddenDevices.BaseContainerDeviceInstancePaths.Contains(container);
+
+        // Controllers can expose several HID interfaces. If another tool hid
+        // any interface in the same base container, ignore the whole physical
+        // controller so we do not duplicate DSX/DS4Windows-owned devices.
+        return deviceHidden || containerHidden;
     }
 
     private static bool IsOwnedVirtualController(
@@ -183,3 +227,38 @@ internal sealed class ServerControllerInputFilterSnapshot(
             : null;
     }
 }
+
+internal static class ServerControllerInputFilterPaths
+{
+    internal static HidHideDevice? FindByInstancePath(
+        IReadOnlyList<HidHideDevice> devices,
+        string? deviceInstancePath)
+    {
+        if (string.IsNullOrWhiteSpace(deviceInstancePath))
+        {
+            return null;
+        }
+
+        string normalized = Normalize(deviceInstancePath);
+        foreach (HidHideDevice device in devices)
+        {
+            if (Normalize(device.DeviceInstancePath) == normalized)
+            {
+                return device;
+            }
+        }
+
+        return null;
+    }
+
+    internal static string Normalize(string value)
+    {
+        return value.Replace("\\", "#", StringComparison.Ordinal)
+            .Trim()
+            .ToUpperInvariant();
+    }
+}
+
+internal sealed record HiddenHidHideDevices(
+    IReadOnlySet<DeviceIdentity> DeviceInstancePaths,
+    IReadOnlySet<DeviceIdentity> BaseContainerDeviceInstancePaths);

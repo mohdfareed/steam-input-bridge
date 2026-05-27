@@ -41,6 +41,10 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 - Confirm before changing which process owns an input source, output device,
   route lifecycle, HidHide policy, Steam visibility, controller identity, IPC
   path, hardware access, or process ownership.
+- ***The app must remain anti-cheat compliant and usable in competitive games.***
+  Do not propose or implement process injection, API hooking, game memory
+  access, anti-cheat bypasses, or anything that could look like tampering with
+  Riot/Blizzard/competitive game processes.
 - Confirm before adding a new service, registry, background loop, retry loop,
   polling timer, lifecycle owner, global-state mutation, or cross-process data
   path.
@@ -58,6 +62,10 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
   code. Lifecycle claims require lifecycle files; routing claims require
   routing files; HidHide claims require HidHide files; VIIPER claims require
   VIIPER files; hot-path claims require the report-processing path.
+- For live route bugs, inspect the latest deployed settings and logs before
+  editing. Name the failing owner/layer from evidence before changing code.
+- Do not claim a live bug is fixed unless the changed code was built, tested,
+  and deployed when the user is testing `bin`.
 - If a bug report crosses responsibilities, map the current responsibility
   boundary before editing. Do not guess which layer owns the fix.
 - Read the full file before editing it. In fragile areas, also read direct
@@ -75,6 +83,20 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 
 ## Runtime Rules
 
+- For launched profiles, report and lifetime-track only receiver processes that
+  appeared after the pre-launch receiver baseline. Pre-existing matching
+  processes must not keep the client alive or claim active focus. Attach-only
+  profiles report all observed receivers.
+- Do not poll SDL controller identity/route snapshots on a timer. Refresh
+  client controller routes from SDL add/remove/disconnect events, and send
+  server route registration only when the controller set actually changes.
+- HidHide scopes are global driver state. Do not reapply or clear them from
+  unchanged route/status updates, and keep a resolved physical device hidden for
+  the owning client lifetime rather than shrinking the scope from transient SDL
+  scans.
+- HidHide app access includes this executable, HidHideCLI, `steam.exe`, and
+  `SteamService.exe`. Do not add `steamwebhelper.exe` unless testing proves the
+  Steam UI process is required for controller visibility.
 - Inactive client controller frames must not update stored route state. They
   may arrive while another game is focused, but must be ignored before they can
   overwrite the next active output state.
@@ -94,6 +116,8 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
   changed lines.
 - Remove dead workarounds, stale diagnostics, unused state, obsolete concept
   names, and one-off debugging code before finalizing.
+- Temporary diagnostics must be deleted before final; do not leave hot-path log
+  probes, route probes, or status fields as cleanup debt.
 - After a mistaken implementation, search the repository for leftover concept
   names and behavior. Removing the obvious call site is not enough.
 - When asked for a cleanup pass, do not narrow the work to the current diff

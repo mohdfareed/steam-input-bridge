@@ -26,7 +26,9 @@ public sealed class GameClient(
     private readonly ClientGameProcessManager _processes = new(logger);
     private readonly ClientReceiverProcessMonitor _receivers = new(logger);
     private ClientRunState? _currentState;
-    private Task? _restoreTask;
+    // Reconnects are edge-triggered; stale restore attempts must not block the
+    // next server lease from re-registering this still-running profile.
+    private int _restoreGeneration;
     private CancellationToken _runCancellationToken;
     private bool _disposed;
 
@@ -49,8 +51,7 @@ public sealed class GameClient(
             StartRunRequest request = new(profileId, ResolveSteamAppId(profileId, steamAppId));
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
 
-            ClientRunLaunch launch = await client
-                .StartRunAsync(request, cancellationToken)
+            ClientRunLaunch launch = await StartRunWithReconnectAsync(request, cancellationToken)
                 .ConfigureAwait(false);
 
             ClientRunState state = new(launch, client.ClientId, request, killReceivers);
@@ -65,6 +66,7 @@ public sealed class GameClient(
                 using CancellationTokenSource keepAliveStop =
                     CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 Task keepAlive = client.WaitAsync(keepAliveStop.Token);
+                bool receiverEndedNaturally = false;
 
                 try
                 {
@@ -75,6 +77,7 @@ public sealed class GameClient(
                             (observed, token) => SendStateAsync(state, observed, token),
                             cancellationToken)
                         .ConfigureAwait(false);
+                    receiverEndedNaturally = true;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -82,6 +85,11 @@ public sealed class GameClient(
                 }
                 finally
                 {
+                    if (!receiverEndedNaturally)
+                    {
+                        _processes.StopGameProcesses(state, "Client run ending.");
+                    }
+
                     _currentState = null;
                     await EndRunAsync(state).ConfigureAwait(false);
                     await keepAliveStop.CancelAsync().ConfigureAwait(false);
@@ -188,6 +196,7 @@ public sealed class GameClient(
         HostingLog.ConnectionChanged(logger, update.State, update.ClientId);
         if (update.State == ClientConnectionState.Disconnected)
         {
+            _ = Interlocked.Increment(ref _restoreGeneration);
             if (_currentState is { } disconnected)
             {
                 disconnected.RegisteredClientId = null;
@@ -204,12 +213,8 @@ public sealed class GameClient(
 
     private void StartRestoreTask()
     {
-        if (_restoreTask is { IsCompleted: false })
-        {
-            return;
-        }
-
-        _restoreTask = Task.Run(RestoreConnectedRunAsync, CancellationToken.None);
+        int generation = Interlocked.Increment(ref _restoreGeneration);
+        _ = Task.Run(() => RestoreConnectedRunAsync(generation), CancellationToken.None);
     }
 
     private async Task StartControllerStreamsAsync(
@@ -244,14 +249,26 @@ public sealed class GameClient(
 
     private static async Task StopControllerStreamsAsync(ClientRunState state)
     {
-        if (state.ControllerStreams is not null)
+        ClientControllerStreams? streams = state.ControllerStreams;
+        state.ControllerStreams = null;
+        if (streams is null)
         {
-            await state.ControllerStreams.DisposeAsync().ConfigureAwait(false);
-            state.ControllerStreams = null;
+            return;
+        }
+
+        try
+        {
+            await streams.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsConnectionFailure(exception))
+        {
+            // Server restart invalidates the old controller pipe before the
+            // restored run can open the replacement. Old-stream teardown is
+            // best-effort; it must not abort re-registering the live client.
         }
     }
 
-    private async Task RestoreConnectedRunAsync()
+    private async Task RestoreConnectedRunAsync(int generation)
     {
         ClientRunState? state = _currentState;
         if (state is null)
@@ -264,11 +281,20 @@ public sealed class GameClient(
             ReferenceEquals(_currentState, state) &&
             !state.GameStopRequested)
         {
-            if (client.State != ClientConnectionState.Connected ||
-                state.RegisteredClientId == client.ClientId)
+            if (generation != Volatile.Read(ref _restoreGeneration))
+            {
+                return;
+            }
+
+            if (client.State != ClientConnectionState.Connected)
             {
                 await DelayRestoreRetryAsync().ConfigureAwait(false);
                 continue;
+            }
+
+            if (state.RegisteredClientId == client.ClientId)
+            {
+                return;
             }
 
             try
@@ -345,8 +371,7 @@ public sealed class GameClient(
         }
 
         await StopControllerStreamsAsync(state).ConfigureAwait(false);
-        ClientRunLaunch launch = await client
-            .StartRunAsync(state.Request, cancellationToken)
+        ClientRunLaunch launch = await StartRunWithReconnectAsync(state.Request, cancellationToken)
             .ConfigureAwait(false);
         state.Launch = launch;
         await StartControllerStreamsAsync(state, cancellationToken).ConfigureAwait(false);
@@ -354,6 +379,34 @@ public sealed class GameClient(
         await RestoreRunProcessesAsync(state, cancellationToken).ConfigureAwait(false);
         HostingLog.RestoredServerRegistration(logger, state.Launch.ProfileId, client.ClientId);
         return true;
+    }
+
+    private async Task<ClientRunLaunch> StartRunWithReconnectAsync(
+        StartRunRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? lastLoggedFailure = null;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                return await client.StartRunAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (IsConnectionFailure(exception))
+            {
+                // The keepalive loop starts after the initial run registration,
+                // so StartRun has to repair a broken server pipe itself.
+                if (!string.Equals(lastLoggedFailure, exception.Message, StringComparison.Ordinal))
+                {
+                    HostingLog.ServerRegistrationRestoreRetrying(logger, exception.Message);
+                    lastLoggedFailure = exception.Message;
+                }
+
+                await client.ReconnectAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        throw new OperationCanceledException(cancellationToken);
     }
 
     private async Task RestoreRunProcessesAsync(
@@ -365,8 +418,8 @@ public sealed class GameClient(
         // snapshot even when the game kept running unchanged.
         IReadOnlyList<ObservedGameProcess> observed =
             GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
-        state.UpdateOwnedReceivers(observed);
-        await client.UpdateRunProcessesAsync(observed, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ObservedGameProcess> receivers = state.UpdateReceivers(observed);
+        await client.UpdateRunProcessesAsync(receivers, cancellationToken).ConfigureAwait(false);
     }
 
     private uint? ResolveSteamAppId(string profileId, uint? overrideAppId)

@@ -114,6 +114,7 @@ public sealed class ServerService : IAsyncDisposable
             () => new ServerInputStatus(_mouseInput.GetStatus(), _physicalControllers.GetStatus()),
             () => _activeClients.GetSteamInputStatus(),
             () => _activeClients.GetHidHideStatus(),
+            () => _shortcuts?.GetOverlayStatus() ?? OverlayStatus.Hidden,
             OnRouteStateChanged,
             NotifyStatusChanged);
 
@@ -208,6 +209,12 @@ public sealed class ServerService : IAsyncDisposable
         return _sessions.GetStatusAsync();
     }
 
+    /// <summary>Gets the tray overlay status without building full diagnostics.</summary>
+    public OverlayStatus GetOverlayStatus()
+    {
+        return _shortcuts?.GetOverlayStatus() ?? OverlayStatus.Hidden;
+    }
+
     /// <summary>Stops a connected client process and releases its server routes.</summary>
     public Task StopClientAsync(Guid clientId)
     {
@@ -240,8 +247,11 @@ public sealed class ServerService : IAsyncDisposable
 
     private void OnPhysicalControllersChanged()
     {
-        _controllerPipes.RefreshControllerRoutes();
-        _activeClients.RefreshHidHide();
+        if (_controllerPipes.RefreshControllerRoutes())
+        {
+            _activeClients.RefreshHidHide();
+        }
+
         NotifyStatusChanged();
     }
 
@@ -279,13 +289,9 @@ public sealed class ServerService : IAsyncDisposable
 
         try
         {
-            // HidHide normal mode uses one global app allow list. Keep this
-            // required executables on that list for the server lifetime; scopes
-            // should only hide devices and toggle mode flags.
-            //
-            // Steam-launched profile testing showed Steam Input still feeds the
-            // client with only this executable allowed, so do not add Steam
-            // here unless a concrete failing route proves it is needed.
+            // HidHide normal mode uses one global app allow list. Keep only
+            // the required local processes on it: this app, HidHideCLI, and
+            // Steam's controller-owning processes.
             _hidHide.AllowRequiredApplications();
             _hidHide.ClearPreviousOwnedScope();
             HostingLog.HidHideApplicationAccessRegistered(_logger);

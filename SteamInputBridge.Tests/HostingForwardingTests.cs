@@ -210,7 +210,7 @@ public sealed class HostingForwardingTests
             new ControllerId(@"path:\\?\hid#vid_054c&pid_0df2", "DualSense Edge"),
             ControllerState.Empty,
             ControllerFeatures.StandardControls);
-        pipe.RefreshResolvedControllers();
+        _ = pipe.RefreshResolvedControllers();
 
         Assert.HasCount(1, factory.Outputs);
         Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", factory.Outputs[0].ControllerId.Value);
@@ -232,7 +232,7 @@ public sealed class HostingForwardingTests
             resolver);
 
         broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
-        IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
+        ControllerRegistrationResult registration = pipe.RegisterControllers(
             [new ClientControllerInfo(
                 0,
                 "steam:0654c5c41534ef2f",
@@ -242,7 +242,7 @@ public sealed class HostingForwardingTests
                 VendorId: 0x054c,
                 ProductId: 0x05c4)]);
 
-        Assert.IsEmpty(registered);
+        Assert.IsEmpty(registration.Controllers);
         Assert.IsEmpty(broker.GetStatus().Slots);
         Assert.IsEmpty(factory.Outputs);
     }
@@ -263,7 +263,7 @@ public sealed class HostingForwardingTests
             pump);
 
         broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
-        IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
+        ControllerRegistrationResult registration = pipe.RegisterControllers(
             [new ClientControllerInfo(
                 0,
                 "steam:0001fa99604010e6",
@@ -273,7 +273,7 @@ public sealed class HostingForwardingTests
                 VendorId: 0x28de,
                 ProductId: 0x1302)]);
 
-        Assert.HasCount(1, registered);
+        Assert.HasCount(1, registration.Controllers);
         Assert.HasCount(1, factory.Outputs);
         Assert.AreEqual("steam:0001fa99604010e6", factory.Outputs[0].ControllerId.Value);
         ControllerBrokerStatus status = broker.GetStatus();
@@ -338,7 +338,7 @@ public sealed class HostingForwardingTests
             resolver);
 
         broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
-        IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
+        ControllerRegistrationResult registration = pipe.RegisterControllers(
             [new ClientControllerInfo(
                 0,
                 @"path:\\?\hid#vid_054c&pid_05c4#virtual",
@@ -348,7 +348,7 @@ public sealed class HostingForwardingTests
                 0x054c,
                 0x05c4)]);
 
-        Assert.IsEmpty(registered);
+        Assert.IsEmpty(registration.Controllers);
         Assert.IsEmpty(broker.GetStatus().Slots);
         Assert.IsEmpty(factory.Outputs);
     }
@@ -383,7 +383,7 @@ public sealed class HostingForwardingTests
             ControllerState.Empty,
             ControllerFeatures.StandardControls | ControllerFeatures.Rumble);
         broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
-        IReadOnlyList<ClientControllerInfo> registered = pipe.RegisterControllers(
+        ControllerRegistrationResult registration = pipe.RegisterControllers(
             [new ClientControllerInfo(
                 0,
                 "steam:0654c5c41534ef2f",
@@ -393,7 +393,7 @@ public sealed class HostingForwardingTests
                 VendorId: 0x054c,
                 ProductId: 0x05c4)]);
 
-        Assert.HasCount(1, registered);
+        Assert.HasCount(1, registration.Controllers);
         Assert.HasCount(1, factory.Outputs);
         Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_05c4", factory.Outputs[0].ControllerId.Value);
     }

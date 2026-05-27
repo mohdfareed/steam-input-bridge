@@ -11,6 +11,7 @@ using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.HidHide;
 using SteamInputBridge.Hosting;
+using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Hosting.Server.Orchestration.Active;
 using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 using SteamInputBridge.Hosting.Server.Pipes;
@@ -331,6 +332,22 @@ public sealed class HidHideServiceTests
         Assert.IsFalse(filter.Allows(Controller(@"\\?\HID#VID_054C&PID_0CE6#ABC")));
     }
 
+    /// <summary>Foreign-hidden controller interfaces hide the whole physical controller container.</summary>
+    [TestMethod]
+    public void InputFilterRejectsForeignHiddenDeviceContainer()
+    {
+        FakeRunner runner = new(
+            devList: @"HID\VID_054C&PID_0DF2&MI_03\ABC",
+            appList: "SteamInputBridge.exe",
+            cloakState: "on",
+            inverseState: "off",
+            devAll: DeviceListWithSharedContainerJson());
+        using HidHideService firewall = CreateFirewall(runner);
+        ServerControllerInputFilter filter = new(new HidHideDeviceCatalog(runner), firewall);
+
+        Assert.IsFalse(filter.Allows(Controller(@"\\?\HID#VID_054C&PID_0DF2&MI_00#ABC")));
+    }
+
     /// <summary>Devices hidden by the current app scope remain accepted as owned input routes.</summary>
     [TestMethod]
     public void InputFilterAllowsOwnedHiddenDevice()
@@ -372,6 +389,64 @@ public sealed class HidHideServiceTests
 
         coordinator.Refresh(clientId);
         coordinator.Refresh(null);
+
+        Assert.Contains("--inv-off --cloak-on --dev-hide dev-1", runner.Commands);
+        Assert.DoesNotContain("--dev-unhide dev-1 --cloak-off --inv-off", runner.Commands);
+    }
+
+    /// <summary>Coordinator diagnostics report HidHide's live app/device state.</summary>
+    [TestMethod]
+    public void CoordinatorStatusReadsLiveHidHideState()
+    {
+        FakeRunner runner = new(
+            devList: "dev-1\r\ndev-2",
+            appList: "SteamInputBridge.exe\r\nsteam.exe",
+            cloakState: "on",
+            inverseState: "off");
+        using HidHideService firewall = CreateFirewall(runner);
+        ServerHidHideCoordinator coordinator = new(
+            new ActiveClientRegistry(),
+            NullLogger.Instance,
+            profiles: null,
+            firewall,
+            getDevices: null,
+            static devices => [.. devices.Select(device => $"label:{device}")],
+            forwarding: null);
+
+        ServerHidHideStatus status = coordinator.GetStatus();
+
+        Assert.IsTrue(status.CloakEnabled);
+        Assert.IsFalse(status.InverseEnabled);
+        CollectionAssert.AreEqual(StatusHiddenDevices, status.HiddenDevices.ToArray());
+        Assert.AreEqual("label:dev-1,label:dev-2", string.Join(",", status.HiddenDeviceLabels));
+        Assert.AreEqual("SteamInputBridge.exe,steam.exe", string.Join(",", status.RegisteredApplications));
+    }
+
+    /// <summary>Transient missing route snapshots do not unhide a running client's controller.</summary>
+    [TestMethod]
+    public void CoordinatorKeepsScopeAfterClientRouteTemporarilyDisappears()
+    {
+        FakeRunner runner = new(
+            devList: "",
+            appList: "SteamInputBridge.exe",
+            cloakState: "off",
+            inverseState: "off");
+        using HidHideService firewall = CreateFirewall(runner);
+        using ServiceProvider services = CreateProfileServices();
+        ActiveClientRegistry clients = CreateActiveClient(out Guid clientId);
+        bool reportDevice = true;
+        ServerHidHideCoordinator coordinator = new(
+            clients,
+            NullLogger.Instance,
+            services.GetRequiredService<ProfilesService>(),
+            firewall,
+            _ => reportDevice ? ["dev-1"] : [],
+            static _ => [],
+            forwarding: null);
+
+        coordinator.Refresh(clientId);
+        reportDevice = false;
+        coordinator.Refresh(clientId);
 
         Assert.Contains("--inv-off --cloak-on --dev-hide dev-1", runner.Commands);
         Assert.DoesNotContain("--dev-unhide dev-1 --cloak-off --inv-off", runner.Commands);
@@ -488,7 +563,41 @@ public sealed class HidHideServiceTests
                     "product": "0CE6",
                     "usage": "0005",
                     "symbolicLink": "\\\\?\\HID#VID_054C&PID_0CE6#ABC",
-                    "deviceInstancePath": "HID\\VID_054C&PID_0CE6\\ABC"
+                    "deviceInstancePath": "HID\\VID_054C&PID_0CE6\\ABC",
+                    "baseContainerDeviceInstancePath": "USB\\VID_054C&PID_0CE6\\BASE"
+                  }
+                ]
+              }
+            ]
+            """;
+    }
+
+    private static string DeviceListWithSharedContainerJson()
+    {
+        return """
+            [
+              {
+                "friendlyName": "DualSense Edge",
+                "devices": [
+                  {
+                    "present": true,
+                    "gamingDevice": true,
+                    "vendor": "054C",
+                    "product": "0DF2",
+                    "usage": "Gamepad",
+                    "symbolicLink": "\\\\?\\HID#VID_054C&PID_0DF2&MI_00#ABC",
+                    "deviceInstancePath": "HID\\VID_054C&PID_0DF2&MI_00\\ABC",
+                    "baseContainerDeviceInstancePath": "USB\\VID_054C&PID_0DF2\\BASE"
+                  },
+                  {
+                    "present": true,
+                    "gamingDevice": true,
+                    "vendor": "054C",
+                    "product": "0DF2",
+                    "usage": "Gamepad",
+                    "symbolicLink": "\\\\?\\HID#VID_054C&PID_0DF2&MI_03#ABC",
+                    "deviceInstancePath": "HID\\VID_054C&PID_0DF2&MI_03\\ABC",
+                    "baseContainerDeviceInstancePath": "USB\\VID_054C&PID_0DF2\\BASE"
                   }
                 ]
               }

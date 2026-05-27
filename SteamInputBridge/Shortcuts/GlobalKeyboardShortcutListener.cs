@@ -49,15 +49,21 @@ internal sealed class KeyboardShortcutSession : IDisposable
 {
     private const uint ModNoRepeat = 0x4000;
     private const uint WmHotkey = 0x0312;
+    private const uint WmTimer = 0x0113;
+    private const uint WmKeyDown = 0x0100;
     private const uint WmKeyUp = 0x0101;
+    private const uint WmSysKeyDown = 0x0104;
     private const uint WmSysKeyUp = 0x0105;
     private const uint WmQuit = 0x0012;
     private const uint PmNoRemove = 0x0000;
+    private const uint RequestedReleaseTimerId = 1;
+    private const uint ReleasePollMilliseconds = 30;
     private const int WhKeyboardLl = 13;
 
     private readonly IReadOnlyList<KeyboardShortcutRegistration> _shortcuts;
     private readonly Dictionary<int, KeyboardShortcutCombination> _combinations = [];
     private readonly HashSet<int> _pressedShortcuts = [];
+    private readonly HashSet<ushort> _keysDown = [];
     private readonly Action<int> _pressed;
     private readonly Action<int> _released;
     private readonly LowLevelKeyboardProc _keyboardHookCallback;
@@ -66,6 +72,8 @@ internal sealed class KeyboardShortcutSession : IDisposable
     private volatile uint _threadId;
     private IntPtr _keyboardHook;
     private Exception? _startupError;
+    private UIntPtr _releaseTimerId;
+    private bool _releaseTimerActive;
     private bool _disposed;
 
     private KeyboardShortcutSession(
@@ -151,7 +159,13 @@ internal sealed class KeyboardShortcutSession : IDisposable
                 if (message.Message == WmHotkey)
                 {
                     int shortcutId = (int)message.WParam;
-                    _ = _pressedShortcuts.Add(shortcutId);
+                    if (!_pressedShortcuts.Add(shortcutId))
+                    {
+                        StartReleaseTimer();
+                        continue;
+                    }
+
+                    StartReleaseTimer();
                     try
                     {
                         _pressed(shortcutId);
@@ -159,6 +173,12 @@ internal sealed class KeyboardShortcutSession : IDisposable
                     catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
                     {
                     }
+                }
+                else if (message.Message == WmTimer &&
+                    _releaseTimerActive &&
+                    message.WParam.Equals(_releaseTimerId))
+                {
+                    ReleaseCompletedShortcuts();
                 }
             }
         }
@@ -169,6 +189,7 @@ internal sealed class KeyboardShortcutSession : IDisposable
         }
         finally
         {
+            StopReleaseTimer();
             UnregisterKeyboardHook();
             UnregisterShortcuts();
         }
@@ -196,13 +217,45 @@ internal sealed class KeyboardShortcutSession : IDisposable
 
     private IntPtr HandleKeyboardHook(int code, UIntPtr wParam, IntPtr lParam)
     {
-        if (code >= 0 &&
-            (wParam.ToUInt32() == WmKeyUp || wParam.ToUInt32() == WmSysKeyUp))
+        if (code >= 0)
         {
-            ReleaseCompletedShortcuts();
+            uint message = wParam.ToUInt32();
+            ushort virtualKey = checked((ushort)Marshal.PtrToStructure<KeyboardHookInfo>(lParam).VirtualKey);
+            if (message is WmKeyDown or WmSysKeyDown)
+            {
+                _ = _keysDown.Add(virtualKey);
+                PressCompletedShortcuts();
+            }
+            else if (message is WmKeyUp or WmSysKeyUp)
+            {
+                _ = _keysDown.Remove(virtualKey);
+                ReleaseCompletedShortcuts();
+            }
         }
 
         return CallNextHookEx(_keyboardHook, code, wParam, lParam);
+    }
+
+    private void PressCompletedShortcuts()
+    {
+        foreach ((int shortcutId, KeyboardShortcutCombination combination) in _combinations)
+        {
+            if (_pressedShortcuts.Contains(shortcutId) ||
+                !IsShortcutDown(combination))
+            {
+                continue;
+            }
+
+            _ = _pressedShortcuts.Add(shortcutId);
+            StartReleaseTimer();
+            try
+            {
+                _pressed(shortcutId);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
+            {
+            }
+        }
     }
 
     private void ReleaseCompletedShortcuts()
@@ -216,7 +269,7 @@ internal sealed class KeyboardShortcutSession : IDisposable
         foreach (int shortcutId in _pressedShortcuts)
         {
             if (_combinations.TryGetValue(shortcutId, out KeyboardShortcutCombination combination) &&
-                KeyboardShortcutState.IsDown(combination))
+                IsShortcutDown(combination))
             {
                 continue;
             }
@@ -241,6 +294,73 @@ internal sealed class KeyboardShortcutSession : IDisposable
             {
             }
         }
+
+        if (_pressedShortcuts.Count == 0)
+        {
+            StopReleaseTimer();
+        }
+    }
+
+    private bool IsShortcutDown(KeyboardShortcutCombination combination)
+    {
+        return IsKeyDown(combination.VirtualKey) &&
+            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Control, 0x11) &&
+            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Alt, 0x12) &&
+            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Shift, 0x10) &&
+            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Windows, 0x5B, 0x5C);
+    }
+
+    private bool HasModifierState(
+        KeyboardShortcutModifiers actual,
+        KeyboardShortcutModifiers expected,
+        ushort virtualKey,
+        ushort? alternateVirtualKey = null)
+    {
+        return (actual & expected) == 0 ||
+            IsKeyDown(virtualKey) ||
+            (alternateVirtualKey.HasValue && IsKeyDown(alternateVirtualKey.Value));
+    }
+
+    private bool IsKeyDown(ushort virtualKey)
+    {
+        return _keysDown.Contains(virtualKey) || KeyboardShortcutState.IsKeyDown(virtualKey);
+    }
+
+    private void StartReleaseTimer()
+    {
+        if (_releaseTimerActive)
+        {
+            return;
+        }
+
+        // RegisterHotKey gives us the press event, but some foreground apps do
+        // not reliably deliver the corresponding low-level key-up event. Poll
+        // only while a shortcut is held so hold-mode targets are released even
+        // when no later keyboard event wakes the hook.
+        UIntPtr timerId = SetTimer(
+            IntPtr.Zero,
+            new UIntPtr(RequestedReleaseTimerId),
+            ReleasePollMilliseconds,
+            IntPtr.Zero);
+        if (timerId == UIntPtr.Zero)
+        {
+            return;
+        }
+
+        _releaseTimerId = timerId;
+        _releaseTimerActive = true;
+    }
+
+    private void StopReleaseTimer()
+    {
+        if (!_releaseTimerActive)
+        {
+            return;
+        }
+
+        _releaseTimerActive = false;
+        _ = KillTimer(IntPtr.Zero, _releaseTimerId);
+        _releaseTimerId = UIntPtr.Zero;
     }
 
     private void UnregisterKeyboardHook()
@@ -294,6 +414,20 @@ internal sealed class KeyboardShortcutSession : IDisposable
 
     [DllImport("user32.dll", SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern UIntPtr SetTimer(
+        IntPtr hWnd,
+        UIntPtr nIdEvent,
+        uint uElapse,
+        IntPtr lpTimerFunc);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern bool KillTimer(
+        IntPtr hWnd,
+        UIntPtr uIdEvent);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern IntPtr SetWindowsHookEx(
         int idHook,
         LowLevelKeyboardProc callback,
@@ -321,6 +455,16 @@ internal sealed class KeyboardShortcutSession : IDisposable
     private static extern IntPtr GetModuleHandle(string? moduleName);
 
     private delegate IntPtr LowLevelKeyboardProc(int code, UIntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct KeyboardHookInfo
+    {
+        public readonly uint VirtualKey;
+        public readonly uint ScanCode;
+        public readonly uint Flags;
+        public readonly uint Time;
+        public readonly UIntPtr ExtraInfo;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct NativeMessage

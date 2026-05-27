@@ -16,6 +16,7 @@ internal sealed partial class ServerSessions
             SteamInput = getSteamInputStatus?.Invoke() ?? new ServerSteamInputStatus(false, null, null, null),
             HidHide = getHidHideStatus?.Invoke() ?? new ServerHidHideStatus(false, false, false, [], [], [], null, null),
             ControllerPipes = controllerPipes.GetStatus(),
+            Overlay = getOverlayStatus?.Invoke() ?? OverlayStatus.Hidden,
         });
     }
 }
