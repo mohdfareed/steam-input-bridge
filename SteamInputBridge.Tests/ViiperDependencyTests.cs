@@ -250,18 +250,24 @@ public sealed class ViiperDependencyTests
         try
         {
             Guid clientId = Guid.NewGuid();
+            ControllerId firstController = new("dependency:physical:first", "Dependency First Controller");
+            ControllerId secondController = new("dependency:physical:second", "Dependency Second Controller");
             broker.RegisterClient(clientId, ControllerOutput.Xbox360);
             broker.SetActiveClient(clientId);
+            broker.SetClientControllers(
+                clientId,
+                [
+                    new ControllerClientRegistration(0, firstController, ControllerFeatures.StandardControls),
+                    new ControllerClientRegistration(1, secondController, ControllerFeatures.StandardControls),
+                ]);
             broker.UpdateClientController(
                 clientId,
                 controllerIndex: 0,
-                new ControllerId("dependency:physical:first", "Dependency First Controller"),
                 CreateControllerState(ControllerButtons.South),
                 ControllerFeatures.StandardControls);
             broker.UpdateClientController(
                 clientId,
                 controllerIndex: 1,
-                new ControllerId("dependency:physical:second", "Dependency Second Controller"),
                 CreateControllerState(ControllerButtons.East),
                 ControllerFeatures.StandardControls);
 

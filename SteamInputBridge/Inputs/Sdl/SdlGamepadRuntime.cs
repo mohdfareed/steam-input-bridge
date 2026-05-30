@@ -16,7 +16,7 @@ internal static class SdlGamepadRuntime
     private static readonly Lock Gate = new();
     private static bool _initialized;
 
-    internal static Lease Acquire()
+    internal static void EnsureInitialized()
     {
         lock (Gate)
         {
@@ -37,12 +37,6 @@ internal static class SdlGamepadRuntime
             }
 
             _initialized = true;
-            return new Lease();
         }
-    }
-
-    internal sealed class Lease : IDisposable
-    {
-        public void Dispose() { }
     }
 }

@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -7,15 +6,13 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using SteamInputBridge.Hosting.Server.Orchestration;
+using Vanara.PInvoke;
+using static Vanara.PInvoke.User32;
 
 namespace SteamInputBridge.App.Tray.Core;
 
 internal sealed class StatusOverlayWindow : Window
 {
-    private const int WsExTransparent = 0x00000020;
-    private const int WsExToolWindow = 0x00000080;
-    private const int WsExNoActivate = 0x08000000;
-    private const int GwlExStyle = -20;
     private const double DotSize = 9;
     private const double DotGap = 7;
     private const double GlowPadding = 18;
@@ -151,19 +148,14 @@ internal sealed class StatusOverlayWindow : Window
     {
         _ = sender;
         _ = args;
-        IntPtr handle = new WindowInteropHelper(this).Handle;
-        int style = GetWindowLong(handle, GwlExStyle);
+        HWND handle = new(new WindowInteropHelper(this).Handle);
+        WindowStylesEx style = (WindowStylesEx)GetWindowLong(handle, WindowLongFlags.GWL_EXSTYLE);
         _ = SetWindowLong(
             handle,
-            GwlExStyle,
-            style | WsExToolWindow | WsExTransparent | WsExNoActivate);
+            WindowLongFlags.GWL_EXSTYLE,
+            (int)(style |
+                WindowStylesEx.WS_EX_TOOLWINDOW |
+                WindowStylesEx.WS_EX_TRANSPARENT |
+                WindowStylesEx.WS_EX_NOACTIVATE));
     }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int GetWindowLong(IntPtr hwnd, int index);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int SetWindowLong(IntPtr hwnd, int index, int value);
 }

@@ -30,9 +30,6 @@ public sealed class SteamInputBridgeSettings
     /// <summary>Steam integration settings.</summary>
     public SteamSettings Steam { get; set; } = new();
 
-    /// <summary>HidHide device firewall settings.</summary>
-    public HidHideSettings HidHide { get; set; } = new();
-
     /// <summary>Global keyboard shortcuts handled by the server.</summary>
     public Collection<ShortcutEntry> Shortcuts { get; } = [];
 
@@ -224,25 +221,8 @@ public sealed class ShortcutEntry
 /// <summary>Steam integration settings.</summary>
 public sealed class SteamSettings
 {
-    /// <summary>Configuration section name for Steam settings.</summary>
-    public const string SectionName = SteamInputBridgeSettings.SectionName + ":Steam";
-
     /// <summary>Default Steam ROM Manager manifest export path.</summary>
     public string? SrmExportPath { get; set; }
-}
-
-/// <summary>HidHide device firewall settings.</summary>
-public sealed class HidHideSettings
-{
-    /// <summary>Configuration section name for HidHide settings.</summary>
-    public const string SectionName = SteamInputBridgeSettings.SectionName + ":HidHide";
-
-    /// <summary>Whether the server should manage HidHide state.</summary>
-    public bool Enabled { get; set; }
-
-    /// <summary>HidHide command-line executable path.</summary>
-    public string CliPath { get; set; } =
-        @"C:\Program Files\Nefarius Software Solutions\HidHide\x64\HidHideCLI.exe";
 }
 
 /// <summary>VIIPER output settings.</summary>
@@ -261,9 +241,6 @@ public sealed class ViiperSettings
 /// <summary>Application logging settings.</summary>
 public sealed class LoggingSettings
 {
-    /// <summary>Configuration section name for logging settings.</summary>
-    public const string SectionName = SteamInputBridgeSettings.SectionName + ":Logging";
-
     /// <summary>Minimum log level.</summary>
     public LogLevel Level { get; set; } = LogLevel.Information;
 

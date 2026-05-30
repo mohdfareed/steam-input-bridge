@@ -10,7 +10,7 @@ namespace SteamInputBridge.Forwarding;
 
 internal static class ControllerPipeFrame
 {
-    public const int Size = 83;
+    public const int Size = Layout.LightFlashOffOffset + sizeof(byte);
 
     private const byte Present = 1;
 

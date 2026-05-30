@@ -157,54 +157,6 @@ public sealed class SettingsValidationTests
         }
     }
 
-    /// <summary>Checks that disabled HidHide settings do not require the CLI path.</summary>
-    [TestMethod]
-    public void DisabledHidHideDoesNotRequireCliPath()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithDisabledHidHide());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
-
-            Assert.IsFalse(settings.Current.HidHide.Enabled);
-            Assert.AreEqual("", settings.Current.HidHide.CliPath);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that enabled HidHide settings require the CLI path.</summary>
-    [TestMethod]
-    public void EnabledHidHideRequiresCliPath()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithEnabledHidHideMissingCli());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
-                services.GetRequiredService<ApplicationSettingsService>);
-
-            StringAssert.Contains(exception.Message, "hidhide:cliPath", StringComparison.Ordinal);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
     /// <summary>Checks that receiver-only profiles are valid.</summary>
     [TestMethod]
     public void AttachOnlyProfileIsAllowed()
@@ -280,6 +232,79 @@ public sealed class SettingsValidationTests
                 services.GetRequiredService<ApplicationSettingsService>);
 
             StringAssert.Contains(exception.Message, "shortcuts:1:targets", StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>Checks that key aliases are validated as the same shortcut.</summary>
+    [TestMethod]
+    public void ShortcutKeyAliasesCannotRepeatTheSameTarget()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithDuplicateShortcutAliasTarget());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
+                services.GetRequiredService<ApplicationSettingsService>);
+
+            StringAssert.Contains(exception.Message, "shortcuts:1:targets", StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>Checks that numeric out-of-range profile outputs are rejected.</summary>
+    [TestMethod]
+    public void InvalidProfileOutputEnumValuesFailSettingsLoad()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithInvalidProfileOutputEnums());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
+                services.GetRequiredService<ApplicationSettingsService>);
+
+            StringAssert.Contains(exception.Message, "games:game:controllerOutput", StringComparison.Ordinal);
+            StringAssert.Contains(exception.Message, "games:game:mouseOutput", StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>Checks that invalid shortcut key syntax fails settings load.</summary>
+    [TestMethod]
+    public void ShortcutKeysMustBeValid()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(directory);
+        string settingsPath = Path.Combine(directory, "appsettings.json");
+
+        try
+        {
+            File.WriteAllText(settingsPath, SettingsWithInvalidShortcutKey());
+            using ServiceProvider services = CreateServices(settingsPath);
+
+            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
+                services.GetRequiredService<ApplicationSettingsService>);
+
+            StringAssert.Contains(exception.Message, "shortcuts:0:keys is invalid", StringComparison.Ordinal);
         }
         finally
         {
@@ -399,44 +424,6 @@ public sealed class SettingsValidationTests
         """;
     }
 
-    private static string SettingsWithDisabledHidHide()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "HidHide": {
-              "Enabled": false,
-              "CliPath": ""
-            },
-            "Games": {
-              "game": {
-                "Executable": "C:\\Games\\Game\\game.exe"
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithEnabledHidHideMissingCli()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "HidHide": {
-              "Enabled": true,
-              "CliPath": ""
-            },
-            "Games": {
-              "game": {
-                "Executable": "C:\\Games\\Game\\game.exe"
-              }
-            }
-          }
-        }
-        """;
-    }
-
     private static string SettingsWithAttachOnlyProfile()
     {
         return """
@@ -497,6 +484,78 @@ public sealed class SettingsValidationTests
               {
                 "Name": "motion-on-again",
                 "Keys": "Ctrl+Alt+F15",
+                "Targets": [
+                  "Motion"
+                ],
+                "Value": "Enabled"
+              }
+            ],
+            "Games": {
+              "game": {
+                "Executable": "C:\\Games\\Game\\game.exe"
+              }
+            }
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithDuplicateShortcutAliasTarget()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "Shortcuts": [
+              {
+                "Keys": "Num1",
+                "Targets": [
+                  "Motion"
+                ],
+                "Value": "Enabled"
+              },
+              {
+                "Keys": "Numpad1",
+                "Targets": [
+                  "Motion"
+                ],
+                "Value": "Disabled"
+              }
+            ],
+            "Games": {
+              "game": {
+                "Executable": "C:\\Games\\Game\\game.exe"
+              }
+            }
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithInvalidProfileOutputEnums()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "Games": {
+              "game": {
+                "Executable": "C:\\Games\\Game\\game.exe",
+                "ControllerOutput": 99,
+                "MouseOutput": 99
+              }
+            }
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithInvalidShortcutKey()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "Shortcuts": [
+              {
+                "Keys": "Ctrl+Alt",
                 "Targets": [
                   "Motion"
                 ],

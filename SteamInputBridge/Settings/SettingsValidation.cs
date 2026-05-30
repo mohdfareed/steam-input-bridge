@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using SteamInputBridge.Settings.Profiles;
+using SteamInputBridge.Shortcuts;
 
 namespace SteamInputBridge.Settings;
 
@@ -14,7 +15,6 @@ internal static class SettingsValidation
 
         List<string> failures = [];
         ValidateViiper(settings.Viiper, failures);
-        ValidateHidHide(settings.HidHide, failures);
         ValidateShortcuts(settings.Shortcuts, failures);
         ValidateProfiles(settings.Games, failures);
 
@@ -37,19 +37,6 @@ internal static class SettingsValidation
         }
     }
 
-    private static void ValidateHidHide(HidHideSettings settings, List<string> failures)
-    {
-        if (!settings.Enabled)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.CliPath))
-        {
-            failures.Add("hidhide:cliPath is required.");
-        }
-    }
-
     private static void ValidateShortcuts(
         Collection<ShortcutEntry> shortcuts,
         List<string> failures)
@@ -59,14 +46,21 @@ internal static class SettingsValidation
         {
             ShortcutEntry shortcut = shortcuts[i];
             string prefix = $"shortcuts:{i}";
-            string? keys = null;
+            KeyboardShortcutCombination? combination = null;
             if (string.IsNullOrWhiteSpace(shortcut.Keys))
             {
                 failures.Add($"{prefix}:keys is required.");
             }
             else
             {
-                keys = shortcut.Keys.Trim();
+                try
+                {
+                    combination = KeyboardShortcutParser.Parse(shortcut.Keys.Trim());
+                }
+                catch (FormatException exception)
+                {
+                    failures.Add($"{prefix}:keys is invalid: {exception.Message}");
+                }
             }
 
             if (shortcut.Targets.Count == 0)
@@ -81,7 +75,7 @@ internal static class SettingsValidation
                 {
                     failures.Add($"{prefix}:targets duplicates {target}.");
                 }
-                else if (keys is not null && !targetsByKey.Add($"{keys}\0{target}"))
+                else if (combination.HasValue && !targetsByKey.Add($"{combination.Value}\0{target}"))
                 {
                     failures.Add($"{prefix}:targets duplicates another shortcut target for the same keys.");
                 }
@@ -113,6 +107,18 @@ internal static class SettingsValidation
             {
                 failures.Add(
                     $"games:{profileId}:receiverProcesses is required when executable is missing.");
+            }
+
+            if (profile.ControllerOutput.HasValue &&
+                !Enum.IsDefined(profile.ControllerOutput.Value))
+            {
+                failures.Add($"games:{profileId}:controllerOutput is invalid.");
+            }
+
+            if (profile.MouseOutput.HasValue &&
+                !Enum.IsDefined(profile.MouseOutput.Value))
+            {
+                failures.Add($"games:{profileId}:mouseOutput is invalid.");
             }
         }
     }

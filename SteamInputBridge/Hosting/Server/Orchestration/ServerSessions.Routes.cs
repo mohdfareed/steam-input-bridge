@@ -41,7 +41,6 @@ internal sealed partial class ServerSessions
         string controllerPipeName = resolved.ControllerOutput == ProfileControllerOutput.None
             ? string.Empty
             : controllerPipes.Start(clientId);
-        routeStateChanged?.Invoke();
         statusChanged?.Invoke();
 
         return Task.FromResult(new ClientRunLaunch(
@@ -77,7 +76,6 @@ internal sealed partial class ServerSessions
                 routes);
         }
 
-        routeStateChanged?.Invoke();
         statusChanged?.Invoke();
         return Task.CompletedTask;
     }
@@ -89,11 +87,6 @@ internal sealed partial class ServerSessions
         runtime.UpdateClient(clientId, processes);
         statusChanged?.Invoke();
         return Task.CompletedTask;
-    }
-
-    internal Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync(Guid clientId)
-    {
-        return Task.FromResult(runtime.GetClientProcesses(clientId));
     }
 
     private static string FormatControllerRegistrations(IReadOnlyList<ClientControllerInfo> controllers)

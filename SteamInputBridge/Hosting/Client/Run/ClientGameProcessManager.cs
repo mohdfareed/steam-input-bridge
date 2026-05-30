@@ -41,7 +41,7 @@ internal sealed class ClientGameProcessManager(ILogger logger)
 
     public void StopGameProcesses(ClientRunState state, string reason)
     {
-        if (state.LaunchedProcess is null && !state.KillReceivers)
+        if (state.LaunchedProcess is null)
         {
             return;
         }
@@ -60,13 +60,11 @@ internal sealed class ClientGameProcessManager(ILogger logger)
             GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
         IReadOnlyList<ObservedGameProcess> ownedReceivers =
             state.GetOwnedReceiversSnapshot(currentReceivers);
-        int killed = state.KillReceivers
-            ? GameProcessKiller.Kill(currentReceivers)
-            : GameProcessKiller.Kill(ownedReceivers);
+        int killed = GameProcessKiller.Kill(ownedReceivers);
 
         if (state.LaunchedProcess is not null)
         {
-            killed += GameProcessKiller.KillLaunchedProcess(state.LaunchedProcess);
+            killed += GameProcessKiller.Kill(state.LaunchedProcess);
         }
 
         HostingLog.StoppedGameProcesses(logger, reason, killed);

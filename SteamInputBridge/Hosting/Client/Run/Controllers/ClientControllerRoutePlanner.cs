@@ -24,7 +24,7 @@ internal static class ClientControllerRoutePlanner
     public static IReadOnlyList<SdlControllerInfo> SelectClientControllers(
         IReadOnlyList<SdlControllerInfo> visibleControllers)
     {
-        List<SdlControllerInfo> physicalControllers = GetPhysicalControllers(visibleControllers);
+        List<SdlControllerInfo> physicalControllers = SdlControllerRoutePolicy.GetPhysicalControllers(visibleControllers);
         HashSet<string> steamMatchedPhysicalIds = new(StringComparer.OrdinalIgnoreCase);
         foreach (SdlControllerInfo controller in visibleControllers)
         {
@@ -71,12 +71,6 @@ internal static class ClientControllerRoutePlanner
         }
 
         return new ClientControllerRoutePlan(controllers, identities);
-    }
-
-    public static List<SdlControllerInfo> GetPhysicalControllers(
-        IReadOnlyList<SdlControllerInfo> controllers)
-    {
-        return SdlControllerRoutePolicy.GetPhysicalControllers(controllers);
     }
 
     private static Dictionary<SdlGamepadSource, SdlControllerRouteIdentity> CreateRouteIdentities(

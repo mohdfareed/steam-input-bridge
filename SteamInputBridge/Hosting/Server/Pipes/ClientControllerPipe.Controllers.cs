@@ -36,7 +36,7 @@ internal sealed partial class ClientControllerPipe
         }
     }
 
-    public ControllerPipeStatus GetStatus(Guid clientId)
+    public ControllerPipeStatus GetStatus()
     {
         List<ClientControllerStatus> controllers = [];
         lock (_controllers)

@@ -133,7 +133,6 @@ internal sealed class ClientConnection(
         _pipe = null;
         pipe?.Dispose();
 
-        ClientId = null;
         SetState(ClientConnectionState.Disconnected, null);
         _gate.Dispose();
     }
@@ -165,8 +164,7 @@ internal sealed class ClientConnection(
 
             _pipe = pipe;
             _server = server;
-            ClientId = clientId;
-            SetState(ClientConnectionState.Connected, ClientId);
+            SetState(ClientConnectionState.Connected, clientId);
             HostingLog.ConnectedToServer(logger, ClientId);
         }
         catch
@@ -208,7 +206,6 @@ internal sealed class ClientConnection(
             await pipe.DisposeAsync().ConfigureAwait(false);
         }
 
-        ClientId = null;
         SetState(ClientConnectionState.Disconnected, null);
     }
 
@@ -220,6 +217,7 @@ internal sealed class ClientConnection(
         }
 
         State = state;
+        ClientId = clientId;
         Changed?.Invoke(this, new ClientConnectionChangedEventArgs(state, clientId));
     }
 

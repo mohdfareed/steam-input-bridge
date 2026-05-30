@@ -1,13 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
-using SteamInputBridge.HidHide;
 using SteamInputBridge.Runtime;
-using SteamInputBridge.Settings.Profiles;
 using SteamInputBridge.Steam;
 
 namespace SteamInputBridge.Hosting.Server.Orchestration.Active;
@@ -19,33 +16,17 @@ internal sealed class ServerActiveClientLoop(
     Action<ActiveClientChangedEventArgs>? activeClientChanged,
     ILogger? logger = null,
     SteamInputClient? steam = null,
-    ProfilesService? profiles = null,
-    HidHideService? hidHide = null,
-    Func<Guid, IReadOnlyList<string>>? getHidHideDevices = null,
-    Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
     ControllerBroker? forwarding = null,
     MouseBroker? mouseForwarding = null,
     Action? stateChanged = null)
 {
     private readonly ServerSteamInputCoordinator _steamInput = new(clients, logger, steam);
-    private readonly ServerHidHideCoordinator _hidHide = new(
-        clients,
-        logger,
-        profiles,
-        hidHide,
-        getHidHideDevices,
-        formatHidHideDevices,
-        forwarding);
 
     private static readonly TimeSpan ForegroundPollDelay = TimeSpan.FromMilliseconds(100);
 
     public static ServerActiveClientLoop CreateDefault(
         ActiveClientRegistry clients,
         ILogger logger,
-        ProfilesService? profiles = null,
-        HidHideService? hidHide = null,
-        Func<Guid, IReadOnlyList<string>>? getHidHideDevices = null,
-        Func<IReadOnlyList<string>, IReadOnlyList<string>>? formatHidHideDevices = null,
         ControllerBroker? forwarding = null,
         MouseBroker? mouseForwarding = null,
         Action? stateChanged = null)
@@ -57,10 +38,6 @@ internal sealed class ServerActiveClientLoop(
             activeClientChanged: null,
             logger,
             new SteamInputClient(),
-            profiles,
-            hidHide,
-            getHidHideDevices,
-            formatHidHideDevices,
             forwarding,
             mouseForwarding,
             stateChanged: stateChanged);
@@ -71,7 +48,6 @@ internal sealed class ServerActiveClientLoop(
         clients.ActiveClientChanged += OnActiveClientChanged;
         try
         {
-            _hidHide.Refresh(null);
             int lastForegroundProcessId = -1;
             // This is the only foreground polling loop in the server. It
             // centralizes foreground-to-active-client selection so Steam
@@ -92,7 +68,6 @@ internal sealed class ServerActiveClientLoop(
         finally
         {
             clients.ActiveClientChanged -= OnActiveClientChanged;
-            _hidHide.Clear();
             SetForwardingActiveClient(null);
         }
     }
@@ -100,21 +75,6 @@ internal sealed class ServerActiveClientLoop(
     public ServerSteamInputStatus GetSteamInputStatus()
     {
         return _steamInput.GetStatus();
-    }
-
-    public ServerHidHideStatus GetHidHideStatus()
-    {
-        return _hidHide.GetStatus();
-    }
-
-    public void RefreshHidHide()
-    {
-        _hidHide.Refresh(clients.GetStatus().ActiveClientId);
-    }
-
-    public void ClearHidHide()
-    {
-        _hidHide.Clear();
     }
 
     private void OnActiveClientChanged(object? sender, ActiveClientChangedEventArgs args)

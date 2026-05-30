@@ -1,4 +1,3 @@
-using System;
 using System.IO.Pipes;
 using System.Threading.Tasks;
 using SteamInputBridge.Forwarding;
@@ -8,11 +7,8 @@ namespace SteamInputBridge.Hosting.Server.Pipes;
 
 internal sealed partial class ClientControllerPipe
 {
-    private async Task RunFeedbackWriteLoopAsync(NamedPipeServerStream pipe)
+    private async Task RunFeedbackWriteLoopAsync(NamedPipeServerStream pipe, ControllerPipeWriter writer)
     {
-        ControllerPipeWriter writer = _writer ??
-            throw new InvalidOperationException("Controller pipe writer is not connected.");
-
         await foreach (ControllerFeedbackFrame frame in _feedbackWrites.Reader.ReadAllAsync(_stop.Token)
             .ConfigureAwait(false))
         {
@@ -28,8 +24,7 @@ internal sealed partial class ClientControllerPipe
 
     private bool QueueFeedback(ushort controllerIndex, ControllerFeedback feedback)
     {
-        return _writer is not null &&
-            _pipe is not null &&
+        return _pipe is not null &&
             _pipe.IsConnected &&
             _feedbackWrites.Writer.TryWrite(new ControllerFeedbackFrame(controllerIndex, feedback));
     }

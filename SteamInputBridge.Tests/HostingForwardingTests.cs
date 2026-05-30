@@ -189,31 +189,31 @@ public sealed class HostingForwardingTests
             [new ClientControllerInfo(
                 0,
                 "steam:05de143a9a0d5235",
-                "DualSense Edge",
+                "Steam Controller",
                 ControllerFeatures.StandardControls,
                 PhysicalDeviceId: null,
-                VendorId: 0x054c,
-                ProductId: 0x0df2)]);
+                VendorId: 0x28de,
+                ProductId: 0x1302)]);
 
         Assert.IsEmpty(factory.Outputs);
 
         resolver.Reject = false;
         resolver.Resolved = new ClientControllerInfo(
             0,
-            @"path:\\?\hid#vid_054c&pid_0df2",
-            "DualSense Edge",
+            @"path:\\?\hid#vid_28de&pid_1142",
+            "Steam Controller",
             ControllerFeatures.StandardControls,
-            @"path:\\?\hid#vid_054c&pid_0df2",
-            0x054c,
-            0x0df2);
+            @"path:\\?\hid#vid_28de&pid_1142",
+            0x28de,
+            0x1142);
         broker.UpdatePhysicalController(
-            new ControllerId(@"path:\\?\hid#vid_054c&pid_0df2", "DualSense Edge"),
+            new ControllerId(@"path:\\?\hid#vid_28de&pid_1142", "Steam Controller"),
             ControllerState.Empty,
             ControllerFeatures.StandardControls);
         _ = pipe.RefreshResolvedControllers();
 
         Assert.HasCount(1, factory.Outputs);
-        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", factory.Outputs[0].ControllerId.Value);
+        Assert.AreEqual(@"path:\\?\hid#vid_28de&pid_1142", factory.Outputs[0].ControllerId.Value);
     }
 
     /// <summary>Unresolved Steam-routed DS4-shaped streams do not create output slots.</summary>
@@ -292,11 +292,11 @@ public sealed class HostingForwardingTests
         ClientControllerInfo? resolved = pump.ResolveClientController(Guid.NewGuid(), new ClientControllerInfo(
             0,
             "steam:05de143a9a0d5235",
-            "DualSense Edge",
+            "XInput Controller #1",
             ControllerFeatures.StandardControls,
             PhysicalDeviceId: null,
-            VendorId: 0x054c,
-            ProductId: 0x0df2));
+            VendorId: 0x28de,
+            ProductId: 0x11ff));
 
         Assert.IsNull(resolved);
     }
@@ -353,51 +353,6 @@ public sealed class HostingForwardingTests
         Assert.IsEmpty(factory.Outputs);
     }
 
-    /// <summary>Resolved physical DS4 routes are kept even though they use the same USB identity as VIIPER DS4.</summary>
-    [TestMethod]
-    public async Task ControllerPipeKeepsResolvedPhysicalDs4()
-    {
-        Guid clientId = Guid.NewGuid();
-        FakeControllerOutputFactory factory = new();
-        FakePhysicalControllerResolver resolver = new()
-        {
-            Resolved = new ClientControllerInfo(
-                0,
-                @"path:\\?\hid#vid_054c&pid_05c4",
-                "Wireless Controller",
-                ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
-                @"path:\\?\hid#vid_054c&pid_05c4",
-                0x054c,
-                0x05c4),
-        };
-        await using ControllerBroker broker = new(factory);
-        await using ClientControllerPipe pipe = new(
-            clientId,
-            "unused",
-            broker,
-            NullLogger.Instance,
-            resolver);
-
-        broker.UpdatePhysicalController(
-            new ControllerId(@"path:\\?\hid#vid_054c&pid_05c4", "Wireless Controller"),
-            ControllerState.Empty,
-            ControllerFeatures.StandardControls | ControllerFeatures.Rumble);
-        broker.RegisterClient(clientId, ForwardingControllerOutput.Ds4);
-        ControllerRegistrationResult registration = pipe.RegisterControllers(
-            [new ClientControllerInfo(
-                0,
-                "steam:0654c5c41534ef2f",
-                "PS4 Controller",
-                ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
-                PhysicalDeviceId: null,
-                VendorId: 0x054c,
-                ProductId: 0x05c4)]);
-
-        Assert.HasCount(1, registration.Controllers);
-        Assert.HasCount(1, factory.Outputs);
-        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_05c4", factory.Outputs[0].ControllerId.Value);
-    }
-
     /// <summary>Native-controller profiles do not create a controller stream pipe.</summary>
     [TestMethod]
     public async Task NativeControllerProfileSkipsControllerPipe()
@@ -436,11 +391,11 @@ public sealed class HostingForwardingTests
         }
     }
 
-    /// <summary>Status reads are diagnostics only and do not refresh route state.</summary>
+    /// <summary>Status reads are diagnostics only and do not publish state changes.</summary>
     [TestMethod]
-    public async Task ServerStatusReadDoesNotRefreshRouteState()
+    public async Task ServerStatusReadDoesNotPublishStateChange()
     {
-        int routeChanges = 0;
+        int statusChanges = 0;
         ActiveClientRegistry runtime = new();
         using ControllerBroker broker = new(new FakeControllerOutputFactory());
         using MouseBroker mouse = new(new FakeMouseOutputFactory());
@@ -452,13 +407,98 @@ public sealed class HostingForwardingTests
             broker,
             mouse,
             pipes,
-            routeStateChanged: () => routeChanges++);
+            statusChanged: () => statusChanges++);
 
         _ = sessions.ConnectClient(Environment.ProcessId);
+        statusChanges = 0;
 
         _ = await sessions.GetStatusAsync().ConfigureAwait(false);
 
-        Assert.AreEqual(0, routeChanges);
+        Assert.AreEqual(0, statusChanges);
+    }
+
+    /// <summary>Stopping a launched client stops only receiver pids owned by that run.</summary>
+    [TestMethod]
+    public async Task StopClientKillsLifecycleOwnedReceivers()
+    {
+        List<ObservedGameProcess> killedReceivers = [];
+        List<int> killedClients = [];
+        ActiveClientRegistry runtime = new();
+        using ControllerBroker broker = new(new FakeControllerOutputFactory());
+        using MouseBroker mouse = new(new FakeMouseOutputFactory());
+        await using ControllerPipeSessions pipes = new(broker, NullLogger.Instance);
+        ServerSessions sessions = new(
+            NullLogger.Instance,
+            profiles: null,
+            runtime,
+            broker,
+            mouse,
+            pipes,
+            killProcesses: processes =>
+            {
+                killedReceivers.AddRange(processes);
+                return processes.Count;
+            },
+            killProcess: processId =>
+            {
+                killedClients.Add(processId);
+                return 1;
+            });
+
+        Guid clientId = sessions.ConnectClient(4242);
+        runtime.RegisterClient(
+            clientId,
+            4242,
+            "game",
+            steamAppId: null,
+            ["game.exe"],
+            ownsReceiverProcesses: true);
+        runtime.UpdateClient(clientId, [new ObservedGameProcess(100, "game.exe")]);
+
+        await sessions.StopClientAsync(clientId).ConfigureAwait(false);
+
+        Assert.AreEqual(100, killedReceivers.Single().ProcessId);
+        Assert.AreEqual(4242, killedClients.Single());
+        Assert.IsEmpty(runtime.GetStatus().Clients);
+    }
+
+    /// <summary>Attach-only clients do not expose receiver pids for server-side killing.</summary>
+    [TestMethod]
+    public async Task StopClientDoesNotKillAttachedReceivers()
+    {
+        List<ObservedGameProcess> killedReceivers = [];
+        ActiveClientRegistry runtime = new();
+        using ControllerBroker broker = new(new FakeControllerOutputFactory());
+        using MouseBroker mouse = new(new FakeMouseOutputFactory());
+        await using ControllerPipeSessions pipes = new(broker, NullLogger.Instance);
+        ServerSessions sessions = new(
+            NullLogger.Instance,
+            profiles: null,
+            runtime,
+            broker,
+            mouse,
+            pipes,
+            killProcesses: processes =>
+            {
+                killedReceivers.AddRange(processes);
+                return processes.Count;
+            },
+            killProcess: static _ => 1);
+
+        Guid clientId = sessions.ConnectClient(4242);
+        runtime.RegisterClient(
+            clientId,
+            4242,
+            "game",
+            steamAppId: null,
+            ["game.exe"],
+            ownsReceiverProcesses: false);
+        runtime.UpdateClient(clientId, [new ObservedGameProcess(100, "game.exe")]);
+
+        await sessions.StopClientAsync(clientId).ConfigureAwait(false);
+
+        Assert.IsEmpty(killedReceivers);
+        Assert.IsEmpty(runtime.GetStatus().Clients);
     }
 
     private static ServiceProvider CreateServices(string settingsPath)

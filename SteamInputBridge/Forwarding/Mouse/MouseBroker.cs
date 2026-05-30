@@ -121,11 +121,7 @@ public sealed class MouseBroker(IMouseOutputFactory outputFactory) : IDisposable
 
         if (output is not null)
         {
-            ValueTask release = output.SendAsync(MouseReport.Empty);
-            if (!release.IsCompletedSuccessfully)
-            {
-                _ = ObserveSendAsync(release);
-            }
+            SendEmpty(output);
         }
     }
 

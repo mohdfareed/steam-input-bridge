@@ -98,11 +98,6 @@ internal sealed class HostServer(
         return sessions.UpdateRunProcessesAsync(GetClientId(), processes);
     }
 
-    public Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync()
-    {
-        return sessions.GetOwnedReceiverProcessesAsync(GetClientId());
-    }
-
     public Task EndRunAsync()
     {
         return sessions.EndRunAsync(GetClientId());

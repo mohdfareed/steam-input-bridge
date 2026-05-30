@@ -23,13 +23,11 @@ internal interface IPhysicalControllerResolver
 
 internal sealed partial class PhysicalControllerPump(
     ControllerBroker broker,
-    ILogger logger,
-    ServerControllerInputFilter? inputFilter = null) : IPhysicalControllerResolver, IAsyncDisposable
+    ILogger logger) : IPhysicalControllerResolver, IAsyncDisposable
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
     private readonly Lock _gate = new();
     private readonly Dictionary<SdlControllerId, SdlGamepadSource> _sources = [];
-    private readonly ServerControllerInputFilter? _inputFilter = inputFilter;
     private CancellationTokenSource? _stop;
     private Task? _task;
     private bool _running;
@@ -86,12 +84,6 @@ internal sealed partial class PhysicalControllerPump(
     {
         ArgumentNullException.ThrowIfNull(controller);
 
-        ServerControllerInputFilterSnapshot? filter = _inputFilter?.CreateSnapshot();
-        if (filter?.Allows(controller) == false)
-        {
-            return null;
-        }
-
         if (!IsSteamRoute(controller.PhysicalControllerId) ||
             !string.IsNullOrWhiteSpace(controller.PhysicalDeviceId))
         {
@@ -113,7 +105,7 @@ internal sealed partial class PhysicalControllerPump(
             return resolved;
         }
 
-        if (CanUseClientOnlyOutput(clientId, controller))
+        if (CanUseClientOnlyOutput(controller))
         {
             return controller;
         }
@@ -264,7 +256,6 @@ internal sealed partial class PhysicalControllerPump(
 
     private void RemoveStaleSources(IReadOnlyList<SdlControllerInfo> physicalControllers)
     {
-        ServerControllerInputFilterSnapshot? filter = _inputFilter?.CreateSnapshot();
         Dictionary<SdlControllerId, SdlControllerInfo> current = [];
         foreach (SdlControllerInfo controller in physicalControllers)
         {
@@ -279,22 +270,13 @@ internal sealed partial class PhysicalControllerPump(
                 if (!current.TryGetValue(entry.Key, out SdlControllerInfo? controller))
                 {
                     // SDL scans can be empty or partial while Windows, Steam,
-                    // HidHide, or VIIPER rebuild device visibility. A missing
-                    // scan entry is not a disconnect; the open source will
-                    // emit GamepadRemoved if the physical device is really gone.
+                    // or VIIPER rebuild device visibility. A missing scan
+                    // entry is not a disconnect; the open source will emit
+                    // GamepadRemoved if the physical device is really gone.
                     continue;
                 }
 
                 if (SdlControllerRoutePolicy.IsSameConnectedController(entry.Value.Controller, controller))
-                {
-                    continue;
-                }
-
-                // HidHide can briefly change a scoped controller's visible
-                // identity while the profile is being hidden from the game.
-                // Keep the already-open source until SDL reports a real
-                // disconnect.
-                if (filter?.IsCurrentScopeDevice(entry.Value.Controller) == true)
                 {
                     continue;
                 }
@@ -319,30 +301,14 @@ internal sealed partial class PhysicalControllerPump(
 
     private void RemoveSource(SdlGamepadSource source)
     {
-        bool keepRoute = _inputFilter?.CreateSnapshot().IsCurrentScopeDevice(source.Controller) == true;
         lock (_gate)
         {
             _ = _sources.Remove(source.Controller.Id);
             RemovePhysicalActivityNoLock(source.Controller);
-            if (keepRoute)
-            {
-                broker.UpdatePhysicalController(
-                    GetControllerId(source.Controller),
-                    ControllerState.Empty,
-                    source.Features);
-            }
-            else
-            {
-                broker.RemovePhysicalController(GetControllerId(source.Controller));
-            }
+            broker.RemovePhysicalController(GetControllerId(source.Controller));
         }
 
         source.Dispose();
-        if (keepRoute)
-        {
-            _ = RefreshSources();
-        }
-
         ControllersChanged?.Invoke();
     }
 
@@ -441,17 +407,14 @@ internal sealed partial class PhysicalControllerPump(
         }
     }
 
-    private List<SdlControllerInfo> SelectPhysicalControllers(
+    private static List<SdlControllerInfo> SelectPhysicalControllers(
         IReadOnlyList<SdlControllerInfo> controllers)
     {
-        _inputFilter?.Observe(controllers);
-        ServerControllerInputFilterSnapshot? filter = _inputFilter?.CreateSnapshot();
         List<SdlControllerInfo> physicalControllers = [];
         foreach (SdlControllerInfo controller in controllers)
         {
             if (controller.Source == SdlControllerSource.Physical &&
-                SdlControllerRoutePolicy.IsForwardable(controller) &&
-                filter?.Allows(controller) != false)
+                SdlControllerRoutePolicy.IsForwardable(controller))
             {
                 physicalControllers.Add(controller);
             }

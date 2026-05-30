@@ -35,7 +35,6 @@ internal sealed partial class ClientControllerPipe(
     private Task? _task;
     private Task? _feedbackTask;
     private NamedPipeServerStream? _pipe;
-    private ControllerPipeWriter? _writer;
 
     public string PipeName { get; } = pipeName;
 
@@ -78,8 +77,8 @@ internal sealed partial class ClientControllerPipe(
             _pipe = pipe;
             await pipe.WaitForConnectionAsync(_stop.Token).ConfigureAwait(false);
             ControllerPipeReader reader = new(pipe);
-            _writer = new ControllerPipeWriter(pipe);
-            _feedbackTask = Task.Run(() => RunFeedbackWriteLoopAsync(pipe), CancellationToken.None);
+            ControllerPipeWriter writer = new(pipe);
+            _feedbackTask = Task.Run(() => RunFeedbackWriteLoopAsync(pipe, writer), CancellationToken.None);
 
             try
             {

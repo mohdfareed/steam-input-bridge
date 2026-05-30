@@ -9,8 +9,7 @@ namespace SteamInputBridge.Hosting.Client.Run;
 internal sealed class ClientRunState(
     ClientRunLaunch launch,
     Guid? registeredClientId,
-    StartRunRequest request,
-    bool killReceivers)
+    StartRunRequest request)
 {
     public ClientRunLaunch Launch { get; set; } = launch;
 
@@ -22,11 +21,9 @@ internal sealed class ClientRunState(
 
     public StartRunRequest Request { get; } = request;
 
-    public bool KillReceivers { get; } = killReceivers;
-
     public bool SawReceiver { get; set; }
 
-    public ClientControllerStreams? ControllerStreams { get; set; }
+    public IClientControllerStreams? ControllerStreams { get; set; }
 
     public string? LastObservedSignature { get; set; }
 
@@ -72,14 +69,6 @@ internal sealed class ClientRunState(
             }
 
             return current;
-        }
-    }
-
-    public IReadOnlyList<ObservedGameProcess> GetOwnedReceiversSnapshot()
-    {
-        lock (StopGate)
-        {
-            return [.. OwnedReceivers.Values];
         }
     }
 

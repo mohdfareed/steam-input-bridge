@@ -34,7 +34,6 @@ public sealed class ClientConnectionChangedEventArgs(ClientConnectionState state
     public Guid? ClientId { get; } = clientId;
 }
 
-// The app-facing client: connect it, send requests through it, then dispose it.
 /// <summary>App-facing client connection to the local server.</summary>
 public sealed class ClientService : IDisposable, IAsyncDisposable
 {
@@ -58,12 +57,6 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
         _connection = new ClientConnection(loggerFactory.CreateLogger<ClientConnection>(), pipeName);
-        _connection.Changed += OnConnectionChanged;
-    }
-
-    internal ClientService(ClientConnection connection)
-    {
-        _connection = connection;
         _connection.Changed += OnConnectionChanged;
     }
 
@@ -136,16 +129,6 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
         ThrowIfDisposed();
         return _connection.Server
             .UpdateRunProcessesAsync(processes)
-            .WaitAsync(ServerRequestTimeout, cancellationToken);
-    }
-
-    /// <summary>Gets receiver processes currently owned by this client.</summary>
-    public Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync(
-        CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        return _connection.Server
-            .GetOwnedReceiverProcessesAsync()
             .WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 

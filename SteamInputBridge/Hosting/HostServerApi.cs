@@ -65,9 +65,6 @@ internal partial interface IHostServerApi
     /// <summary>Updates the receiver processes currently observed by this client.</summary>
     Task UpdateRunProcessesAsync(IReadOnlyList<ObservedGameProcess> processes);
 
-    /// <summary>Gets receiver processes currently owned by this client.</summary>
-    Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync();
-
     /// <summary>Ends this client's active profile run.</summary>
     Task EndRunAsync();
 }

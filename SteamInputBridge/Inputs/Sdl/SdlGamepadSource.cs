@@ -15,7 +15,6 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
     private readonly float[] _gyroData = new float[SensorValueCount];
     private readonly float[] _accelerometerData = new float[SensorValueCount];
     private readonly Lock _feedbackGate = new();
-    private readonly SdlGamepadRuntime.Lease _runtimeLease;
     private nint _gamepad;
     private CancellationTokenSource? _lightFlashStop;
     private int _isConnected = 1;
@@ -23,12 +22,10 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
 
     private SdlGamepadSource(
         nint gamepad,
-        SdlControllerInfo controller,
-        SdlGamepadRuntime.Lease runtimeLease)
+        SdlControllerInfo controller)
     {
         _gamepad = gamepad;
         Controller = controller;
-        _runtimeLease = runtimeLease;
 
         HasGyro = EnableSensor(gamepad, SDL.SensorType.Gyro);
         HasAccelerometer = EnableSensor(gamepad, SDL.SensorType.Accel);
@@ -80,26 +77,12 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
     public static SdlGamepadSource Connect(SdlControllerInfo controller)
     {
         ArgumentNullException.ThrowIfNull(controller);
-        SdlGamepadRuntime.Lease? lease = null;
+        SdlGamepadRuntime.EnsureInitialized();
+        nint gamepad = SdlControllerCatalog.OpenGamepad(controller);
 
-        try
-        {
-            lease = SdlGamepadRuntime.Acquire();
-            nint gamepad = SdlControllerCatalog.OpenGamepad(controller);
-
-            if (gamepad == 0)
-            {
-                throw new InvalidOperationException($"Could not open SDL controller: {SDL.GetError()}");
-            }
-
-            SdlGamepadSource source = new(gamepad, controller, lease);
-            lease = null;
-            return source;
-        }
-        finally
-        {
-            lease?.Dispose();
-        }
+        return gamepad == 0
+            ? throw new InvalidOperationException($"Could not open SDL controller: {SDL.GetError()}")
+            : new SdlGamepadSource(gamepad, controller);
     }
 
     /// <inheritdoc />
@@ -151,8 +134,6 @@ public sealed class SdlGamepadSource : IControllerFeedbackSink, IDisposable, IAs
 
             SDL.CloseGamepad(gamepad);
         }
-
-        _runtimeLease.Dispose();
         return ValueTask.CompletedTask;
     }
 

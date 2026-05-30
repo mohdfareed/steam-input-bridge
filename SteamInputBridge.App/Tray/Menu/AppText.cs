@@ -1,8 +1,5 @@
-using System;
 using System.Collections.Generic;
 using System.Globalization;
-using SteamInputBridge.Forwarding.Controller;
-using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Runtime;
@@ -47,11 +44,6 @@ internal static class AppText
         return enabled ? "Enabled" : "Disabled";
     }
 
-    public static string YesNo(bool value)
-    {
-        return value ? "Yes" : "No";
-    }
-
     public static string Running(bool running)
     {
         return running ? "Running" : "Stopped";
@@ -67,13 +59,6 @@ internal static class AppText
         return count == 0 ? None : count.ToString(CultureInfo.InvariantCulture);
     }
 
-    public static string Sources(int count)
-    {
-        return count == 0
-            ? None
-            : count.ToString(CultureInfo.InvariantCulture);
-    }
-
     public static string Error(string message)
     {
         return $"Error: {message}";
@@ -84,11 +69,6 @@ internal static class AppText
         return $"{label} error: {message}";
     }
 
-    public static string ShortId(Guid id)
-    {
-        return id.ToString("N")[..8];
-    }
-
     public static string Output(MouseOutput output)
     {
         return output switch
@@ -96,17 +76,6 @@ internal static class AppText
             SteamInputBridge.Forwarding.Mouse.MouseOutput.None => None,
             SteamInputBridge.Forwarding.Mouse.MouseOutput.Viiper => "VIIPER",
             SteamInputBridge.Forwarding.Mouse.MouseOutput.Teensy => "Teensy",
-            _ => output.ToString(),
-        };
-    }
-
-    public static string Output(ControllerOutput output)
-    {
-        return output switch
-        {
-            ControllerOutput.None => None,
-            ControllerOutput.Xbox360 => "Xbox 360",
-            ControllerOutput.Ds4 => "DualShock 4",
             _ => output.ToString(),
         };
     }
@@ -125,7 +94,7 @@ internal static class AppText
         return !string.IsNullOrWhiteSpace(status.LastError)
             ? "Retrying"
             : status.Running
-            ? Sources(status.SourceCount)
+            ? Count(status.SourceCount)
             : Running(false);
     }
 
@@ -152,78 +121,4 @@ internal static class AppText
         return string.Join(", ", values);
     }
 
-    public static string ControllerSlotName(ControllerId controllerId)
-    {
-        return string.IsNullOrWhiteSpace(controllerId.DisplayName)
-            ? ControllerRouteId(controllerId.Value)
-            : controllerId.DisplayName;
-    }
-
-    public static string ControllerSlotOutput(ControllerSlotStatus slot)
-    {
-        return slot.Output == ControllerOutput.None
-            ? None
-            : slot.OutputConnected
-            ? $"{Output(slot.Output)} {Connected(true)}"
-            : $"{Output(slot.Output)} {Connected(false)}";
-    }
-
-    public static string ControllerRouteId(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return None;
-        }
-
-        const string PathPrefix = "path:";
-        string route = value.StartsWith(PathPrefix, StringComparison.OrdinalIgnoreCase)
-            ? value[PathPrefix.Length..]
-            : value;
-
-        string? vendor = FindHexPart(route, "VID_");
-        string? product = FindHexPart(route, "PID_");
-        if (vendor is not null && product is not null)
-        {
-            return FindInstancePart(route) is { } instance
-                ? $"{vendor}:{product} {instance}"
-                : $"{vendor}:{product}";
-        }
-
-        int slash = route.LastIndexOf('\\');
-        string shortened = slash >= 0 && slash + 1 < route.Length
-            ? route[(slash + 1)..]
-            : route;
-
-        return shortened.Length <= 48 ? shortened : $"{shortened[..45]}...";
-    }
-
-    public static string Features(ControllerFeatures? features)
-    {
-        return features.HasValue ? Features(features.Value) : None;
-    }
-
-    public static string Features(ControllerFeatures features)
-    {
-        return features == ControllerFeatures.None ? None : features.ToString();
-    }
-
-    private static string? FindHexPart(string value, string prefix)
-    {
-        int index = value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
-        return index < 0 || index + prefix.Length + 4 > value.Length
-            ? null
-            : value.Substring(index + prefix.Length, 4).ToUpperInvariant();
-    }
-
-    private static string? FindInstancePart(string value)
-    {
-        string[] parts = value.Split('#', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 3)
-        {
-            return null;
-        }
-
-        string instance = parts[^2];
-        return instance.Length <= 20 ? instance : $"{instance[..17]}...";
-    }
 }

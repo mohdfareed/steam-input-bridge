@@ -47,9 +47,9 @@ internal sealed class ControllerPipeSessions(
     public IReadOnlyList<ControllerPipeStatus> GetStatus()
     {
         List<ControllerPipeStatus> status = [];
-        foreach (KeyValuePair<Guid, ClientControllerPipe> pipe in _pipes)
+        foreach (ClientControllerPipe pipe in _pipes.Values)
         {
-            status.Add(pipe.Value.GetStatus(pipe.Key));
+            status.Add(pipe.GetStatus());
         }
 
         return status;

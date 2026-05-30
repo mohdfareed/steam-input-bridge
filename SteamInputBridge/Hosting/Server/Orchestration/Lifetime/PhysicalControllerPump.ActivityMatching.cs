@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Inputs.Sdl;
 
@@ -10,36 +8,10 @@ namespace SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
 internal sealed partial class PhysicalControllerPump
 {
     private static readonly TimeSpan PassiveMatchWindow = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan VirtualEchoProbeDuration = TimeSpan.FromMilliseconds(120);
-    private static readonly TimeSpan VirtualEchoProbeResponseWindow = TimeSpan.FromMilliseconds(350);
-    // Existing VIIPER outputs can show up as Steam-visible SDL streams for a
-    // second client. Probe only already-connected outputs, then keep unresolved
-    // streams as candidates until physical/client activity proves a match.
-    private static readonly ControllerState VirtualEchoProbeState = new(
-        new ControllerStandardState(
-            ControllerButtons.DPadUp |
-            ControllerButtons.DPadDown |
-            ControllerButtons.DPadLeft |
-            ControllerButtons.DPadRight,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0),
-        null,
-        null);
-    private static readonly long VirtualEchoProbeSignature = GetActivitySignature(VirtualEchoProbeState);
 
-    private readonly Dictionary<ControllerMatchKey, PendingMatch> _pendingMatches = [];
-    private readonly Dictionary<ControllerMatchKey, MatchedController> _matches = [];
-    private readonly Dictionary<ControllerMatchKey, ControllerMatchIdentity> _virtualEchoes = [];
-    private readonly Dictionary<ControllerMatchKey, ControllerMatchIdentity> _virtualEchoProbeAttempts = [];
-    private readonly Dictionary<ControllerMatchKey, ActivityTracker> _clientActivity = [];
+    private readonly Dictionary<ControllerMatchKey, ClientMatchState> _clientStates = [];
     private readonly Dictionary<string, ActivityTracker> _physicalActivity =
         new(StringComparer.OrdinalIgnoreCase);
-    private VirtualEchoProbe? _virtualEchoProbe;
-    private Task? _virtualEchoProbeTask;
 
     private bool TryResolveActivityMatch(
         Guid clientId,
@@ -50,18 +22,20 @@ internal sealed partial class PhysicalControllerPump
         lock (_gate)
         {
             EnsurePendingMatchNoLock(key, controller);
-            _ = ApplyAutomaticMatchesNoLock();
+            ApplyAutomaticMatchesNoLock();
 
-            if (!_matches.TryGetValue(key, out MatchedController match))
+            ClientMatchState state = GetClientStateNoLock(key);
+            if (!state.Match.HasValue)
             {
                 resolved = null!;
                 return false;
             }
 
+            MatchedController match = state.Match.Value;
             if (!IsSameIdentity(match.Identity, CreateMatchIdentity(controller)) ||
                 FindPhysicalControllerByIdNoLock(match.PhysicalControllerId) is not { } physical)
             {
-                _ = _matches.Remove(key);
+                state.Match = null;
                 resolved = null!;
                 return false;
             }
@@ -71,36 +45,22 @@ internal sealed partial class PhysicalControllerPump
         }
     }
 
-    private bool CanUseClientOnlyOutput(Guid clientId, ClientControllerInfo controller)
+    private bool CanUseClientOnlyOutput(ClientControllerInfo controller)
     {
-        ControllerMatchKey key = new(clientId, controller.ControllerIndex);
         lock (_gate)
         {
             return SdlControllerRoutePolicy.CanOwnOutputWithoutPhysical(controller) &&
-                !IsKnownVirtualEchoNoLock(key, controller) &&
                 !HasPossiblePhysicalCounterpartNoLock(controller);
         }
     }
 
     private void TrackPendingMatch(Guid clientId, ClientControllerInfo controller)
     {
-        bool scheduleEchoProbe;
         lock (_gate)
         {
             ControllerMatchKey key = new(clientId, controller.ControllerIndex);
-            if (IsKnownVirtualEchoNoLock(key, controller))
-            {
-                return;
-            }
-
             EnsurePendingMatchNoLock(key, controller);
-            _ = ApplyAutomaticMatchesNoLock();
-            scheduleEchoProbe = !HasCurrentEchoProbeAttemptNoLock(key, controller);
-        }
-
-        if (scheduleEchoProbe)
-        {
-            ScheduleVirtualEchoProbe();
+            ApplyAutomaticMatchesNoLock();
         }
     }
 
@@ -111,17 +71,8 @@ internal sealed partial class PhysicalControllerPump
         bool matched;
         lock (_gate)
         {
-            ActivityTracker tracker = GetClientActivityNoLock(key);
+            ActivityTracker tracker = GetClientStateNoLock(key).Activity;
             _ = tracker.Update(state, now);
-
-            if (_virtualEchoProbe is { } echoProbe &&
-                _pendingMatches.ContainsKey(key) &&
-                echoProbe.Baselines.TryGetValue(key, out long echoBaseline) &&
-                tracker.CurrentSignature == VirtualEchoProbeSignature &&
-                tracker.CurrentSignature != echoBaseline)
-            {
-                _ = echoProbe.Responses.Add(key);
-            }
 
             matched = TryApplyPassiveActivityMatchNoLock(now);
         }
@@ -158,19 +109,11 @@ internal sealed partial class PhysicalControllerPump
     private void RemoveClientMatches(Guid clientId)
     {
         HashSet<ControllerMatchKey> remove = [];
-        AddClientKeys(remove, _pendingMatches.Keys, clientId);
-        AddClientKeys(remove, _matches.Keys, clientId);
-        AddClientKeys(remove, _virtualEchoes.Keys, clientId);
-        AddClientKeys(remove, _virtualEchoProbeAttempts.Keys, clientId);
-        AddClientKeys(remove, _clientActivity.Keys, clientId);
+        AddClientKeys(remove, _clientStates.Keys, clientId);
 
         foreach (ControllerMatchKey key in remove)
         {
-            _ = _pendingMatches.Remove(key);
-            _ = _matches.Remove(key);
-            _ = _virtualEchoes.Remove(key);
-            _ = _virtualEchoProbeAttempts.Remove(key);
-            _ = _clientActivity.Remove(key);
+            _ = _clientStates.Remove(key);
         }
     }
 
@@ -186,25 +129,20 @@ internal sealed partial class PhysicalControllerPump
         }
 
         HashSet<ControllerMatchKey> remove = [];
-        AddStaleKeys(remove, _pendingMatches, clientId, current, routes);
-        AddStaleKeys(remove, _matches, clientId, current, routes);
-        AddStaleKeys(remove, _virtualEchoes, clientId, current, routes);
-        AddStaleKeys(remove, _virtualEchoProbeAttempts, clientId, current, routes);
-        foreach (ControllerMatchKey key in _clientActivity.Keys)
+        foreach (KeyValuePair<ControllerMatchKey, ClientMatchState> entry in _clientStates)
         {
-            if (key.ClientId == clientId && !current.Contains(key))
+            if (entry.Key.ClientId == clientId &&
+                (!current.Contains(entry.Key) ||
+                !routes.TryGetValue(entry.Key, out ControllerMatchIdentity identity) ||
+                !entry.Value.Matches(identity)))
             {
-                _ = remove.Add(key);
+                _ = remove.Add(entry.Key);
             }
         }
 
         foreach (ControllerMatchKey key in remove)
         {
-            _ = _pendingMatches.Remove(key);
-            _ = _matches.Remove(key);
-            _ = _virtualEchoes.Remove(key);
-            _ = _virtualEchoProbeAttempts.Remove(key);
-            _ = _clientActivity.Remove(key);
+            _ = _clientStates.Remove(key);
         }
     }
 
@@ -217,19 +155,21 @@ internal sealed partial class PhysicalControllerPump
             EnsurePendingMatchNoLock(new ControllerMatchKey(clientId, controller.ControllerIndex), controller);
         }
 
-        _ = ApplyAutomaticMatchesNoLock();
+        ApplyAutomaticMatchesNoLock();
     }
 
     private void EnsurePendingMatchNoLock(ControllerMatchKey key, ClientControllerInfo controller)
     {
+        ClientMatchState state = GetClientStateNoLock(key);
+        ControllerMatchIdentity identity = CreateMatchIdentity(controller);
+        state.Identity = identity;
         if (!IsMatchCandidate(controller) ||
-            IsKnownVirtualEchoNoLock(key, controller) ||
-            _matches.ContainsKey(key))
+            state.Match.HasValue)
         {
             return;
         }
 
-        _pendingMatches[key] = new PendingMatch(CreateMatchIdentity(controller));
+        state.Pending = new PendingMatch(identity);
     }
 
     private bool TryApplyPassiveActivityMatchNoLock(DateTimeOffset now)
@@ -239,10 +179,11 @@ internal sealed partial class PhysicalControllerPump
             return false;
         }
 
-        PendingMatch pending = _pendingMatches[match.Key];
-        _matches[match.Key] = new MatchedController(pending.Identity, match.PhysicalControllerId);
-        _ = _pendingMatches.Remove(match.Key);
-        _ = ApplyAutomaticMatchesNoLock();
+        ClientMatchState state = GetClientStateNoLock(match.Key);
+        PendingMatch pending = state.Pending!.Value;
+        state.Match = new MatchedController(pending.Identity, match.PhysicalControllerId);
+        state.Pending = null;
+        ApplyAutomaticMatchesNoLock();
         HostingLog.PassiveControllerMatched(
             logger,
             match.Key.ClientId,
@@ -251,17 +192,14 @@ internal sealed partial class PhysicalControllerPump
         return true;
     }
 
-    private List<AutomaticMatch> ApplyAutomaticMatchesNoLock()
+    private void ApplyAutomaticMatchesNoLock()
     {
-        List<AutomaticMatch> matches = [];
         while (TryFindAutomaticMatchNoLock(out AutomaticMatch match))
         {
-            _matches[match.Key] = new MatchedController(match.Identity, match.PhysicalControllerId);
-            _ = _pendingMatches.Remove(match.Key);
-            matches.Add(match);
+            ClientMatchState state = GetClientStateNoLock(match.Key);
+            state.Match = new MatchedController(match.Identity, match.PhysicalControllerId);
+            state.Pending = null;
         }
-
-        return matches;
     }
 
     private bool TryFindAutomaticMatchNoLock(out AutomaticMatch match)
@@ -270,34 +208,40 @@ internal sealed partial class PhysicalControllerPump
         Dictionary<ControllerMatchKey, List<PhysicalCandidate>> streamCandidates = [];
         Dictionary<PhysicalClientCandidate, List<ControllerMatchKey>> physicalCandidates = [];
 
-        foreach (KeyValuePair<ControllerMatchKey, PendingMatch> pending in _pendingMatches)
+        foreach (KeyValuePair<ControllerMatchKey, ClientMatchState> entry in _clientStates)
         {
+            if (!entry.Value.Pending.HasValue)
+            {
+                continue;
+            }
+
+            PendingMatch pending = entry.Value.Pending.Value;
             matchedPhysicalIds.Clear();
-            matchedPhysicalIds.UnionWith(GetMatchedPhysicalIdsNoLock(pending.Key.ClientId));
+            matchedPhysicalIds.UnionWith(GetMatchedPhysicalIdsNoLock(entry.Key.ClientId));
             List<PhysicalCandidate> candidates = [];
             foreach (SdlGamepadSource source in _sources.Values)
             {
                 string physicalId = SdlControllerRoutePolicy.GetPhysicalControllerId(source.Controller);
                 if (matchedPhysicalIds.Contains(physicalId) ||
-                    !CanMatchPendingToPhysicalNoLock(pending.Value, source.Controller))
+                    !CanMatchPendingToPhysicalNoLock(pending, source.Controller))
                 {
                     continue;
                 }
 
                 candidates.Add(new PhysicalCandidate(physicalId));
-                PhysicalClientCandidate candidateKey = new(pending.Key.ClientId, physicalId);
+                PhysicalClientCandidate candidateKey = new(entry.Key.ClientId, physicalId);
                 if (!physicalCandidates.TryGetValue(candidateKey, out List<ControllerMatchKey>? keys))
                 {
                     keys = [];
                     physicalCandidates[candidateKey] = keys;
                 }
 
-                keys.Add(pending.Key);
+                keys.Add(entry.Key);
             }
 
             if (candidates.Count != 0)
             {
-                streamCandidates[pending.Key] = candidates;
+                streamCandidates[entry.Key] = candidates;
             }
         }
 
@@ -316,7 +260,7 @@ internal sealed partial class PhysicalControllerPump
                 continue;
             }
 
-            PendingMatch pending = _pendingMatches[entry.Key];
+            PendingMatch pending = _clientStates[entry.Key].Pending!.Value;
             match = new AutomaticMatch(entry.Key, pending.Identity, physical.Id);
             return true;
         }
@@ -332,29 +276,31 @@ internal sealed partial class PhysicalControllerPump
         List<PassiveActivityMatch> candidates = [];
         HashSet<string> matchedPhysicalIds = [];
 
-        foreach (KeyValuePair<ControllerMatchKey, PendingMatch> pending in _pendingMatches)
+        foreach (KeyValuePair<ControllerMatchKey, ClientMatchState> entry in _clientStates)
         {
-            if (!_clientActivity.TryGetValue(pending.Key, out ActivityTracker? clientActivity) ||
-                !clientActivity.HasRecentActivity(now, PassiveMatchWindow))
+            if (!entry.Value.Pending.HasValue ||
+                !entry.Value.Activity.HasRecentActivity(now, PassiveMatchWindow))
             {
                 continue;
             }
 
+            PendingMatch pending = entry.Value.Pending.Value;
+            ActivityTracker clientActivity = entry.Value.Activity;
             matchedPhysicalIds.Clear();
-            matchedPhysicalIds.UnionWith(GetMatchedPhysicalIdsNoLock(pending.Key.ClientId));
+            matchedPhysicalIds.UnionWith(GetMatchedPhysicalIdsNoLock(entry.Key.ClientId));
             foreach (SdlGamepadSource source in _sources.Values)
             {
                 string physicalId = SdlControllerRoutePolicy.GetPhysicalControllerId(source.Controller);
                 if (matchedPhysicalIds.Contains(physicalId) ||
                     !_physicalActivity.TryGetValue(physicalId, out ActivityTracker? physicalActivity) ||
                     !physicalActivity.HasRecentActivity(now, PassiveMatchWindow) ||
-                    !CanMatchPendingToPhysicalNoLock(pending.Value, source.Controller) ||
+                    !CanMatchPendingToPhysicalNoLock(pending, source.Controller) ||
                     !ActivityTimesMatch(clientActivity, physicalActivity))
                 {
                     continue;
                 }
 
-                candidates.Add(new PassiveActivityMatch(pending.Key, physicalId));
+                candidates.Add(new PassiveActivityMatch(entry.Key, physicalId));
             }
         }
 
@@ -366,139 +312,6 @@ internal sealed partial class PhysicalControllerPump
 
         match = default;
         return false;
-    }
-
-    private void ScheduleVirtualEchoProbe()
-    {
-        CancellationToken token;
-        lock (_gate)
-        {
-            if (_pendingMatches.Count == 0 ||
-                _virtualEchoProbeTask is { IsCompleted: false } ||
-                _stop is null)
-            {
-                return;
-            }
-
-            token = _stop.Token;
-            _virtualEchoProbeTask = Task.Run(() => RunVirtualEchoProbeAsync(token), CancellationToken.None);
-        }
-    }
-
-    private async Task RunVirtualEchoProbeAsync(CancellationToken cancellationToken)
-    {
-        if (!BeginVirtualEchoProbe())
-        {
-            return;
-        }
-
-        int outputCount = 0;
-        try
-        {
-            outputCount = broker.SendOutputProbe(VirtualEchoProbeState);
-            if (outputCount != 0)
-            {
-                await Task.Delay(VirtualEchoProbeDuration, cancellationToken).ConfigureAwait(false);
-                ControllerState empty = ControllerState.Empty;
-                _ = broker.SendOutputProbe(empty);
-                await Task.Delay(VirtualEchoProbeResponseWindow, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-        finally
-        {
-            if (outputCount != 0)
-            {
-                ControllerState empty = ControllerState.Empty;
-                _ = broker.SendOutputProbe(empty);
-            }
-        }
-
-        List<VirtualEchoMatch> ignored = CompleteVirtualEchoProbe(outputCount);
-        foreach (VirtualEchoMatch ignoredMatch in ignored)
-        {
-            HostingLog.VirtualEchoControllerIgnored(
-                logger,
-                ignoredMatch.ClientId,
-                ignoredMatch.ControllerIndex,
-                ignoredMatch.Label,
-                ignoredMatch.RouteId);
-        }
-
-        if (ignored.Count != 0)
-        {
-            ControllersChanged?.Invoke();
-        }
-    }
-
-    private bool BeginVirtualEchoProbe()
-    {
-        lock (_gate)
-        {
-            Dictionary<ControllerMatchKey, long> baselines = [];
-            foreach (KeyValuePair<ControllerMatchKey, PendingMatch> entry in _pendingMatches)
-            {
-                if (HasCurrentEchoProbeAttemptNoLock(entry.Key, entry.Value.Identity))
-                {
-                    continue;
-                }
-
-                ActivityTracker tracker = GetClientActivityNoLock(entry.Key);
-                baselines[entry.Key] = tracker.CurrentSignature;
-            }
-
-            if (baselines.Count == 0)
-            {
-                return false;
-            }
-
-            _virtualEchoProbe = new VirtualEchoProbe(baselines);
-            return true;
-        }
-    }
-
-    private List<VirtualEchoMatch> CompleteVirtualEchoProbe(int outputCount)
-    {
-        lock (_gate)
-        {
-            if (_virtualEchoProbe is not { } probe)
-            {
-                return [];
-            }
-
-            _virtualEchoProbe = null;
-            List<VirtualEchoMatch> ignored = [];
-            foreach (ControllerMatchKey key in probe.Baselines.Keys)
-            {
-                if (!_pendingMatches.TryGetValue(key, out PendingMatch pending))
-                {
-                    continue;
-                }
-
-                if (outputCount != 0)
-                {
-                    _virtualEchoProbeAttempts[key] = pending.Identity;
-                }
-
-                if (!probe.Responses.Contains(key))
-                {
-                    continue;
-                }
-
-                _virtualEchoes[key] = pending.Identity;
-                _ = _pendingMatches.Remove(key);
-                ignored.Add(new VirtualEchoMatch(
-                    key.ClientId,
-                    key.ControllerIndex,
-                    pending.Label,
-                    pending.SteamRouteId));
-            }
-
-            return ignored;
-        }
     }
 
     private SdlControllerInfo? FindPhysicalControllerByIdNoLock(string physicalControllerId)
@@ -534,52 +347,31 @@ internal sealed partial class PhysicalControllerPump
         return false;
     }
 
-    private bool IsKnownVirtualEchoNoLock(ControllerMatchKey key, ClientControllerInfo controller)
-    {
-        return IsKnownVirtualEchoNoLock(key, CreateMatchIdentity(controller));
-    }
-
-    private bool IsKnownVirtualEchoNoLock(ControllerMatchKey key, ControllerMatchIdentity identity)
-    {
-        return _virtualEchoes.TryGetValue(key, out ControllerMatchIdentity known) &&
-            IsSameIdentity(known, identity);
-    }
-
-    private bool HasCurrentEchoProbeAttemptNoLock(ControllerMatchKey key, ClientControllerInfo controller)
-    {
-        return HasCurrentEchoProbeAttemptNoLock(key, CreateMatchIdentity(controller));
-    }
-
-    private bool HasCurrentEchoProbeAttemptNoLock(ControllerMatchKey key, ControllerMatchIdentity identity)
-    {
-        return _virtualEchoProbeAttempts.TryGetValue(key, out ControllerMatchIdentity attempted) &&
-            IsSameIdentity(attempted, identity);
-    }
-
     private HashSet<string> GetMatchedPhysicalIdsNoLock(Guid clientId)
     {
         HashSet<string> physicalIds = new(StringComparer.OrdinalIgnoreCase);
-        foreach (KeyValuePair<ControllerMatchKey, MatchedController> match in _matches)
+        foreach (KeyValuePair<ControllerMatchKey, ClientMatchState> entry in _clientStates)
         {
-            if (match.Key.ClientId == clientId &&
-                FindPhysicalControllerByIdNoLock(match.Value.PhysicalControllerId) is not null)
+            if (entry.Key.ClientId == clientId &&
+                entry.Value.Match.HasValue &&
+                FindPhysicalControllerByIdNoLock(entry.Value.Match.Value.PhysicalControllerId) is not null)
             {
-                _ = physicalIds.Add(match.Value.PhysicalControllerId);
+                _ = physicalIds.Add(entry.Value.Match.Value.PhysicalControllerId);
             }
         }
 
         return physicalIds;
     }
 
-    private ActivityTracker GetClientActivityNoLock(ControllerMatchKey key)
+    private ClientMatchState GetClientStateNoLock(ControllerMatchKey key)
     {
-        if (!_clientActivity.TryGetValue(key, out ActivityTracker? tracker))
+        if (!_clientStates.TryGetValue(key, out ClientMatchState? state))
         {
-            tracker = new ActivityTracker();
-            _clientActivity[key] = tracker;
+            state = new ClientMatchState();
+            _clientStates[key] = state;
         }
 
-        return tracker;
+        return state;
     }
 
     private ActivityTracker GetPhysicalActivityNoLock(string physicalId)
@@ -632,45 +424,6 @@ internal sealed partial class PhysicalControllerPump
             if (key.ClientId == clientId)
             {
                 _ = target.Add(key);
-            }
-        }
-    }
-
-    private static void AddStaleKeys<TValue>(
-        HashSet<ControllerMatchKey> remove,
-        Dictionary<ControllerMatchKey, TValue> values,
-        Guid clientId,
-        HashSet<ControllerMatchKey> current,
-        Dictionary<ControllerMatchKey, ControllerMatchIdentity> routes)
-        where TValue : IControllerMatchEntry
-    {
-        foreach (KeyValuePair<ControllerMatchKey, TValue> entry in values)
-        {
-            if (entry.Key.ClientId == clientId &&
-                (!current.Contains(entry.Key) ||
-                !routes.TryGetValue(entry.Key, out ControllerMatchIdentity identity) ||
-                !IsSameIdentity(identity, entry.Value.Identity)))
-            {
-                _ = remove.Add(entry.Key);
-            }
-        }
-    }
-
-    private static void AddStaleKeys(
-        HashSet<ControllerMatchKey> remove,
-        Dictionary<ControllerMatchKey, ControllerMatchIdentity> values,
-        Guid clientId,
-        HashSet<ControllerMatchKey> current,
-        Dictionary<ControllerMatchKey, ControllerMatchIdentity> routes)
-    {
-        foreach (KeyValuePair<ControllerMatchKey, ControllerMatchIdentity> entry in values)
-        {
-            if (entry.Key.ClientId == clientId &&
-                (!current.Contains(entry.Key) ||
-                !routes.TryGetValue(entry.Key, out ControllerMatchIdentity identity) ||
-                !IsSameIdentity(identity, entry.Value)))
-            {
-                _ = remove.Add(entry.Key);
             }
         }
     }
@@ -736,11 +489,6 @@ internal sealed partial class PhysicalControllerPump
         return value > threshold ? 1L << offset : 0;
     }
 
-    private interface IControllerMatchEntry
-    {
-        ControllerMatchIdentity Identity { get; }
-    }
-
     private readonly record struct ControllerMatchKey(Guid ClientId, ushort ControllerIndex);
 
     private readonly record struct ControllerMatchIdentity(
@@ -749,7 +497,7 @@ internal sealed partial class PhysicalControllerPump
         ushort VendorId,
         ushort ProductId);
 
-    private readonly record struct PendingMatch(ControllerMatchIdentity Identity) : IControllerMatchEntry
+    private readonly record struct PendingMatch(ControllerMatchIdentity Identity)
     {
         public string SteamRouteId => Identity.SteamRouteId;
 
@@ -762,7 +510,7 @@ internal sealed partial class PhysicalControllerPump
 
     private readonly record struct MatchedController(
         ControllerMatchIdentity Identity,
-        string PhysicalControllerId) : IControllerMatchEntry;
+        string PhysicalControllerId);
 
     private readonly record struct AutomaticMatch(
         ControllerMatchKey Key,
@@ -775,17 +523,27 @@ internal sealed partial class PhysicalControllerPump
 
     private readonly record struct PhysicalClientCandidate(Guid ClientId, string PhysicalId);
 
-    private readonly record struct VirtualEchoMatch(
-        Guid ClientId,
-        ushort ControllerIndex,
-        string Label,
-        string RouteId);
-
-    private sealed class VirtualEchoProbe(Dictionary<ControllerMatchKey, long> baselines)
+    private sealed class ClientMatchState
     {
-        public Dictionary<ControllerMatchKey, long> Baselines { get; } = baselines;
+        public ControllerMatchIdentity? Identity { get; set; }
 
-        public HashSet<ControllerMatchKey> Responses { get; } = [];
+        public PendingMatch? Pending { get; set; }
+
+        public MatchedController? Match { get; set; }
+
+        public ActivityTracker Activity { get; } = new();
+
+        public bool Matches(ControllerMatchIdentity identity)
+        {
+            return Matches(Identity, identity) &&
+                Matches(Pending?.Identity, identity) &&
+                Matches(Match?.Identity, identity);
+        }
+
+        private static bool Matches(ControllerMatchIdentity? current, ControllerMatchIdentity identity)
+        {
+            return !current.HasValue || IsSameIdentity(current.Value, identity);
+        }
     }
 
     private sealed class ActivityTracker

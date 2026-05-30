@@ -66,7 +66,7 @@ public static class SdlControllerCatalog
     {
         return WithSdlErrors(() =>
         {
-            using SdlGamepadRuntime.Lease _ = SdlGamepadRuntime.Acquire();
+            SdlGamepadRuntime.EnsureInitialized();
             uint[] gamepadIds = SDL.GetGamepads(out int count) ?? [];
             return Filter(CreateControllerInfos(gamepadIds, count), shouldInclude);
         });
@@ -80,7 +80,7 @@ public static class SdlControllerCatalog
 
         return WithSdlErrors<IReadOnlyList<SdlGamepadSource>>(() =>
         {
-            using SdlGamepadRuntime.Lease lease = SdlGamepadRuntime.Acquire();
+            SdlGamepadRuntime.EnsureInitialized();
             uint[] gamepadIds = SDL.GetGamepads(out int count) ?? [];
             IReadOnlyList<SdlControllerInfo> controllers = CreateControllerInfos(gamepadIds, count);
             List<SdlGamepadSource> sources = [];

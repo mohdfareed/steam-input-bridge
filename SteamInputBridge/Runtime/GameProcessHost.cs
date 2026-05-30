@@ -42,18 +42,19 @@ public static class GameProcessHost
         Dictionary<int, ObservedGameProcess> processes = [];
         foreach (string processName in processNames)
         {
-            if (string.IsNullOrWhiteSpace(processName))
+            string normalizedName = Path.GetFileName(processName.Trim());
+            if (string.IsNullOrWhiteSpace(normalizedName))
             {
                 continue;
             }
 
-            foreach (Process process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(processName)))
+            foreach (Process process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(normalizedName)))
             {
                 try
                 {
                     processes[process.Id] = new ObservedGameProcess(
                         process.Id,
-                        Path.GetFileName(processName.Trim()));
+                        normalizedName);
                 }
                 catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
                 {
@@ -66,24 +67,6 @@ public static class GameProcessHost
         }
 
         return [.. processes.Values];
-    }
-
-    /// <summary>Gets a process executable path when the platform exposes it.</summary>
-    public static string? GetExecutablePath(int processId)
-    {
-        try
-        {
-            using Process process = Process.GetProcessById(processId);
-            return process.MainModule?.FileName;
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or
-                InvalidOperationException or
-                NotSupportedException or
-                System.ComponentModel.Win32Exception)
-        {
-            return null;
-        }
     }
 
     private sealed class NoopDisposable : IDisposable

@@ -50,7 +50,7 @@ internal sealed class ClientControllerSourceRegistrar(
         IReadOnlyList<SdlGamepadSource> openedSources = SdlControllerCatalog.OpenControllers(controllers =>
         {
             visibleControllers = ClientControllerRoutePlanner.FilterForwardable(controllers);
-            physicalControllers = ClientControllerRoutePlanner.GetPhysicalControllers(visibleControllers);
+            physicalControllers = SdlControllerRoutePolicy.GetPhysicalControllers(visibleControllers);
             selectedControllers = ClientControllerRoutePlanner.SelectClientControllers(visibleControllers);
             DisposeStaleSources(sources.RemoveStale(selectedControllers));
             List<SdlControllerInfo> missingControllers = [];
@@ -82,7 +82,14 @@ internal sealed class ClientControllerSourceRegistrar(
         {
             foreach (SdlGamepadSource source in openedSources)
             {
-                await source.DisposeAsync().ConfigureAwait(false);
+                if (sources.Remove(source, out ClientControllerRouteSource removed))
+                {
+                    await removed.Source.DisposeAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    await source.DisposeAsync().ConfigureAwait(false);
+                }
             }
 
             throw;
@@ -141,7 +148,7 @@ internal sealed class ClientControllerSourceRegistrar(
         IReadOnlyList<ClientControllerRouteSource> routeSources = sources.GetSourcesSnapshot();
         ClientControllerRoutePlan plan = ClientControllerRoutePlanner.CreatePlan(
             routeSources,
-            ClientControllerRoutePlanner.GetPhysicalControllers(
+            SdlControllerRoutePolicy.GetPhysicalControllers(
                 ClientControllerRoutePlanner.FilterForwardable(SdlControllerCatalog.GetControllers())));
         LogRoutesIfChanged(client.ClientId, profileId, routeSources, plan);
         RegisterControllersIfChangedAsync(client, plan.Controllers, cancellationToken).GetAwaiter().GetResult();

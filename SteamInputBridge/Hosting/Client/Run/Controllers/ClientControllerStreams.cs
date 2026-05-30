@@ -9,7 +9,15 @@ using SteamInputBridge.Inputs.Sdl;
 
 namespace SteamInputBridge.Hosting.Client.Run.Controllers;
 
-internal sealed class ClientControllerStreams : IAsyncDisposable
+internal interface IClientControllerStreams : IAsyncDisposable
+{
+    Task StartAsync(
+        ClientService client,
+        ClientRunLaunch launch,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class ClientControllerStreams : IClientControllerStreams
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(2);

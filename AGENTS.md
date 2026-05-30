@@ -9,11 +9,11 @@ This file is the maintainer operating contract: how to work, communicate, and
 avoid repeating past mistakes. It is not the place for route facts or bug notes.
 
 - Technical quirks and external behavior live in `NOTES.md`.
+- User-visible behavior contracts live in `BEHAVIOR.md`.
 - File responsibilities live in `CODEMAP.md`.
 - Data/state flow, loops, side effects, and cleanup targets live in
   `FLOWMAP.md`.
-- Unconfirmed conventions live in `AGENTS_REVIEW.md` and are not binding until
-  confirmed.
+- Test ownership and behavior coverage live in `TEST_AUDIT.md`.
 
 ## Communication
 
@@ -39,8 +39,8 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 
 - Do not make architecture-scale calls implicitly.
 - Confirm before changing which process owns an input source, output device,
-  route lifecycle, HidHide policy, Steam visibility, controller identity, IPC
-  path, hardware access, or process ownership.
+  route lifecycle, Steam visibility, controller identity, IPC path, hardware
+  access, or process ownership.
 - ***The app must remain anti-cheat compliant and usable in competitive games.***
   Do not propose or implement process injection, API hooking, game memory
   access, anti-cheat bypasses, or anything that could look like tampering with
@@ -56,12 +56,18 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 
 ## Working Method
 
+- Before runtime edits, read `BEHAVIOR.md` and name the behavior rule touched.
+  If no rule covers the change, update `BEHAVIOR.md` first or ask whether the
+  behavior is intended.
+- Runtime edit preflight must state the behavior rule, files read fully,
+  ownership boundary affected or not, expected deletion/simplification, and
+  tests that protect the behavior.
 - Before changing runtime code, understand the current path in words: input,
   output, owner, lifecycle, state transitions, side effects, cleanup, and tests.
 - Before proposing or applying a bug fix, read the owner files from current
   code. Lifecycle claims require lifecycle files; routing claims require
-  routing files; HidHide claims require HidHide files; VIIPER claims require
-  VIIPER files; hot-path claims require the report-processing path.
+  routing files; VIIPER claims require VIIPER files; hot-path claims require
+  the report-processing path.
 - For live route bugs, inspect the latest deployed settings and logs before
   editing. Name the failing owner/layer from evidence before changing code.
 - Do not claim a live bug is fixed unless the changed code was built, tested,
@@ -70,14 +76,21 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
   boundary before editing. Do not guess which layer owns the fix.
 - Read the full file before editing it. In fragile areas, also read direct
   callers and callees.
-- Fragile areas include controller routing, SDL, HidHide, VIIPER, client
+- Fragile areas include controller routing, SDL, VIIPER, client
   reconnect, process lifetime, settings/runtime boundaries, foreground
   activation, status/diagnostics, and polling loops.
 - Prefer deleting or simplifying existing layers over adding new abstractions.
 - Default to direct pass-through over abstraction layers unless the abstraction
   removes real complexity or matches an existing local pattern.
+- Use dependency-backed Windows plumbing by default: Vanara for Win32/CoreAudio
+  and NHotkey for global hotkey registration.
+  Keep manual interop only for hot paths or behavior the library does not cover
+  cleanly.
 - Do not add broad infrastructure to make a feature possible unless that design
   has been agreed.
+- Cleanup/refactor changes should reduce production complexity. If production
+  LOC grows, or a new loop/state owner/registry is added, get explicit approval
+  unless the user already approved that exact tradeoff.
 - If a new loop, timer, registry, route owner, or global side effect is added
   after confirmation, document it in `FLOWMAP.md`.
 
@@ -90,19 +103,15 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 - Do not poll SDL controller identity/route snapshots on a timer. Refresh
   client controller routes from SDL add/remove/disconnect events, and send
   server route registration only when the controller set actually changes.
-- HidHide scopes are global driver state. Do not reapply or clear them from
-  unchanged route/status updates, and keep a resolved physical device hidden for
-  the owning client lifetime rather than shrinking the scope from transient SDL
-  scans.
-- HidHide app access includes this executable, HidHideCLI, `steam.exe`, and
-  `SteamService.exe`. Do not add `steamwebhelper.exe` unless testing proves the
-  Steam UI process is required for controller visibility.
+- Controller forwarding is Steam Controller focused. Ignore non-Steam
+  controller identities at the SDL/route boundary instead of adding generic
+  physical-controller support.
 - Inactive client controller frames must not update stored route state. They
   may arrive while another game is focused, but must be ignored before they can
   overwrite the next active output state.
 - Keep status and diagnostics reads side-effect free. Repair, reconciliation,
-  HidHide mutation, Steam Input mutation, route mutation, and device lifecycle
-  changes must happen through explicit lifecycle paths.
+  Steam Input mutation, route mutation, and device lifecycle changes must happen
+  through explicit lifecycle paths.
 - Backend diagnostic helpers may exist when they are long-term reusable code and
   are organized under a clear responsibility. One-off probes and app-facing
   diagnostics belong in the app or tests.
@@ -118,10 +127,17 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
   names, and one-off debugging code before finalizing.
 - Temporary diagnostics must be deleted before final; do not leave hot-path log
   probes, route probes, or status fields as cleanup debt.
+- Final responses for runtime fixes must state files deleted or simplified,
+  residue searched, tests run, and known remaining issues.
 - After a mistaken implementation, search the repository for leftover concept
   names and behavior. Removing the obvious call site is not enough.
 - When asked for a cleanup pass, do not narrow the work to the current diff
   unless the user explicitly scopes it that way.
+- Do not create cleanup/review ledger files as a substitute for cleanup. Handle
+  one agreed area at a time: read the whole area, list the concrete behaviors
+  its code supports, get decisions for questionable behavior, delete/edit the
+  code, remove stale docs/residue, then build and test. If an item cannot be
+  resolved now, ask instead of parking it in a review file.
 - Keep code navigable for a human using an IDE. Prefer a small number of
   coherent files over scattered tiny wrappers or large flat dumping grounds.
 
@@ -142,6 +158,11 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 ## Verification
 
 - Add or update tests for changed behavior.
+- Every normal test must map to a `BEHAVIOR.md` rule or a `NOTES.md` quirk.
+  Tests that only preserve implementation shape should be deleted, rewritten,
+  or moved out of the normal tier.
+- Keep `TEST_AUDIT.md` current when adding, deleting, demoting, or rewriting
+  tests.
 - Use targeted tests while developing. Run broader suites when the changed code
   crosses shared behavior or when asked.
 - Do not run a full test suite for docs-only or comment-only edits unless there
@@ -152,10 +173,10 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 - Keep tests in useful tiers:
   - Normal tests are deterministic and local/fake-output friendly.
   - Dependency tests are opt-in and require external drivers or services.
-  - Manual tests are opt-in and require hardware, Steam state, or user action.
-- Dependency and manual tests must assert meaningful behavior or report
-  inconclusive when prerequisites are missing. Do not keep ceremonial tests that
-  never help validate a real route.
+  - Manual tests are opt-in and require prepared user action or machine state.
+- Dependency/manual tests must assert meaningful behavior or report inconclusive
+  when prerequisites are missing. Do not keep ceremonial tests that never help
+  validate a real route.
 
 ## Style
 

@@ -60,11 +60,26 @@ internal readonly record struct KeyboardShortcutCombination(
     {
         return virtualKey is >= 0x70 and <= 0x87
             ? $"F{virtualKey - 0x70 + 1}"
+            : virtualKey is >= 0x60 and <= 0x69
+            ? $"Num{virtualKey - 0x60}"
             : virtualKey is >= 'A' and <= 'Z'
             ? ((char)virtualKey).ToString()
             : virtualKey is >= '0' and <= '9'
             ? ((char)virtualKey).ToString()
-            : $"0x{virtualKey:x2}";
+            : virtualKey switch
+            {
+                0x6A => "Num*",
+                0x6B => "Num+",
+                0x6D => "Num-",
+                0x6E => "Num.",
+                0x6F => "Num/",
+                0x0D => "Enter",
+                0x1B => "Esc",
+                0x20 => "Space",
+                0x09 => "Tab",
+                0x08 => "Backspace",
+                _ => $"0x{virtualKey:x2}",
+            };
     }
 }
 

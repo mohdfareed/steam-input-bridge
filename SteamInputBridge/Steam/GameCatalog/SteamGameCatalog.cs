@@ -92,7 +92,7 @@ internal sealed class SteamGameCatalog(string steamPath)
     private List<SteamGame> ReadNonSteamShortcuts(uint steamUserId)
     {
         string userId = steamUserId.ToString(CultureInfo.InvariantCulture);
-        string shortcutsPath = Path.Combine(steamPath, "userdata", userId, "config", "shortcuts.vdf");
+        string shortcutsPath = Path.Combine(_steamPath, "userdata", userId, "config", "shortcuts.vdf");
         if (!File.Exists(shortcutsPath))
         {
             return [];

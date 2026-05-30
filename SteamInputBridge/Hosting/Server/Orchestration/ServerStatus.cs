@@ -32,10 +32,6 @@ public sealed record ServerStatus(int ConnectedClientCount)
     public ServerInputStatus Inputs { get; init; } =
         new(new MouseInputPumpStatus(false, false, null));
 
-    /// <summary>HidHide scope currently applied by this server.</summary>
-    public ServerHidHideStatus HidHide { get; init; } =
-        new(false, false, false, [], [], [], null, null);
-
     /// <summary>Steam Input forcing status tracked by this server.</summary>
     public ServerSteamInputStatus SteamInput { get; init; } =
         new(false, null, null, null);
@@ -45,6 +41,9 @@ public sealed record ServerStatus(int ConnectedClientCount)
 
     /// <summary>Tray overlay indicator status.</summary>
     public OverlayStatus Overlay { get; init; } = OverlayStatus.Hidden;
+
+    /// <summary>Global keyboard shortcut runtime status.</summary>
+    public ShortcutRuntimeStatus Shortcuts { get; init; } = ShortcutRuntimeStatus.Empty;
 }
 
 /// <summary>Tray overlay indicator status.</summary>
@@ -66,6 +65,20 @@ public sealed record MicrophoneOverlayStatus(
         new(Available: false, Muted: false, ActivityReliable: false, InputActive: false);
 }
 
+/// <summary>Global keyboard shortcut runtime status.</summary>
+public sealed record ShortcutRuntimeStatus(IReadOnlyList<HeldShortcutStatus> HeldShortcuts)
+{
+    /// <summary>No held shortcuts.</summary>
+    public static ShortcutRuntimeStatus Empty { get; } = new([]);
+}
+
+/// <summary>One held keyboard shortcut as reported to diagnostics.</summary>
+public sealed record HeldShortcutStatus(
+    int ShortcutId,
+    string Keys,
+    IReadOnlyList<string> Targets,
+    string Value);
+
 /// <summary>Server-owned input source status.</summary>
 public sealed record ServerInputStatus(
     MouseInputPumpStatus Mouse,
@@ -83,24 +96,6 @@ public sealed record ServerSteamInputStatus(
     uint? AppId,
     Guid? ClientId,
     string? LastError);
-
-/// <summary>Current HidHide activation status.</summary>
-public sealed record ServerHidHideStatus(
-    bool Active,
-    bool CloakEnabled,
-    bool InverseEnabled,
-    IReadOnlyList<string> HiddenDevices,
-    IReadOnlyList<string> HiddenDeviceLabels,
-    IReadOnlyList<string> RegisteredApplications,
-    Guid? ClientId,
-    string? LastError)
-{
-    /// <summary>Current number of hidden devices.</summary>
-    public int DeviceCount => HiddenDevices.Count;
-
-    /// <summary>Current number of registered applications.</summary>
-    public int ApplicationCount => RegisteredApplications.Count;
-}
 
 /// <summary>Controller pipe status for one connected client.</summary>
 public sealed record ControllerPipeStatus(

@@ -22,16 +22,17 @@ public static class SettingsServices
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
 
+        // Singletons
         _ = services.AddSingleton(new SettingsFile(settingsPath));
         _ = services.AddSingleton<ApplicationSettingsService>();
+
+        // Options
         _ = services.Configure<SteamInputBridgeSettings>(
             configuration.GetSection(SteamInputBridgeSettings.SectionName));
-        _ = services.Configure<LoggingSettings>(
-            configuration.GetSection(LoggingSettings.SectionName));
+
+        // Injectable options
         _ = services.Configure<ViiperSettings>(
             configuration.GetSection(ViiperSettings.SectionName));
-        _ = services.Configure<HidHideSettings>(
-            configuration.GetSection(HidHideSettings.SectionName));
         return services;
     }
 }

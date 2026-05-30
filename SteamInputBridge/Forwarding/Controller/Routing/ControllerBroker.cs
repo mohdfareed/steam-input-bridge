@@ -76,9 +76,7 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
                 ClearClientStates(previousClientId.Value);
             }
 
-            _activeClientId = clientId.HasValue && _clients.ContainsKey(clientId.Value)
-                ? clientId
-                : null;
+            _activeClientId = nextClientId;
             RefreshOutputs(dispose);
             RetargetFeedback();
             AddCurrentStateSends(sends);
@@ -138,39 +136,6 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
 
         SendOutputs(sends);
         DisposeOutputs(dispose);
-    }
-
-    /// <summary>Registers one client-visible controller stream before input frames arrive.</summary>
-    public void RegisterClientController(
-        Guid clientId,
-        ushort controllerIndex,
-        ControllerId physicalControllerId,
-        ControllerFeatures features)
-    {
-        ThrowIfDisposed();
-        PendingControllerSend? send;
-        lock (_gate)
-        {
-            if (!_clients.ContainsKey(clientId))
-            {
-                return;
-            }
-
-            ControllerSlot slot = GetOrCreateSlot(physicalControllerId);
-            ControllerEndpointId endpointId = new(clientId, controllerIndex);
-            if (!slot.ClientEndpoints.ContainsKey(endpointId))
-            {
-                slot.ClientEndpoints[endpointId] =
-                    new ControllerEndpointState(ControllerState.Empty, features, null);
-            }
-
-            RefreshOutput(slot);
-            send = _activeClientId == clientId
-                ? CreateCurrentStateSend(slot)
-                : null;
-        }
-
-        SendOutput(send);
     }
 
     /// <summary>Replaces one client's registered controller streams as one atomic route update.</summary>
@@ -265,63 +230,6 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
         DisposeOutputs(dispose);
     }
 
-    /// <summary>Updates a client-visible controller stream from one client.</summary>
-    public void UpdateClientController(
-        Guid clientId,
-        ushort controllerIndex,
-        ControllerId physicalControllerId,
-        ControllerState state,
-        ControllerFeatures features,
-        IControllerFeedbackSink? feedbackSink = null)
-    {
-        ThrowIfDisposed();
-        PendingControllerSend? send;
-
-        lock (_gate)
-        {
-            if (!_clients.ContainsKey(clientId))
-            {
-                return;
-            }
-
-            // Inactive clients may keep streaming while another game is in
-            // focus. Ignore those frames completely so they cannot become the
-            // next active state's stale output.
-            if (_activeClientId != clientId)
-            {
-                return;
-            }
-
-            ControllerSlot slot = GetOrCreateSlot(physicalControllerId);
-            ControllerEndpointId endpointId = new(clientId, controllerIndex);
-            bool hasCurrent = slot.ClientEndpoints.TryGetValue(endpointId, out ControllerEndpointState current);
-            bool replayFeedback =
-                !hasCurrent ||
-                !ReferenceEquals(current.FeedbackSink, feedbackSink) ||
-                current.Features != features;
-            slot.ClientEndpoints[endpointId] = new ControllerEndpointState(
-                state,
-                features,
-                feedbackSink,
-                hasCurrent && current.CanOwnOutputWithoutPhysical);
-
-            if (ShouldTryConnectOutput(slot))
-            {
-                RefreshOutput(slot);
-            }
-
-            send = _activeClientId == clientId
-                ? CreateCurrentStateSend(slot)
-                : null;
-            if (_activeClientId == clientId && replayFeedback)
-            {
-                slot.ReplayFeedback(clientId);
-            }
-        }
-
-        SendOutput(send);
-    }
-
     /// <summary>Updates an already-registered client-visible controller stream.</summary>
     public void UpdateClientController(
         Guid clientId,
@@ -370,17 +278,6 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
         }
 
         SendOutput(send);
-    }
-
-    /// <summary>Updates controller index zero from one client.</summary>
-    public void UpdateClientController(
-        Guid clientId,
-        ControllerId physicalControllerId,
-        ControllerState state,
-        ControllerFeatures features,
-        IControllerFeedbackSink? feedbackSink = null)
-    {
-        UpdateClientController(clientId, 0, physicalControllerId, state, features, feedbackSink);
     }
 
     /// <summary>Updates the latest physical controller state for one slot.</summary>
@@ -479,16 +376,7 @@ public sealed partial class ControllerBroker(IControllerOutputFactory outputFact
         lock (_gate)
         {
             _physicalMotionEnabled = enabled;
-            if (_activeClientId.HasValue)
-            {
-                foreach (ControllerSlot slot in _slots.Values)
-                {
-                    if (CreateCurrentStateSend(slot) is { } send)
-                    {
-                        sends.Add(send);
-                    }
-                }
-            }
+            AddCurrentStateSends(sends);
         }
 
         SendOutputs(sends);

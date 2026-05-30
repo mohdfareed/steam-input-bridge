@@ -77,9 +77,9 @@ internal static class SdlGamepadStateReader
             return null;
         }
 
-        // DS4/DualSense expose one SDL touchpad with two fingers. Newer SDL
-        // exposes Steam Controller as two touchpads with one finger each.
-        // Flatten both shapes into the two DS4-compatible contacts we forward.
+        // SDL may expose one touchpad with two fingers or two touchpads with
+        // one finger each. Flatten both shapes into the two DS4-compatible
+        // contacts we forward.
         ControllerTouchContact touch1 = default;
         ControllerTouchContact touch2 = default;
         int contactCount = 0;

@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
 using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Runtime;
+using Vanara.PInvoke;
+using static Vanara.PInvoke.Shell32;
 
 namespace SteamInputBridge.App.Tray.Menu;
 
@@ -19,112 +20,113 @@ internal sealed partial class AppMenu(
     Action<Guid> stopClient,
     Action exit)
 {
-    public void Show(Point location, IntPtr owner, ServerStatus? status, string? serverError)
+    public void Show(Point location, ServerStatus? status, string? serverError, Action? closed)
     {
-        NativeMenu.Show(location, owner, BuildItems(status, serverError));
+        TrayPopupMenu.Show(location, BuildItems(status, serverError), closed);
     }
 
-    private List<NativeMenuItem> BuildItems(ServerStatus? status, string? serverError)
+    private List<TrayMenuItem> BuildItems(ServerStatus? status, string? serverError)
     {
-        List<NativeMenuItem> items = [];
+        List<TrayMenuItem> items = [];
         if (!string.IsNullOrWhiteSpace(serverError))
         {
-            items.Add(NativeMenuItem.Disabled(AppText.Header(serverError)));
-            items.Add(NativeMenuItem.Separator);
+            items.Add(TrayMenuItem.Disabled(AppText.Header(serverError)));
+            items.Add(TrayMenuItem.Separator);
         }
 
         items.AddRange(
         [
             CreateClientsMenu(status, openSteamInputConfig, stopClient),
             CreateDiagnosticsMenu(status),
-            NativeMenuItem.Separator,
-            NativeMenuItem.Action("Open desktop Steam Input config", openDesktopSteamInputConfig),
-            NativeMenuItem.Action("Export SRM manifest", exportSrm),
-            NativeMenuItem.Separator,
-            NativeMenuItem.Action("Open settings", () => OpenFile(settingsPath)),
+            TrayMenuItem.Separator,
+            TrayMenuItem.Action("Open desktop Steam Input config", openDesktopSteamInputConfig),
+            TrayMenuItem.Action("Export SRM manifest", exportSrm),
+            TrayMenuItem.Separator,
+            TrayMenuItem.Action("Open settings", () => OpenFile(settingsPath)),
             CreateOpenLogsItem(),
-            NativeMenuItem.Separator,
+            TrayMenuItem.Separator,
             CreateStartupItem(),
-            NativeMenuItem.Action("Restart", restart),
-            NativeMenuItem.Action("Exit", exit),
+            TrayMenuItem.Action("Restart", restart),
+            TrayMenuItem.Action("Exit", exit),
         ]);
 
         return items;
     }
 
-    private static NativeMenuItem CreateStartupItem()
+    private static TrayMenuItem CreateStartupItem()
     {
         bool startupEnabled = StartupRegistration.IsEnabled();
-        return NativeMenuItem.Action(
+        return TrayMenuItem.Action(
             "Start on startup",
             () => StartupRegistration.SetEnabled(!startupEnabled),
             isChecked: startupEnabled);
     }
 
-    private NativeMenuItem CreateOpenLogsItem()
+    private TrayMenuItem CreateOpenLogsItem()
     {
         return string.IsNullOrWhiteSpace(logPath)
-            ? NativeMenuItem.Disabled("Open logs (not configured)")
-            : NativeMenuItem.Action("Open logs", () => OpenLogFile(logPath));
+            ? TrayMenuItem.Disabled("Open logs (not configured)")
+            : TrayMenuItem.Action("Open logs", () => OpenLogFile(logPath));
     }
 
-    private static NativeMenuItem CreateClientsMenu(
+    private static TrayMenuItem CreateClientsMenu(
         ServerStatus? status,
         Action<uint> openSteamInputConfig,
         Action<Guid> stopClient)
     {
         if (status is null || status.Runtime.Clients.Count == 0)
         {
-            return NativeMenuItem.Menu("Clients", [NativeMenuItem.Disabled(AppText.None)]);
+            return TrayMenuItem.Menu("Clients", [TrayMenuItem.Disabled(AppText.None)]);
         }
 
-        List<NativeMenuItem> items = [];
+        List<TrayMenuItem> items = [];
         foreach (ClientStatus client in status.Runtime.Clients)
         {
-            items.Add(NativeMenuItem.MenuStatus(
+            items.Add(TrayMenuItem.MenuStatus(
                 client.ProfileId,
                 string.Empty,
                 CreateClientItems(client, openSteamInputConfig, stopClient),
                 isChecked: client.IsActive));
         }
 
-        return NativeMenuItem.Menu("Clients", items);
+        return TrayMenuItem.Menu("Clients", items);
     }
 
-    private static List<NativeMenuItem> CreateClientItems(
+    private static List<TrayMenuItem> CreateClientItems(
         ClientStatus client,
         Action<uint> openSteamInputConfig,
         Action<Guid> stopClient)
     {
-        List<NativeMenuItem> items =
+        List<TrayMenuItem> items =
         [
-            NativeMenuItem.Status("State", AppText.Active(client.IsActive), client.IsActive),
-            NativeMenuItem.Status("PID", client.ClientProcessId.ToString(CultureInfo.InvariantCulture)),
-            NativeMenuItem.Status("Steam App", AppText.AppId(client.SteamAppId)),
-            NativeMenuItem.Status("Receivers", AppText.Processes(client.ObservedProcesses)),
-            NativeMenuItem.Separator,
+            TrayMenuItem.Status("State", AppText.Active(client.IsActive), client.IsActive),
+            TrayMenuItem.Status("PID", client.ClientProcessId.ToString(CultureInfo.InvariantCulture)),
+            TrayMenuItem.Status("Steam App", AppText.AppId(client.SteamAppId)),
+            TrayMenuItem.Status("Receivers", AppText.Processes(client.ObservedProcesses)),
+            TrayMenuItem.Separator,
         ];
 
         if (client.SteamAppId is uint appId)
         {
-            items.Add(NativeMenuItem.Action("Open Steam Input config", () => openSteamInputConfig(appId)));
+            items.Add(TrayMenuItem.Action("Open Steam Input config", () => openSteamInputConfig(appId)));
         }
         else
         {
-            items.Add(NativeMenuItem.Disabled("Open Steam Input config (no app id)"));
+            items.Add(TrayMenuItem.Disabled("Open Steam Input config (no app id)"));
         }
 
-        items.Add(NativeMenuItem.Action("Stop client", () => stopClient(client.ClientId)));
+        items.Add(TrayMenuItem.Action("Stop client", () => stopClient(client.ClientId)));
         return items;
     }
 
     private static void OpenFile(string path)
     {
-        _ = Process.Start(new ProcessStartInfo
+        string fullPath = Path.GetFullPath(path);
+        IntPtr result = ShellExecute(default, "open", fullPath, null, null, ShowWindowCommand.SW_SHOWNORMAL);
+        if (result.ToInt64() <= 32)
         {
-            FileName = Path.GetFullPath(path),
-            UseShellExecute = true,
-        });
+            throw new InvalidOperationException($"Could not open {fullPath}.");
+        }
     }
 
     private static void OpenLogFile(string path)

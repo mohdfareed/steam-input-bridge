@@ -10,7 +10,7 @@ internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan DisposeStreamTimeout = TimeSpan.FromSeconds(1);
 
-    private readonly ViiperClient? _client;
+    private readonly ViiperClient _client;
     private readonly Action<uint, string>? _removed;
     private readonly Action<uint, string>? _disconnected;
     private ViiperDevice? _device;
@@ -102,7 +102,7 @@ internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
         {
             try
             {
-                _ = await _client!
+                _ = await _client
                     .BusDeviceRemoveAsync(BusId, DeviceId, CancellationToken.None)
                     .ConfigureAwait(false);
                 _removed?.Invoke(BusId, DeviceId);
@@ -125,7 +125,7 @@ internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
         }
         finally
         {
-            _client?.Dispose();
+            _client.Dispose();
         }
     }
 
@@ -136,7 +136,7 @@ internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
     {
         try
         {
-            _ = await _client!.BusRemoveAsync(BusId, CancellationToken.None)
+            _ = await _client.BusRemoveAsync(BusId, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (IOException)

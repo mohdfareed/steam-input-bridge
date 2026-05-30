@@ -25,6 +25,8 @@ public sealed class GameClient(
     private readonly SemaphoreSlim _stateGate = new(1, 1);
     private readonly ClientGameProcessManager _processes = new(logger);
     private readonly ClientReceiverProcessMonitor _receivers = new(logger);
+    private readonly Func<IClientControllerStreams> _createControllerStreams =
+        () => new ClientControllerStreams(logger);
     private ClientRunState? _currentState;
     // Reconnects are edge-triggered; stale restore attempts must not block the
     // next server lease from re-registering this still-running profile.
@@ -35,11 +37,21 @@ public sealed class GameClient(
     // MARK: Publics
     // ========================================================================
 
+    internal GameClient(
+        ClientService client,
+        ProfilesService profiles,
+        ILogger<GameClient> logger,
+        Func<IClientControllerStreams> createControllerStreams)
+        : this(client, profiles, logger)
+    {
+        ArgumentNullException.ThrowIfNull(createControllerStreams);
+        _createControllerStreams = createControllerStreams;
+    }
+
     /// <summary>Launches a profile and reports receiver processes until it exits.</summary>
     public async Task RunAsync(
         string profileId,
         uint? steamAppId,
-        bool killReceivers,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
@@ -54,7 +66,7 @@ public sealed class GameClient(
             ClientRunLaunch launch = await StartRunWithReconnectAsync(request, cancellationToken)
                 .ConfigureAwait(false);
 
-            ClientRunState state = new(launch, client.ClientId, request, killReceivers);
+            ClientRunState state = new(launch, client.ClientId, request);
             _currentState = state;
             _runCancellationToken = cancellationToken;
             _processes.StartProfileProcess(state);
@@ -119,7 +131,7 @@ public sealed class GameClient(
     /// <summary>Launches a profile and reads Steam app id from settings or Steam.</summary>
     public Task RunAsync(string profileId, CancellationToken cancellationToken)
     {
-        return RunAsync(profileId, steamAppId: null, killReceivers: false, cancellationToken);
+        return RunAsync(profileId, steamAppId: null, cancellationToken);
     }
 
     /// <summary>Disposes the underlying client.</summary>
@@ -226,7 +238,7 @@ public sealed class GameClient(
             return;
         }
 
-        ClientControllerStreams streams = new(logger);
+        IClientControllerStreams streams = _createControllerStreams();
         try
         {
             using CancellationTokenSource timeout =
@@ -249,7 +261,7 @@ public sealed class GameClient(
 
     private static async Task StopControllerStreamsAsync(ClientRunState state)
     {
-        ClientControllerStreams? streams = state.ControllerStreams;
+        IClientControllerStreams? streams = state.ControllerStreams;
         state.ControllerStreams = null;
         if (streams is null)
         {

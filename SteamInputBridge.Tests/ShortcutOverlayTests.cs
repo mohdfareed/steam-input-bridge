@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -9,7 +10,6 @@ using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Hosting.Server;
 using SteamInputBridge.Hosting.Server.Orchestration;
-using SteamInputBridge.Runtime.Audio;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
 
@@ -23,7 +23,7 @@ public sealed class ShortcutOverlayTests
     public void HeldColorsUseLastPressedAndRestoreOnRelease()
     {
         using TestHost host = TestHost.Create(SettingsWithHeldColors());
-        host.Service.Start();
+        host.Service.Start(CancellationToken.None);
 
         host.Shortcuts.Press(1);
         Assert.AreEqual("#111111", host.Service.GetOverlayStatus().ActionColor);
@@ -39,10 +39,62 @@ public sealed class ShortcutOverlayTests
     }
 
     [TestMethod]
+    public void HeldColorsKeepLastPressedWhenMiddleShortcutReleases()
+    {
+        using TestHost host = TestHost.Create(SettingsWithThreeHeldColors());
+        host.Service.Start(CancellationToken.None);
+
+        host.Shortcuts.Press(1);
+        host.Shortcuts.Press(2);
+        host.Shortcuts.Press(3);
+        Assert.AreEqual("#333333", host.Service.GetOverlayStatus().ActionColor);
+
+        host.Shortcuts.Release(2);
+        Assert.AreEqual("#333333", host.Service.GetOverlayStatus().ActionColor);
+
+        host.Shortcuts.Release(3);
+        Assert.AreEqual("#111111", host.Service.GetOverlayStatus().ActionColor);
+    }
+
+    [TestMethod]
+    public void HeldShortcutStatusUsesPressOrder()
+    {
+        using TestHost host = TestHost.Create(SettingsWithHeldColors());
+        host.Service.Start(CancellationToken.None);
+
+        host.Shortcuts.Press(2);
+        host.Shortcuts.Press(1);
+
+        IReadOnlyList<HeldShortcutStatus> held = host.Service.GetShortcutStatus().HeldShortcuts;
+        Assert.HasCount(2, held);
+        Assert.AreEqual("Num2", held[0].Keys);
+        Assert.AreEqual("#222222", held[0].Targets[0]);
+        Assert.AreEqual("Num1", held[1].Keys);
+    }
+
+    [TestMethod]
+    public void MotionAndPointerShortcutsUpdateStatusWithoutActiveClient()
+    {
+        using TestHost host = TestHost.Create(SettingsWithMotionPointerHold());
+        host.Service.Start(CancellationToken.None);
+
+        Assert.IsTrue(host.Controllers.GetStatus().PhysicalMotionEnabled);
+        Assert.IsTrue(host.Mouse.GetStatus().PointerOutputEnabled);
+
+        host.Shortcuts.Press(1);
+        Assert.IsFalse(host.Controllers.GetStatus().PhysicalMotionEnabled);
+        Assert.IsFalse(host.Mouse.GetStatus().PointerOutputEnabled);
+
+        host.Shortcuts.Release(1);
+        Assert.IsTrue(host.Controllers.GetStatus().PhysicalMotionEnabled);
+        Assert.IsTrue(host.Mouse.GetStatus().PointerOutputEnabled);
+    }
+
+    [TestMethod]
     public void MicToggleControlsSystemMicTarget()
     {
         using TestHost host = TestHost.Create(SettingsWithMicToggle());
-        host.Service.Start();
+        host.Service.Start(CancellationToken.None);
 
         Assert.IsFalse(host.Microphone.Muted);
         host.Shortcuts.Press(1);
@@ -50,6 +102,19 @@ public sealed class ShortcutOverlayTests
 
         host.Shortcuts.Press(1);
         Assert.IsFalse(host.Microphone.Muted);
+    }
+
+    [TestMethod]
+    public void MicrophoneStatusChangeRaisesShortcutStateChanged()
+    {
+        using TestHost host = TestHost.Create(SettingsWithMicToggle());
+        int changes = 0;
+        host.Service.StateChanged += () => changes++;
+        host.Service.Start(CancellationToken.None);
+
+        host.Microphone.RaiseStatusChanged();
+
+        Assert.AreEqual(1, changes);
     }
 
     private static string SettingsWithHeldColors()
@@ -71,6 +136,59 @@ public sealed class ShortcutOverlayTests
                   "#222222"
                 ],
                 "Value": "HoldEnabled"
+              }
+            ]
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithThreeHeldColors()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "Shortcuts": [
+              {
+                "Keys": "Num1",
+                "Targets": [
+                  "#111111"
+                ],
+                "Value": "HoldEnabled"
+              },
+              {
+                "Keys": "Num2",
+                "Targets": [
+                  "#222222"
+                ],
+                "Value": "HoldEnabled"
+              },
+              {
+                "Keys": "Num3",
+                "Targets": [
+                  "#333333"
+                ],
+                "Value": "HoldEnabled"
+              }
+            ]
+          }
+        }
+        """;
+    }
+
+    private static string SettingsWithMotionPointerHold()
+    {
+        return """
+        {
+          "SteamInputBridge": {
+            "Shortcuts": [
+              {
+                "Keys": "Num1",
+                "Targets": [
+                  "Motion",
+                  "Pointer"
+                ],
+                "Value": "HoldDisabled"
               }
             ]
           }
@@ -107,18 +225,26 @@ public sealed class ShortcutOverlayTests
             ServiceProvider services,
             FakeKeyboardShortcutListener shortcuts,
             FakeMicrophoneControl microphone,
+            ControllerBroker controllers,
+            MouseBroker mouse,
             ServerShortcutService service)
         {
             _directory = directory;
             _services = services;
             Shortcuts = shortcuts;
             Microphone = microphone;
+            Controllers = controllers;
+            Mouse = mouse;
             Service = service;
         }
 
         public FakeKeyboardShortcutListener Shortcuts { get; }
 
         public FakeMicrophoneControl Microphone { get; }
+
+        public ControllerBroker Controllers { get; }
+
+        public MouseBroker Mouse { get; }
 
         public ServerShortcutService Service { get; }
 
@@ -154,6 +280,8 @@ public sealed class ShortcutOverlayTests
                 provider,
                 shortcuts,
                 microphone,
+                provider.GetRequiredService<ControllerBroker>(),
+                provider.GetRequiredService<MouseBroker>(),
                 provider.GetRequiredService<ServerShortcutService>());
         }
 
@@ -197,6 +325,8 @@ public sealed class ShortcutOverlayTests
 
     private sealed class FakeMicrophoneControl : IMicrophoneControl
     {
+        public event Action? StatusChanged;
+
         public bool Muted { get; private set; }
 
         public MicrophoneOverlayStatus GetStatus()
@@ -211,6 +341,17 @@ public sealed class ShortcutOverlayTests
         public void SetEnabled(bool enabled)
         {
             Muted = !enabled;
+        }
+
+        public void StartMonitoring(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            _ = StatusChanged;
+        }
+
+        public void RaiseStatusChanged()
+        {
+            StatusChanged?.Invoke();
         }
     }
 }

@@ -43,4 +43,21 @@ public sealed class KeyboardShortcutTests
         Assert.AreEqual(KeyboardShortcutModifiers.None, shortcut.Modifiers);
         Assert.AreEqual((ushort)0x69, shortcut.VirtualKey);
     }
+
+    [TestMethod]
+    public void ParsesNumpadPlusKey()
+    {
+        KeyboardShortcutCombination shortcut = KeyboardShortcutParser.Parse("Ctrl+Num+");
+
+        Assert.AreEqual(KeyboardShortcutModifiers.Control, shortcut.Modifiers);
+        Assert.AreEqual((ushort)0x6B, shortcut.VirtualKey);
+    }
+
+    [TestMethod]
+    public void FormatsNumpadKey()
+    {
+        KeyboardShortcutCombination shortcut = KeyboardShortcutParser.Parse("Ctrl+Num2");
+
+        Assert.AreEqual("Ctrl+Num2", shortcut.ToString());
+    }
 }

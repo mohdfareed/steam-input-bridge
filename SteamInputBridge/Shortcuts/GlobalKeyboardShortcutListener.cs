@@ -1,15 +1,26 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Runtime.InteropServices;
+using System.Globalization;
 using System.Threading;
+using System.Windows.Forms;
+using NHotkey;
+using NHotkey.WindowsForms;
+using Vanara.PInvoke;
+using Timer = System.Windows.Forms.Timer;
 
 namespace SteamInputBridge.Shortcuts;
 
 /// <summary>Windows global keyboard shortcut listener.</summary>
 internal sealed class GlobalKeyboardShortcutListener : IKeyboardShortcutListener
 {
-    private KeyboardShortcutSession? _session;
+    private const int ShortcutPollMilliseconds = 30;
+    private readonly ShortcutMessageThread _messageThread = new();
+    private readonly Dictionary<int, KeyboardShortcutCombination> _combinations = [];
+    private readonly HashSet<int> _pressedShortcuts = [];
+    private readonly List<string> _registeredNames = [];
+    private Timer? _shortcutTimer;
+    private Action<int>? _pressed;
+    private Action<int>? _released;
     private bool _disposed;
 
     /// <inheritdoc />
@@ -23,12 +34,16 @@ internal sealed class GlobalKeyboardShortcutListener : IKeyboardShortcutListener
         ArgumentNullException.ThrowIfNull(released);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _session?.Dispose();
-        _session = null;
-        if (shortcuts.Count != 0)
+        _messageThread.Invoke(() =>
         {
-            _session = KeyboardShortcutSession.Start(shortcuts, pressed, released);
-        }
+            ClearRegistrations();
+            _pressed = pressed;
+            _released = released;
+            foreach (KeyboardShortcutRegistration shortcut in shortcuts)
+            {
+                Register(shortcut);
+            }
+        });
     }
 
     /// <inheritdoc />
@@ -39,442 +54,318 @@ internal sealed class GlobalKeyboardShortcutListener : IKeyboardShortcutListener
             return;
         }
 
-        _session?.Dispose();
-        _session = null;
+        _messageThread.Invoke(ClearRegistrations);
+        _messageThread.Dispose();
         _disposed = true;
     }
-}
 
-internal sealed class KeyboardShortcutSession : IDisposable
-{
-    private const uint ModNoRepeat = 0x4000;
-    private const uint WmHotkey = 0x0312;
-    private const uint WmTimer = 0x0113;
-    private const uint WmKeyDown = 0x0100;
-    private const uint WmKeyUp = 0x0101;
-    private const uint WmSysKeyDown = 0x0104;
-    private const uint WmSysKeyUp = 0x0105;
-    private const uint WmQuit = 0x0012;
-    private const uint PmNoRemove = 0x0000;
-    private const uint RequestedReleaseTimerId = 1;
-    private const uint ReleasePollMilliseconds = 30;
-    private const int WhKeyboardLl = 13;
-
-    private readonly IReadOnlyList<KeyboardShortcutRegistration> _shortcuts;
-    private readonly Dictionary<int, KeyboardShortcutCombination> _combinations = [];
-    private readonly HashSet<int> _pressedShortcuts = [];
-    private readonly HashSet<ushort> _keysDown = [];
-    private readonly Action<int> _pressed;
-    private readonly Action<int> _released;
-    private readonly LowLevelKeyboardProc _keyboardHookCallback;
-    private readonly ManualResetEventSlim _ready = new();
-    private readonly Thread _thread;
-    private volatile uint _threadId;
-    private IntPtr _keyboardHook;
-    private Exception? _startupError;
-    private UIntPtr _releaseTimerId;
-    private bool _releaseTimerActive;
-    private bool _disposed;
-
-    private KeyboardShortcutSession(
-        IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-        Action<int> pressed,
-        Action<int> released)
+    private void Register(KeyboardShortcutRegistration shortcut)
     {
-        _shortcuts = shortcuts;
-        foreach (KeyboardShortcutRegistration shortcut in shortcuts)
-        {
-            _combinations[shortcut.Id] = shortcut.Combination;
-        }
-
-        _pressed = pressed;
-        _released = released;
-        _keyboardHookCallback = HandleKeyboardHook;
-        _thread = new Thread(Run)
-        {
-            IsBackground = true,
-            Name = "SteamInputBridge shortcut listener",
-        };
+        string name = shortcut.Id.ToString(CultureInfo.InvariantCulture);
+        HotkeyManager.Current.AddOrReplace(
+            name,
+            ToKeys(shortcut.Combination),
+            noRepeat: true,
+            OnHotkeyPressed);
+        _registeredNames.Add(name);
+        _combinations[shortcut.Id] = shortcut.Combination;
     }
 
-    internal static KeyboardShortcutSession Start(
-        IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-        Action<int> pressed,
-        Action<int> released)
+    private void ClearRegistrations()
     {
-        KeyboardShortcutSession session = new(shortcuts, pressed, released);
-        session._thread.Start();
-        session._ready.Wait();
-        if (session._startupError is not null)
+        StopShortcutTimer();
+        _pressedShortcuts.Clear();
+        _combinations.Clear();
+        foreach (string name in _registeredNames)
         {
-            session.Dispose();
-            throw session._startupError;
+            HotkeyManager.Current.Remove(name);
         }
 
-        return session;
+        _registeredNames.Clear();
     }
 
-    public void Dispose()
+    private void OnHotkeyPressed(object? sender, HotkeyEventArgs args)
     {
+        _ = sender;
+        args.Handled = true;
+        if (!int.TryParse(args.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out int shortcutId))
+        {
+            return;
+        }
+
+        Action<int>? callback = null;
+        if (_disposed || !_combinations.ContainsKey(shortcutId))
+        {
+            return;
+        }
+
+        StartShortcutTimer();
+        if (_pressedShortcuts.Add(shortcutId))
+        {
+            callback = _pressed;
+        }
+
+        InvokeShortcutCallback(callback, shortcutId);
+    }
+
+    private void RefreshPressedShortcuts(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        List<int>? pressed = null;
+        List<int>? released = null;
+        Action<int>? pressCallback;
+        Action<int>? releaseCallback;
+
         if (_disposed)
         {
             return;
         }
 
-        _disposed = true;
-        uint threadId = _threadId;
-        if (threadId != 0)
+        // RegisterHotKey can miss a third non-modifier shortcut while other
+        // registered shortcuts are held. Once any shortcut is down, scan the
+        // configured set so held overlay colors and hold gates stay exact.
+        foreach (KeyValuePair<int, KeyboardShortcutCombination> combination in _combinations)
         {
-            _ = PostThreadMessage(threadId, WmQuit, UIntPtr.Zero, IntPtr.Zero);
-        }
-
-        _ = _thread.Join(TimeSpan.FromSeconds(2));
-
-        _ready.Dispose();
-        GC.SuppressFinalize(this);
-    }
-
-    ~KeyboardShortcutSession()
-    {
-        UnregisterKeyboardHook();
-    }
-
-    private void Run()
-    {
-        _threadId = GetCurrentThreadId();
-        _ = PeekMessage(out _, IntPtr.Zero, 0, 0, PmNoRemove);
-        try
-        {
-            RegisterShortcuts();
-            _keyboardHook = SetWindowsHookEx(WhKeyboardLl, _keyboardHookCallback, GetModuleHandle(null), 0);
-            if (_keyboardHook == IntPtr.Zero)
+            bool isDown = IsShortcutDown(combination.Value);
+            bool wasDown = _pressedShortcuts.Contains(combination.Key);
+            if (isDown && !wasDown)
             {
-                throw new Win32Exception(Marshal.GetLastPInvokeError());
+                pressed ??= [];
+                pressed.Add(combination.Key);
             }
-
-            _ready.Set();
-
-            while (GetMessage(out NativeMessage message, IntPtr.Zero, 0, 0) > 0)
+            else if (!isDown && wasDown)
             {
-                if (message.Message == WmHotkey)
-                {
-                    int shortcutId = (int)message.WParam;
-                    if (!_pressedShortcuts.Add(shortcutId))
-                    {
-                        StartReleaseTimer();
-                        continue;
-                    }
-
-                    StartReleaseTimer();
-                    try
-                    {
-                        _pressed(shortcutId);
-                    }
-                    catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
-                    {
-                    }
-                }
-                else if (message.Message == WmTimer &&
-                    _releaseTimerActive &&
-                    message.WParam.Equals(_releaseTimerId))
-                {
-                    ReleaseCompletedShortcuts();
-                }
-            }
-        }
-        catch (Win32Exception exception)
-        {
-            _startupError = exception;
-            _ready.Set();
-        }
-        finally
-        {
-            StopReleaseTimer();
-            UnregisterKeyboardHook();
-            UnregisterShortcuts();
-        }
-    }
-
-    private void RegisterShortcuts()
-    {
-        foreach (KeyboardShortcutRegistration shortcut in _shortcuts)
-        {
-            uint modifiers = (uint)shortcut.Combination.Modifiers | ModNoRepeat;
-            if (!RegisterHotKey(IntPtr.Zero, shortcut.Id, modifiers, shortcut.Combination.VirtualKey))
-            {
-                throw new Win32Exception(Marshal.GetLastPInvokeError());
-            }
-        }
-    }
-
-    private void UnregisterShortcuts()
-    {
-        foreach (KeyboardShortcutRegistration shortcut in _shortcuts)
-        {
-            _ = UnregisterHotKey(IntPtr.Zero, shortcut.Id);
-        }
-    }
-
-    private IntPtr HandleKeyboardHook(int code, UIntPtr wParam, IntPtr lParam)
-    {
-        if (code >= 0)
-        {
-            uint message = wParam.ToUInt32();
-            ushort virtualKey = checked((ushort)Marshal.PtrToStructure<KeyboardHookInfo>(lParam).VirtualKey);
-            if (message is WmKeyDown or WmSysKeyDown)
-            {
-                _ = _keysDown.Add(virtualKey);
-                PressCompletedShortcuts();
-            }
-            else if (message is WmKeyUp or WmSysKeyUp)
-            {
-                _ = _keysDown.Remove(virtualKey);
-                ReleaseCompletedShortcuts();
+                released ??= [];
+                released.Add(combination.Key);
             }
         }
 
-        return CallNextHookEx(_keyboardHook, code, wParam, lParam);
-    }
-
-    private void PressCompletedShortcuts()
-    {
-        foreach ((int shortcutId, KeyboardShortcutCombination combination) in _combinations)
-        {
-            if (_pressedShortcuts.Contains(shortcutId) ||
-                !IsShortcutDown(combination))
-            {
-                continue;
-            }
-
-            _ = _pressedShortcuts.Add(shortcutId);
-            StartReleaseTimer();
-            try
-            {
-                _pressed(shortcutId);
-            }
-            catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
-            {
-            }
-        }
-    }
-
-    private void ReleaseCompletedShortcuts()
-    {
-        if (_pressedShortcuts.Count == 0)
+        if (pressed is null && released is null)
         {
             return;
         }
 
-        List<int>? released = null;
-        foreach (int shortcutId in _pressedShortcuts)
+        if (released is not null)
         {
-            if (_combinations.TryGetValue(shortcutId, out KeyboardShortcutCombination combination) &&
-                IsShortcutDown(combination))
+            foreach (int shortcutId in released)
             {
-                continue;
+                _ = _pressedShortcuts.Remove(shortcutId);
             }
-
-            released ??= [];
-            released.Add(shortcutId);
         }
 
-        if (released is null)
+        if (pressed is not null)
         {
-            return;
-        }
-
-        foreach (int shortcutId in released)
-        {
-            _ = _pressedShortcuts.Remove(shortcutId);
-            try
+            foreach (int shortcutId in pressed)
             {
-                _released(shortcutId);
-            }
-            catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
-            {
+                _ = _pressedShortcuts.Add(shortcutId);
             }
         }
 
         if (_pressedShortcuts.Count == 0)
         {
-            StopReleaseTimer();
+            StopShortcutTimer();
+        }
+
+        releaseCallback = _released;
+        if (released is not null)
+        {
+            foreach (int shortcutId in released)
+            {
+                InvokeShortcutCallback(releaseCallback, shortcutId);
+            }
+        }
+
+        pressCallback = _pressed;
+        if (pressed is not null)
+        {
+            foreach (int shortcutId in pressed)
+            {
+                InvokeShortcutCallback(pressCallback, shortcutId);
+            }
         }
     }
 
-    private bool IsShortcutDown(KeyboardShortcutCombination combination)
+    private void StartShortcutTimer()
+    {
+        if (_shortcutTimer is not null)
+        {
+            return;
+        }
+
+        _shortcutTimer = new Timer
+        {
+            Interval = ShortcutPollMilliseconds,
+        };
+        _shortcutTimer.Tick += RefreshPressedShortcuts;
+        _shortcutTimer.Start();
+    }
+
+    private void StopShortcutTimer()
+    {
+        _shortcutTimer?.Dispose();
+        _shortcutTimer = null;
+    }
+
+    private static bool IsShortcutDown(KeyboardShortcutCombination combination)
     {
         return IsKeyDown(combination.VirtualKey) &&
-            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Control, 0x11) &&
-            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Alt, 0x12) &&
-            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Shift, 0x10) &&
-            HasModifierState(combination.Modifiers, KeyboardShortcutModifiers.Windows, 0x5B, 0x5C);
+            HasExactModifierState(combination.Modifiers);
     }
 
-    private bool HasModifierState(
-        KeyboardShortcutModifiers actual,
-        KeyboardShortcutModifiers expected,
-        ushort virtualKey,
-        ushort? alternateVirtualKey = null)
+    private static bool HasExactModifierState(KeyboardShortcutModifiers modifiers)
     {
-        return (actual & expected) == 0 ||
-            IsKeyDown(virtualKey) ||
-            (alternateVirtualKey.HasValue && IsKeyDown(alternateVirtualKey.Value));
+        return HasModifier(modifiers, KeyboardShortcutModifiers.Control) == IsKeyDown((ushort)Keys.ControlKey) &&
+            HasModifier(modifiers, KeyboardShortcutModifiers.Alt) == IsKeyDown((ushort)Keys.Menu) &&
+            HasModifier(modifiers, KeyboardShortcutModifiers.Shift) == IsKeyDown((ushort)Keys.ShiftKey) &&
+            HasModifier(modifiers, KeyboardShortcutModifiers.Windows) ==
+            (IsKeyDown((ushort)Keys.LWin) || IsKeyDown((ushort)Keys.RWin));
     }
 
-    private bool IsKeyDown(ushort virtualKey)
+    private static bool HasModifier(KeyboardShortcutModifiers actual, KeyboardShortcutModifiers expected)
     {
-        return _keysDown.Contains(virtualKey) || KeyboardShortcutState.IsKeyDown(virtualKey);
+        return (actual & expected) != 0;
     }
 
-    private void StartReleaseTimer()
+    private static bool IsKeyDown(ushort virtualKey)
     {
-        if (_releaseTimerActive)
+        return (User32.GetAsyncKeyState((User32.VK)virtualKey) & 0x8000) != 0;
+    }
+
+    private static Keys ToKeys(KeyboardShortcutCombination combination)
+    {
+        Keys keys = (Keys)combination.VirtualKey;
+        if ((combination.Modifiers & KeyboardShortcutModifiers.Control) != 0)
+        {
+            keys |= Keys.Control;
+        }
+
+        if ((combination.Modifiers & KeyboardShortcutModifiers.Alt) != 0)
+        {
+            keys |= Keys.Alt;
+        }
+
+        if ((combination.Modifiers & KeyboardShortcutModifiers.Shift) != 0)
+        {
+            keys |= Keys.Shift;
+        }
+
+        if ((combination.Modifiers & KeyboardShortcutModifiers.Windows) != 0)
+        {
+            keys |= Keys.LWin;
+        }
+
+        return keys;
+    }
+
+    private static void InvokeShortcutCallback(Action<int>? callback, int shortcutId)
+    {
+        if (callback is null)
         {
             return;
         }
 
-        // RegisterHotKey gives us the press event, but some foreground apps do
-        // not reliably deliver the corresponding low-level key-up event. Poll
-        // only while a shortcut is held so hold-mode targets are released even
-        // when no later keyboard event wakes the hook.
-        UIntPtr timerId = SetTimer(
-            IntPtr.Zero,
-            new UIntPtr(RequestedReleaseTimerId),
-            ReleasePollMilliseconds,
-            IntPtr.Zero);
-        if (timerId == UIntPtr.Zero)
+        try
         {
-            return;
+            callback(shortcutId);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private sealed class ShortcutMessageThread : IDisposable
+    {
+        private readonly ManualResetEventSlim _ready = new();
+        private readonly Thread _thread;
+        private Control? _control;
+        private Exception? _startupError;
+        private bool _disposed;
+
+        public ShortcutMessageThread()
+        {
+            _thread = new Thread(Run)
+            {
+                IsBackground = true,
+                Name = "SteamInputBridge shortcut listener",
+            };
+            _thread.SetApartmentState(ApartmentState.STA);
+            _thread.Start();
+            _ready.Wait();
+            if (_startupError is not null)
+            {
+                throw _startupError;
+            }
         }
 
-        _releaseTimerId = timerId;
-        _releaseTimerActive = true;
-    }
-
-    private void StopReleaseTimer()
-    {
-        if (!_releaseTimerActive)
+        public void Invoke(Action action)
         {
-            return;
+            ArgumentNullException.ThrowIfNull(action);
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            Control control = _control ??
+                throw new InvalidOperationException("Shortcut message thread is not ready.");
+            if (control.InvokeRequired)
+            {
+                control.Invoke(action);
+                return;
+            }
+
+            action();
         }
 
-        _releaseTimerActive = false;
-        _ = KillTimer(IntPtr.Zero, _releaseTimerId);
-        _releaseTimerId = UIntPtr.Zero;
-    }
-
-    private void UnregisterKeyboardHook()
-    {
-        IntPtr hook = _keyboardHook;
-        if (hook == IntPtr.Zero)
+        public void Dispose()
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            try
+            {
+                Control? control = _control;
+                if (control is not null && !control.IsDisposed)
+                {
+                    control.Invoke(static () => Application.ExitThread());
+                }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            _ = _thread.Join(TimeSpan.FromSeconds(2));
+            if (!_thread.IsAlive)
+            {
+                _control?.Dispose();
+                _control = null;
+            }
+
+            _ready.Dispose();
         }
 
-        _keyboardHook = IntPtr.Zero;
-        _ = UnhookWindowsHookEx(hook);
-    }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern bool RegisterHotKey(
-        IntPtr hWnd,
-        int id,
-        uint fsModifiers,
-        uint vk);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern int GetMessage(
-        out NativeMessage message,
-        IntPtr hWnd,
-        uint messageFilterMin,
-        uint messageFilterMax);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern bool PeekMessage(
-        out NativeMessage message,
-        IntPtr hWnd,
-        uint messageFilterMin,
-        uint messageFilterMax,
-        uint removeMessage);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern bool PostThreadMessage(
-        uint idThread,
-        uint msg,
-        UIntPtr wParam,
-        IntPtr lParam);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern UIntPtr SetTimer(
-        IntPtr hWnd,
-        UIntPtr nIdEvent,
-        uint uElapse,
-        IntPtr lpTimerFunc);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern bool KillTimer(
-        IntPtr hWnd,
-        UIntPtr uIdEvent);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern IntPtr SetWindowsHookEx(
-        int idHook,
-        LowLevelKeyboardProc callback,
-        IntPtr hInstance,
-        uint threadId);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern bool UnhookWindowsHookEx(IntPtr hook);
-
-    [DllImport("user32.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern IntPtr CallNextHookEx(
-        IntPtr hook,
-        int code,
-        UIntPtr wParam,
-        IntPtr lParam);
-
-    [DllImport("kernel32.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern uint GetCurrentThreadId();
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern IntPtr GetModuleHandle(string? moduleName);
-
-    private delegate IntPtr LowLevelKeyboardProc(int code, UIntPtr wParam, IntPtr lParam);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly struct KeyboardHookInfo
-    {
-        public readonly uint VirtualKey;
-        public readonly uint ScanCode;
-        public readonly uint Flags;
-        public readonly uint Time;
-        public readonly UIntPtr ExtraInfo;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly struct NativeMessage
-    {
-        public readonly IntPtr Hwnd;
-        public readonly uint Message;
-        public readonly UIntPtr WParam;
-        public readonly IntPtr LParam;
-        public readonly uint Time;
-        public readonly int PointX;
-        public readonly int PointY;
+        private void Run()
+        {
+            try
+            {
+                Control control = new();
+                _control = control;
+                _ = control.Handle;
+                _ready.Set();
+                try
+                {
+                    Application.Run();
+                }
+                finally
+                {
+                    control.Dispose();
+                }
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ThreadStateException)
+            {
+                _startupError = exception;
+                _ready.Set();
+            }
+        }
     }
 }

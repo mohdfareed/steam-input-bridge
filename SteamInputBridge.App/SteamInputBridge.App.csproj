@@ -21,6 +21,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+    <PackageReference Include="Vanara.PInvoke.Kernel32" Version="5.0.0" />
+    <PackageReference Include="Vanara.PInvoke.Shell32" Version="5.0.0" />
+    <PackageReference Include="Vanara.PInvoke.User32" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,5 +1,5 @@
-using System;
-using System.Runtime.InteropServices;
+using Vanara.PInvoke;
+using static Vanara.PInvoke.User32;
 
 namespace SteamInputBridge.Hosting.Server.Orchestration.Active;
 
@@ -7,8 +7,8 @@ internal static class ServerForegroundProcess
 {
     public static int GetId()
     {
-        IntPtr window = GetForegroundWindow();
-        if (window == IntPtr.Zero)
+        HWND window = GetForegroundWindow();
+        if (window.IsNull)
         {
             return 0;
         }
@@ -16,12 +16,4 @@ internal static class ServerForegroundProcess
         _ = GetWindowThreadProcessId(window, out uint processId);
         return processId <= int.MaxValue ? (int)processId : 0;
     }
-
-    [DllImport("user32.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 }

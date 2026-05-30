@@ -12,7 +12,13 @@ internal static class KeyboardShortcutParser
 
         KeyboardShortcutModifiers modifiers = KeyboardShortcutModifiers.None;
         ushort? key = null;
-        foreach (string part in value.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        string[] parts = value.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (value.TrimEnd().EndsWith('+') && parts.Length > 0)
+        {
+            parts[^1] += "+";
+        }
+
+        foreach (string part in parts)
         {
             if (TryParseModifier(part, out KeyboardShortcutModifiers modifier))
             {
@@ -93,6 +99,13 @@ internal static class KeyboardShortcutParser
                 "NUM7" or "NUMPAD7" => (ushort)0x67,
                 "NUM8" or "NUMPAD8" => (ushort)0x68,
                 "NUM9" or "NUMPAD9" => (ushort)0x69,
+
+                "NUM*" or "NUMPAD*" => (ushort)0x6A,
+                "NUM+" or "NUMPAD+" => (ushort)0x6B,
+                "NUM-" or "NUMPAD-" => (ushort)0x6D,
+                "NUM." or "NUMPAD." => (ushort)0x6E,
+                "NUM/" or "NUMPAD/" => (ushort)0x6F,
+
                 "ENTER" => (ushort)0x0D,
                 "ESC" or "ESCAPE" => (ushort)0x1B,
                 "SPACE" => (ushort)0x20,

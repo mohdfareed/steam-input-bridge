@@ -4,31 +4,6 @@ namespace SteamInputBridge.Forwarding.Controller.Routing;
 
 public sealed partial class ControllerBroker
 {
-    /// <summary>Sends a short diagnostic state to every connected output.</summary>
-    public int SendOutputProbe(in ControllerState state)
-    {
-        ThrowIfDisposed();
-        List<IControllerOutput> outputs = [];
-        lock (_gate)
-        {
-            foreach (ControllerSlot slot in _slots.Values)
-            {
-                if (slot.Output is { } output)
-                {
-                    outputs.Add(output);
-                }
-            }
-        }
-
-        foreach (IControllerOutput output in outputs)
-        {
-            ControllerState send = state;
-            output.Send(in send);
-        }
-
-        return outputs.Count;
-    }
-
     private void RefreshOutputs(List<IControllerOutput>? dispose = null)
     {
         foreach (ControllerSlot slot in _slots.Values)

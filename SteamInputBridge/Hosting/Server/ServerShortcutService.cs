@@ -6,7 +6,6 @@ using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Hosting.Server.Orchestration;
-using SteamInputBridge.Runtime.Audio;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
 
@@ -24,13 +23,14 @@ internal sealed class ServerShortcutService(
     private IReadOnlyDictionary<int, IReadOnlyList<ShortcutEntry>> _shortcuts =
         new Dictionary<int, IReadOnlyList<ShortcutEntry>>();
     private Dictionary<ShortcutTargetKey, ShortcutHold> _holds = [];
+    private List<int> _heldShortcutOrder = [];
     private List<ShortcutColorSource> _actionColors = [];
     private bool _started;
     private bool _disposed;
 
     public event Action? StateChanged;
 
-    public void Start()
+    public void Start(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_started)
@@ -39,6 +39,8 @@ internal sealed class ServerShortcutService(
         }
 
         _started = true;
+        microphone.StatusChanged += OnMicrophoneStatusChanged;
+        microphone.StartMonitoring(cancellationToken);
         settings.Changed += OnSettingsChanged;
         Apply(settings.Current.Shortcuts);
     }
@@ -51,6 +53,7 @@ internal sealed class ServerShortcutService(
         }
 
         settings.Changed -= OnSettingsChanged;
+        microphone.StatusChanged -= OnMicrophoneStatusChanged;
         ClearShortcutState();
         listener.Dispose();
         _disposed = true;
@@ -69,18 +72,51 @@ internal sealed class ServerShortcutService(
         return new OverlayStatus(microphone.GetStatus(), actionColor);
     }
 
+    public ShortcutRuntimeStatus GetShortcutStatus()
+    {
+        lock (_gate)
+        {
+            List<HeldShortcutStatus> held = [];
+            foreach (int shortcutId in _heldShortcutOrder)
+            {
+                if (!_shortcuts.TryGetValue(shortcutId, out IReadOnlyList<ShortcutEntry>? shortcuts))
+                {
+                    continue;
+                }
+
+                foreach (ShortcutEntry shortcut in shortcuts)
+                {
+                    if (shortcut.Value is not ShortcutValue.HoldEnabled and not ShortcutValue.HoldDisabled)
+                    {
+                        continue;
+                    }
+
+                    held.Add(new HeldShortcutStatus(
+                        shortcutId,
+                        shortcut.Keys,
+                        FormatTargets(shortcut.Targets),
+                        shortcut.Value.Value.ToString()));
+                }
+            }
+
+            return new ShortcutRuntimeStatus(held);
+        }
+    }
+
     private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)
     {
         _ = sender;
         Apply(args.Settings.Shortcuts);
     }
 
+    private void OnMicrophoneStatusChanged()
+    {
+        StateChanged?.Invoke();
+    }
+
     private void Apply(IEnumerable<ShortcutEntry> entries)
     {
-        KeyboardShortcutBindingSet bindings = KeyboardShortcutBindingSet.Create(
-            entries,
-            (entry, index, exception) =>
-                HostingLog.ShortcutSkipped(logger, ShortcutName(entry, index), exception.Message));
+        KeyboardShortcutBindingSet bindings = KeyboardShortcutBindingSet.Create(entries);
 
         bool shortcutStateChanged;
         lock (_gate)
@@ -176,6 +212,10 @@ internal sealed class ServerShortcutService(
         lock (_gate)
         {
             _holds[key] = new ShortcutHold(EnabledOnRelease: !enabledWhileHeld);
+            if (!_heldShortcutOrder.Contains(id))
+            {
+                _heldShortcutOrder.Add(id);
+            }
         }
 
         SetTarget(id, target, enabledWhileHeld);
@@ -200,6 +240,8 @@ internal sealed class ServerShortcutService(
             {
                 _ = _holds.Remove(hold.Key);
             }
+
+            _ = _heldShortcutOrder.Remove(id);
         }
 
         foreach (KeyValuePair<ShortcutTargetKey, ShortcutHold> hold in release)
@@ -294,6 +336,10 @@ internal sealed class ServerShortcutService(
         lock (_gate)
         {
             _ = _holds.Remove(target);
+            if (!HasHoldLocked(target.ShortcutId))
+            {
+                _ = _heldShortcutOrder.Remove(target.ShortcutId);
+            }
         }
     }
 
@@ -313,10 +359,26 @@ internal sealed class ServerShortcutService(
 
     private bool ClearShortcutStateLocked()
     {
+        bool changed = _holds.Count != 0 ||
+            _heldShortcutOrder.Count != 0 ||
+            _actionColors.Count != 0;
         _holds = [];
-        bool changed = _actionColors.Count != 0;
+        _heldShortcutOrder = [];
         _actionColors = [];
         return changed;
+    }
+
+    private bool HasHoldLocked(int shortcutId)
+    {
+        foreach (ShortcutTargetKey key in _holds.Keys)
+        {
+            if (key.ShortcutId == shortcutId)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void LogShortcut(ShortcutEntry shortcut, int id, ShortcutTargetSpec target)
@@ -336,6 +398,17 @@ internal sealed class ServerShortcutService(
         return string.IsNullOrWhiteSpace(entry.Name)
             ? $"#{index}"
             : entry.Name;
+    }
+
+    private static List<string> FormatTargets(IEnumerable<ShortcutTargetSpec> targets)
+    {
+        List<string> values = [];
+        foreach (ShortcutTargetSpec target in targets)
+        {
+            values.Add(target.ToString());
+        }
+
+        return values;
     }
 
     private readonly record struct ShortcutTargetKey(int ShortcutId, ShortcutTargetSpec Target);

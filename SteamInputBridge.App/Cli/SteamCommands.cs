@@ -61,7 +61,7 @@ internal static class SteamCommands
     private static Command CreateForceCommand()
     {
         Command command = new("force", "Force Steam Input to use an app or desktop configuration.");
-        Argument<string> appId = CreateAppIdArgument("app-id", allowDesktop: true);
+        Argument<string> appId = CreateAppIdArgument("app-id");
 
         command.Arguments.Add(appId);
         command.SetAction(async (parseResult, cancellationToken) =>
@@ -93,7 +93,7 @@ internal static class SteamCommands
     private static Command CreateOpenConfigCommand()
     {
         Command command = new("open-config", "Open Steam's controller configurator.");
-        Argument<string> appId = CreateAppIdArgument("app-id", allowDesktop: true);
+        Argument<string> appId = CreateAppIdArgument("app-id");
 
         command.Arguments.Add(appId);
         command.SetAction(async (parseResult, cancellationToken) =>
@@ -163,20 +163,18 @@ internal static class SteamCommands
     // MARK: Helpers
     // ========================================================================
 
-    private static Argument<string> CreateAppIdArgument(string name, bool allowDesktop)
+    private static Argument<string> CreateAppIdArgument(string name)
     {
         Argument<string> argument = new(name)
         {
-            DefaultValueFactory = (_) => allowDesktop ? "desktop" : string.Empty,
-            Description = allowDesktop
-                ? "Steam app id, non-Steam shortcut app id, or desktop."
-                : "Steam app id or non-Steam shortcut app id.",
+            DefaultValueFactory = (_) => "desktop",
+            Description = "Steam app id, non-Steam shortcut app id, or desktop.",
         };
 
         argument.Validators.Add(result =>
         {
             string? value = result.GetValue(argument);
-            if (allowDesktop && string.Equals(value, "desktop", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(value, "desktop", StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }

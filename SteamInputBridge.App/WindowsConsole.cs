@@ -1,19 +1,18 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
+using static Vanara.PInvoke.Kernel32;
 
 namespace SteamInputBridge.App;
 
-internal static partial class WindowsConsole
+internal static class WindowsConsole
 {
-    private const int AttachParentProcess = -1;
     private static StreamWriter? _output;
     private static StreamWriter? _error;
     private static StreamReader? _input;
 
     public static void AttachForCli()
     {
-        if (!AttachConsole(AttachParentProcess))
+        if (!AttachConsole(ATTACH_PARENT_PROCESS))
         {
             _ = AllocConsole();
         }
@@ -26,14 +25,4 @@ internal static partial class WindowsConsole
         Console.SetError(_error);
         Console.SetIn(_input);
     }
-
-    [LibraryImport("kernel32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool AttachConsole(int processId);
-
-    [LibraryImport("kernel32.dll", SetLastError = true)]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool AllocConsole();
 }

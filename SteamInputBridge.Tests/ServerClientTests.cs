@@ -259,11 +259,6 @@ public sealed class ServerClientTests
             throw new NotSupportedException();
         }
 
-        public Task<IReadOnlyList<ObservedGameProcess>> GetOwnedReceiverProcessesAsync()
-        {
-            throw new NotSupportedException();
-        }
-
         public Task EndRunAsync()
         {
             throw new NotSupportedException();

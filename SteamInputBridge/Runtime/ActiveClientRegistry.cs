@@ -110,16 +110,6 @@ public sealed partial class ActiveClientRegistry
         RaiseChanged(changed);
     }
 
-    /// <summary>Gets receiver processes currently owned by one client.</summary>
-    public IReadOnlyList<ObservedGameProcess> GetClientProcesses(Guid clientId)
-    {
-        lock (_lock)
-        {
-            ClientState client = GetClient(clientId);
-            return [.. client.Processes.Values.Where(process => OwnsProcess(clientId, process.ProcessId))];
-        }
-    }
-
     /// <summary>Gets receiver processes this client lifecycle owns and may stop.</summary>
     public IReadOnlyList<ObservedGameProcess> GetLifecycleOwnedProcesses(Guid clientId)
     {

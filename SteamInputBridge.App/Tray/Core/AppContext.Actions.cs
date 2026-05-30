@@ -1,10 +1,11 @@
 using System;
-using System.Diagnostics;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SteamInputBridge.App.Tray.Menu;
 using SteamInputBridge.Steam;
+using Vanara.PInvoke;
+using static Vanara.PInvoke.Shell32;
 
 namespace SteamInputBridge.App.Tray.Core;
 
@@ -65,13 +66,17 @@ internal sealed partial class AppContext
             return;
         }
 
-        _ = Process.Start(new ProcessStartInfo
+        IntPtr result = ShellExecute(
+            default,
+            "open",
+            processPath,
+            $"tray --wait-parent {Environment.ProcessId}",
+            System.AppContext.BaseDirectory,
+            ShowWindowCommand.SW_HIDE);
+        if (result.ToInt64() <= 32)
         {
-            FileName = processPath,
-            Arguments = $"tray --wait-parent {Environment.ProcessId}",
-            WorkingDirectory = System.AppContext.BaseDirectory,
-            UseShellExecute = false,
-        });
+            return;
+        }
 
         ShutdownApp();
     }

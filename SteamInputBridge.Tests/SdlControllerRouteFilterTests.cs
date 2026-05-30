@@ -1,6 +1,6 @@
-using SteamInputBridge.Forwarding.Controller;
+using System.Collections.Generic;
 using SteamInputBridge.Hosting;
-using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
+using SteamInputBridge.Hosting.Client.Run.Controllers;
 using SteamInputBridge.Inputs.Sdl;
 
 namespace SteamInputBridge.Tests;
@@ -9,76 +9,80 @@ namespace SteamInputBridge.Tests;
 [TestClass]
 public sealed class SdlControllerRouteFilterTests
 {
-    /// <summary>Xbox VID/PID alone is not enough to identify an owned VIIPER output.</summary>
+    /// <summary>Steam Controllers are forwardable.</summary>
     [TestMethod]
-    public void AllowsXboxControllerWithoutOwnedMarker()
+    public void AllowsSteamController()
     {
-        SdlControllerInfo controller = Controller(0x045e, 0x028e);
+        SdlControllerInfo controller = SteamController();
 
         Assert.IsTrue(SdlControllerRoutePolicy.IsForwardable(controller));
     }
 
-    /// <summary>Owned VIIPER virtual controllers are filtered when SDL exposes the owned marker.</summary>
+    /// <summary>Owned VIIPER virtual controllers are not forwardable.</summary>
     [TestMethod]
     public void RejectsViiperControllerLoopbackWithOwnedMarker()
     {
-        SdlControllerInfo controller = Controller(0x045e, 0x028e, "Steam Input Bridge - Virtual Controller");
+        SdlControllerInfo controller = Controller(0x28de, 0x1302, "Steam Input Bridge - Virtual Controller");
 
         Assert.IsFalse(SdlControllerRoutePolicy.IsForwardable(controller));
     }
 
-    /// <summary>Non-VIIPER controllers remain forwardable.</summary>
+    /// <summary>Non-Steam controllers are outside product scope.</summary>
     [TestMethod]
-    public void AllowsNonViiperController()
+    public void RejectsNonSteamController()
     {
         SdlControllerInfo controller = Controller(0x054c, 0x05c4);
 
-        Assert.IsTrue(SdlControllerRoutePolicy.IsForwardable(controller));
+        Assert.IsFalse(SdlControllerRoutePolicy.IsForwardable(controller));
     }
 
-    /// <summary>Owned VIIPER outputs are filtered by exact observed SDL path.</summary>
+    /// <summary>Partial Steam rescans are not treated as disconnects.</summary>
     [TestMethod]
-    public void RejectsTrackedOwnedOutput()
+    public void KeepsOpenSourceMissingFromPartialScan()
     {
-        OwnedVirtualControllerRegistry registry = new();
-        SdlControllerInfo existing = Controller(0x054c, 0x05c4, path: "real-ds4");
-        SdlControllerInfo created = Controller(0x054c, 0x05c4, path: "owned-ds4");
-        _ = registry.BeginTrackingOutput(ControllerOutput.Ds4, [existing]);
-        registry.ObserveControllers([existing, created]);
-        ServerControllerInputFilter filter = new(null, null, registry);
+        SdlControllerInfo opened = SteamController();
+        Dictionary<SdlControllerId, SdlControllerInfo> current = new()
+        {
+            [new SdlControllerId("steam:other")] = Controller(0x28de, 0x1302, "Steam Controller", "other"),
+        };
 
-        Assert.IsTrue(filter.Allows(existing));
-        Assert.IsFalse(filter.Allows(created));
+        Assert.IsFalse(ClientControllerSourceStaleness.ShouldRemoveOpenedSource(opened, current));
     }
 
-    /// <summary>Late VIIPER DS4 echoes are rejected by exact path after a pending output is created.</summary>
+    /// <summary>Reused SDL ids are stale when the controller identity changes.</summary>
     [TestMethod]
-    public void RejectsPendingOutputWhenClientReportsItBeforeServerOpensIt()
+    public void RemovesOpenSourceWhenSameIdChangesIdentity()
     {
-        OwnedVirtualControllerRegistry registry = new();
-        SdlControllerInfo existing = Controller(0x054c, 0x05c4, path: "real-ds4");
-        _ = registry.BeginTrackingOutput(ControllerOutput.Ds4, [existing]);
-        ServerControllerInputFilter filter = new(null, null, registry);
+        SdlControllerInfo opened = SteamController();
+        Dictionary<SdlControllerId, SdlControllerInfo> current = new()
+        {
+            [opened.Id] = opened with { Name = "Different Controller" },
+        };
 
-        ClientControllerInfo created = ClientController(
-            @"path:\\?\hid#vid_054c&pid_05c4#owned",
-            0x054c,
-            0x05c4);
-
-        Assert.IsFalse(filter.Allows(created));
-        Assert.IsFalse(filter.Allows(Controller(0x054c, 0x05c4, path: @"\\?\hid#vid_054c&pid_05c4#owned")));
+        Assert.IsTrue(ClientControllerSourceStaleness.ShouldRemoveOpenedSource(opened, current));
     }
 
-    /// <summary>DS4 devices already present before VIIPER output creation are not claimed as owned.</summary>
+    /// <summary>Stable matching identity is retained.</summary>
     [TestMethod]
-    public void AllowsDs4ThatExistedBeforeOutputCreation()
+    public void KeepsOpenSourceWhenSameIdStillSameController()
     {
-        OwnedVirtualControllerRegistry registry = new();
-        SdlControllerInfo existing = Controller(0x054c, 0x05c4, path: "real-ds4");
-        _ = registry.BeginTrackingOutput(ControllerOutput.Ds4, [existing]);
-        ServerControllerInputFilter filter = new(null, null, registry);
+        SdlControllerInfo opened = SteamController();
+        Dictionary<SdlControllerId, SdlControllerInfo> current = new()
+        {
+            [opened.Id] = opened,
+        };
 
-        Assert.IsTrue(filter.Allows(existing));
+        Assert.IsFalse(ClientControllerSourceStaleness.ShouldRemoveOpenedSource(opened, current));
+    }
+
+    private static SdlControllerInfo SteamController()
+    {
+        return Controller(0x28de, 0x1302, "Steam Controller", "steam-controller") with
+        {
+            Id = new SdlControllerId("steam:0001fa99604010e6"),
+            Source = SdlControllerSource.Steam,
+            SteamHandle = 0x0001fa99604010e6,
+        };
     }
 
     private static SdlControllerInfo Controller(
@@ -98,20 +102,5 @@ public sealed class SdlControllerRouteFilterTests
             Path: path,
             HasGyro: false,
             HasAccelerometer: false);
-    }
-
-    private static ClientControllerInfo ClientController(
-        string routeId,
-        ushort vendorId,
-        ushort productId)
-    {
-        return new ClientControllerInfo(
-            0,
-            routeId,
-            "PS4 Controller",
-            ControllerFeatures.StandardControls,
-            routeId,
-            vendorId,
-            productId);
     }
 }

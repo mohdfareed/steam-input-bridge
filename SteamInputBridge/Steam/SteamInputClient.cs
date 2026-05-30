@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using SteamInputBridge.Steam.GameCatalog;
+using Vanara.PInvoke;
+using static Vanara.PInvoke.Shell32;
 
 namespace SteamInputBridge.Steam;
 
@@ -117,16 +118,9 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
             throw new ArgumentException("Only steam:// URLs are supported.", nameof(url));
         }
 
-        ProcessStartInfo startInfo = OperatingSystem.IsLinux()
-            ? new ProcessStartInfo("xdg-open", url.AbsoluteUri)
-            : new ProcessStartInfo
-            {
-                FileName = url.AbsoluteUri,
-                UseShellExecute = true,
-            };
-
-        using Process process = Process.Start(startInfo) ??
-            throw new InvalidOperationException("Could not open the Steam URL.");
-        return ValueTask.CompletedTask;
+        IntPtr result = ShellExecute(default, "open", url.AbsoluteUri, null, null, ShowWindowCommand.SW_SHOWNORMAL);
+        return result.ToInt64() > 32
+            ? ValueTask.CompletedTask
+            : throw new InvalidOperationException("Could not open the Steam URL.");
     }
 }

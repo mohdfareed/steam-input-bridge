@@ -9,9 +9,9 @@ namespace SteamInputBridge.Hosting.Client.Run.Controllers;
 internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
 {
     private readonly Lock _gate = new();
-    private readonly Dictionary<ControllerIndexKey, ushort> _controllerIndices = [];
     private List<ClientControllerRouteSource> _sources = [];
     private SdlGamepadSource[] _gamepadSources = [];
+    private Dictionary<SdlGamepadSource, ushort> _sourceIndices = [];
     private ushort _nextControllerIndex;
 
     public IReadOnlyList<ClientControllerRouteSource> Add(IReadOnlyList<SdlGamepadSource> sources)
@@ -26,11 +26,12 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
             List<ClientControllerRouteSource> entries = [.. _sources];
             foreach (SdlGamepadSource source in sources)
             {
-                entries.Add(new ClientControllerRouteSource(GetOrAddControllerIndex(source.Controller), source));
+                entries.Add(new ClientControllerRouteSource(_nextControllerIndex++, source));
             }
 
             _sources = entries;
             _gamepadSources = CreateGamepadSnapshot(entries);
+            _sourceIndices = CreateSourceIndexSnapshot(entries);
             return _sources;
         }
     }
@@ -51,6 +52,7 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
             sources.RemoveAt(index);
             _sources = sources;
             _gamepadSources = CreateGamepadSnapshot(sources);
+            _sourceIndices = CreateSourceIndexSnapshot(sources);
             return true;
         }
     }
@@ -69,34 +71,17 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
 
     public IReadOnlyList<SdlGamepadSource> GetGamepadSourcesSnapshot()
     {
-        lock (_gate)
-        {
-            return _gamepadSources;
-        }
+        return Volatile.Read(ref _gamepadSources);
     }
 
     public IReadOnlyList<ClientControllerRouteSource> GetSourcesSnapshot()
     {
-        lock (_gate)
-        {
-            return _sources;
-        }
+        return Volatile.Read(ref _sources);
     }
 
     public bool TryFindSourceIndex(SdlGamepadSource source, out ushort controllerIndex)
     {
-        IReadOnlyList<ClientControllerRouteSource> sources = GetSourcesSnapshot();
-        for (int i = 0; i < sources.Count; i++)
-        {
-            if (ReferenceEquals(sources[i].Source, source))
-            {
-                controllerIndex = sources[i].ControllerIndex;
-                return true;
-            }
-        }
-
-        controllerIndex = 0;
-        return false;
+        return Volatile.Read(ref _sourceIndices).TryGetValue(source, out controllerIndex);
     }
 
     public bool TryGetSource(ushort controllerIndex, out SdlGamepadSource source)
@@ -132,34 +117,17 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
 
             List<ClientControllerRouteSource> retained = [];
             List<ClientControllerRouteSource> removed = [];
-            bool hasCurrentControllers = currentControllers.Count != 0;
             foreach (ClientControllerRouteSource source in _sources)
             {
-                // Keep routes through empty Steam scans, but do not preserve a
-                // stale source when Steam returns another non-empty set. Steam
-                // can reshuffle handles while rebuilding virtual devices; stale
-                // routes are worse than a brief unregister/reopen.
-                if (!currentControllers.TryGetValue(source.Source.Controller.Id, out SdlControllerInfo? current))
+                if (ClientControllerSourceStaleness.ShouldRemoveOpenedSource(
+                    source.Source.Controller,
+                    currentControllers))
                 {
-                    if (hasCurrentControllers)
-                    {
-                        removed.Add(source);
-                    }
-                    else
-                    {
-                        retained.Add(source);
-                    }
-
-                    continue;
-                }
-
-                if (SdlControllerRoutePolicy.IsSameConnectedController(source.Source.Controller, current))
-                {
-                    retained.Add(source);
+                    removed.Add(source);
                 }
                 else
                 {
-                    removed.Add(source);
+                    retained.Add(source);
                 }
             }
 
@@ -170,6 +138,7 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
 
             _sources = retained;
             _gamepadSources = CreateGamepadSnapshot(retained);
+            _sourceIndices = CreateSourceIndexSnapshot(retained);
             return removed;
         }
     }
@@ -182,6 +151,7 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
             sources = _sources;
             _sources = [];
             _gamepadSources = [];
+            _sourceIndices = [];
         }
 
         foreach (ClientControllerRouteSource source in sources)
@@ -193,19 +163,6 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await ClearAsync().ConfigureAwait(false);
-    }
-
-    private ushort GetOrAddControllerIndex(SdlControllerInfo controller)
-    {
-        ControllerIndexKey key = ControllerIndexKey.Create(controller);
-        if (_controllerIndices.TryGetValue(key, out ushort index))
-        {
-            return index;
-        }
-
-        index = _nextControllerIndex++;
-        _controllerIndices[key] = index;
-        return index;
     }
 
     private static SdlGamepadSource[] CreateGamepadSnapshot(List<ClientControllerRouteSource> sources)
@@ -224,27 +181,36 @@ internal sealed class ClientControllerSourceRegistry : IAsyncDisposable
         return gamepads;
     }
 
-    private readonly record struct ControllerIndexKey(
-        SdlControllerId Id,
-        uint InstanceId,
-        SdlControllerSource Source,
-        ulong SteamHandle,
-        ushort VendorId,
-        ushort ProductId,
-        string Name,
-        string? Path)
+    private static Dictionary<SdlGamepadSource, ushort> CreateSourceIndexSnapshot(
+        List<ClientControllerRouteSource> sources)
     {
-        public static ControllerIndexKey Create(SdlControllerInfo controller)
+        if (sources.Count == 0)
         {
-            return new ControllerIndexKey(
-                controller.Id,
-                controller.InstanceId,
-                controller.Source,
-                controller.SteamHandle,
-                controller.VendorId,
-                controller.ProductId,
-                controller.Name,
-                controller.Path);
+            return [];
         }
+
+        Dictionary<SdlGamepadSource, ushort> indices = new(capacity: sources.Count);
+        foreach (ClientControllerRouteSource source in sources)
+        {
+            indices[source.Source] = source.ControllerIndex;
+        }
+
+        return indices;
+    }
+}
+
+internal static class ClientControllerSourceStaleness
+{
+    public static bool ShouldRemoveOpenedSource(
+        SdlControllerInfo opened,
+        IReadOnlyDictionary<SdlControllerId, SdlControllerInfo> currentControllers)
+    {
+        // Steam can temporarily omit already-open streams while rebuilding
+        // virtual devices. Missing from a scan is not a removal signal; the
+        // SDL event loop owns actual disconnects. The only scan-time stale
+        // case we trust is SDL reusing the same stable id for a different
+        // controller identity.
+        return currentControllers.TryGetValue(opened.Id, out SdlControllerInfo? current) &&
+            !SdlControllerRoutePolicy.IsSameConnectedController(opened, current);
     }
 }

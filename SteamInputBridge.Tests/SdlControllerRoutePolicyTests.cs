@@ -15,37 +15,37 @@ public sealed class SdlControllerRoutePolicyTests
     [TestMethod]
     public void MatchesSteamControllerByPath()
     {
-        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x1234, 0x5678, "same");
-        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x9999, 0x9999, "same");
+        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x28de, 0x1302, "same", "Steam Controller");
+        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x28de, 0x1142, "same", "Steam Controller");
 
         SdlControllerInfo? match = SdlControllerRoutePolicy.FindPhysicalController(steam, [physical]);
 
         Assert.AreSame(physical, match);
     }
 
-    /// <summary>Unique VID/PID match is used when paths do not match.</summary>
+    /// <summary>Unique Steam Controller VID/PID match is used when paths do not match.</summary>
     [TestMethod]
     public void MatchesSteamControllerByUniqueVidPid()
     {
-        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x1234, 0x5678, "steam");
-        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x1234, 0x5678, "physical");
+        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x28de, 0x1302, "steam", "Steam Controller");
+        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x28de, 0x1302, "physical", "Steam Controller");
 
         SdlControllerInfo? match = SdlControllerRoutePolicy.FindPhysicalController(steam, [physical]);
 
         Assert.AreSame(physical, match);
     }
 
-    /// <summary>Duplicate VID/PID matches are rejected as ambiguous.</summary>
+    /// <summary>Duplicate Steam Controller VID/PID matches are rejected as ambiguous.</summary>
     [TestMethod]
     public void RejectsAmbiguousVidPidMatch()
     {
-        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x1234, 0x5678, "steam");
+        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x28de, 0x1302, "steam", "Steam Controller");
 
         SdlControllerInfo? match = SdlControllerRoutePolicy.FindPhysicalController(
             steam,
             [
-                Controller(SdlControllerSource.Physical, 0x1234, 0x5678, "one"),
-                Controller(SdlControllerSource.Physical, 0x1234, 0x5678, "two"),
+                Controller(SdlControllerSource.Physical, 0x28de, 0x1302, "one", "Steam Controller"),
+                Controller(SdlControllerSource.Physical, 0x28de, 0x1302, "two", "Steam Controller"),
             ]);
 
         Assert.IsNull(match);
@@ -63,31 +63,25 @@ public sealed class SdlControllerRoutePolicyTests
         Assert.AreSame(physical, match);
     }
 
-    /// <summary>Host-side physical matching uses the same unique VID/PID heuristic.</summary>
+    /// <summary>Host-side physical matching is limited to Steam Controllers.</summary>
     [TestMethod]
     public void MatchesPhysicalControllerByDeviceIdentity()
     {
-        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x054c, 0x0df2, "physical");
+        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x28de, 0x1302, "physical", "Steam Controller");
 
         SdlControllerInfo? match = SdlControllerRoutePolicy.FindPhysicalControllerByDeviceIdentity(
-            0x054c,
-            0x0df2,
-            "DualSense Edge",
+            0x28de,
+            0x1302,
+            "Steam Controller",
             [physical]);
 
         Assert.AreSame(physical, match);
     }
 
-    /// <summary>Candidate narrowing accepts only physically possible Steam-to-host pairs.</summary>
+    /// <summary>Candidate narrowing accepts only Steam Controller pairs.</summary>
     [TestMethod]
     public void PhysicalCounterpartCandidateRequiresCompatibleIdentity()
     {
-        SdlControllerInfo dualSense = Controller(
-            SdlControllerSource.Physical,
-            0x054c,
-            0x0df2,
-            "ps5",
-            "DualSense Edge Wireless Controller");
         SdlControllerInfo steamController = Controller(
             SdlControllerSource.Physical,
             0x28de,
@@ -95,57 +89,16 @@ public sealed class SdlControllerRoutePolicyTests
             "steam",
             "Steam Controller");
 
-        Assert.IsTrue(SdlControllerRoutePolicy.CanBePhysicalCounterpart(
-            0x054c,
-            0x0ce6,
-            "DualSense Wireless Controller",
-            dualSense));
         Assert.IsFalse(SdlControllerRoutePolicy.CanBePhysicalCounterpart(
             0x054c,
             0x0ce6,
-            "DualSense Wireless Controller",
+            "Generic Controller",
             steamController));
         Assert.IsTrue(SdlControllerRoutePolicy.CanBePhysicalCounterpart(
             0x28de,
             0x1302,
             "Steam Controller",
             steamController));
-    }
-
-    /// <summary>Steam's generic DualSense id can pair with one host-visible DualSense Edge.</summary>
-    [TestMethod]
-    public void MatchesSingleDualSenseFamilyControllerByName()
-    {
-        SdlControllerInfo physical = Controller(
-            SdlControllerSource.Physical,
-            0x054c,
-            0x0df2,
-            "physical",
-            "DualSense Edge Wireless Controller");
-
-        SdlControllerInfo? match = SdlControllerRoutePolicy.FindPhysicalControllerByDeviceIdentity(
-            0x054c,
-            0x0ce6,
-            "DualSense Wireless Controller",
-            [physical]);
-
-        Assert.AreSame(physical, match);
-    }
-
-    /// <summary>DualSense family fallback refuses to guess when two Sony controllers match.</summary>
-    [TestMethod]
-    public void RejectsMultipleDualSenseFamilyControllersByName()
-    {
-        SdlControllerInfo? match = SdlControllerRoutePolicy.FindPhysicalControllerByDeviceIdentity(
-            0x054c,
-            0x0ce6,
-            "DualSense Wireless Controller",
-            [
-                Controller(SdlControllerSource.Physical, 0x054c, 0x0df2, "one", "DualSense Edge Wireless Controller"),
-                Controller(SdlControllerSource.Physical, 0x054c, 0x0df3, "two", "DualSense Wireless Controller"),
-            ]);
-
-        Assert.IsNull(match);
     }
 
     /// <summary>Valve fallback rejects multiple physical Steam Controllers with the same name.</summary>
@@ -168,9 +121,9 @@ public sealed class SdlControllerRoutePolicyTests
     [TestMethod]
     public void ClientSelectionDropsMatchedPhysicalDuplicate()
     {
-        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x1234, 0x5678, "same");
-        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x1234, 0x5678, "same");
-        SdlControllerInfo other = Controller(SdlControllerSource.Physical, 0xabcd, 0xef01, "other");
+        SdlControllerInfo steam = Controller(SdlControllerSource.Steam, 0x28de, 0x1302, "same", "Steam Controller");
+        SdlControllerInfo physical = Controller(SdlControllerSource.Physical, 0x28de, 0x1302, "same", "Steam Controller");
+        SdlControllerInfo other = Controller(SdlControllerSource.Physical, 0x28de, 0x1142, "other", "Steam Controller 2");
 
         IReadOnlyList<SdlControllerInfo> selected =
             ClientControllerRoutePlanner.SelectClientControllers([steam, physical, other]);
@@ -188,6 +141,7 @@ public sealed class SdlControllerRoutePolicyTests
             0x28de,
             0x1302,
             "XInput#0",
+            "Steam Controller",
             id: "steam:0001fa99604010e6",
             steamHandle: 0x0001fa99604010e6);
 
@@ -197,9 +151,9 @@ public sealed class SdlControllerRoutePolicyTests
         CollectionAssert.AreEqual(new[] { steam }, forwardable.ToArray());
     }
 
-    /// <summary>Real DS4 controllers are not dropped by DS4 output VID/PID alone.</summary>
+    /// <summary>Non-Steam controllers are not forwardable.</summary>
     [TestMethod]
-    public void ForwardableFilterKeepsRealDs4()
+    public void ForwardableFilterDropsNonSteamController()
     {
         SdlControllerInfo realDs4 = Controller(
             SdlControllerSource.Physical,
@@ -211,7 +165,7 @@ public sealed class SdlControllerRoutePolicyTests
         List<SdlControllerInfo> forwardable =
             ClientControllerRoutePlanner.FilterForwardable([realDs4]);
 
-        CollectionAssert.AreEqual(new[] { realDs4 }, forwardable.ToArray());
+        Assert.HasCount(0, forwardable);
     }
 
     /// <summary>App-owned DS4 virtual outputs are dropped when SDL exposes their name.</summary>
@@ -264,16 +218,18 @@ public sealed class SdlControllerRoutePolicyTests
     {
         SdlControllerInfo basic = Controller(
             SdlControllerSource.Steam,
-            0x054c,
-            0x05c4,
+            0x28de,
+            0x1302,
             "basic",
+            "Steam Controller",
             id: "steam:0001fa99604010e6",
             steamHandle: 0x0001fa99604010e6);
         SdlControllerInfo touchpad = Controller(
             SdlControllerSource.Steam,
-            0x054c,
-            0x05c4,
+            0x28de,
+            0x1302,
             "touchpad",
+            "Steam Controller",
             id: "steam:0001fa99604010e6",
             steamHandle: 0x0001fa99604010e6,
             hasTouchpad: true);
@@ -284,9 +240,9 @@ public sealed class SdlControllerRoutePolicyTests
         CollectionAssert.AreEqual(new[] { touchpad }, selected.ToArray());
     }
 
-    /// <summary>A unique Steam virtual XInput fallback is kept when it is the only route.</summary>
+    /// <summary>A unique Steam virtual XInput fallback is not forwardable.</summary>
     [TestMethod]
-    public void ClientSelectionKeepsUniqueSteamVirtualXInputFallback()
+    public void ForwardableFilterDropsUniqueSteamVirtualXInputFallback()
     {
         SdlControllerInfo fallback = Controller(
             SdlControllerSource.Steam,
@@ -297,10 +253,10 @@ public sealed class SdlControllerRoutePolicyTests
             id: "steam:0001fa99604010e6",
             steamHandle: 0x0001fa99604010e6);
 
-        IReadOnlyList<SdlControllerInfo> selected =
-            ClientControllerRoutePlanner.SelectClientControllers([fallback]);
+        List<SdlControllerInfo> selected =
+            ClientControllerRoutePlanner.FilterForwardable([fallback]);
 
-        CollectionAssert.AreEqual(new[] { fallback }, selected.ToArray());
+        Assert.HasCount(0, selected);
     }
 
     /// <summary>Steam-routed XInput paths are not treated as physical route identity.</summary>
@@ -309,9 +265,10 @@ public sealed class SdlControllerRoutePolicyTests
     {
         SdlControllerInfo steam = Controller(
             SdlControllerSource.Steam,
-            0x054c,
-            0x0df2,
+            0x28de,
+            0x1302,
             "XInput#0",
+            "Steam Controller",
             id: "steam:05de143a9a0d5235",
             steamHandle: 0x05de143a9a0d5235);
 
@@ -359,21 +316,23 @@ public sealed class SdlControllerRoutePolicyTests
     {
         SdlControllerInfo steam = Controller(
             SdlControllerSource.Steam,
-            0x054c,
-            0x0df2,
+            0x28de,
+            0x1302,
             "XInput#0",
+            "Steam Controller",
             id: "steam:05de143a9a0d5235",
             steamHandle: 0x05de143a9a0d5235);
         SdlControllerInfo physical = Controller(
             SdlControllerSource.Physical,
-            0x054c,
-            0x0df2,
-            @"\\?\hid#vid_054c&pid_0df2");
+            0x28de,
+            0x1302,
+            @"\\?\hid#vid_28de&pid_1302",
+            "Steam Controller");
 
         SdlControllerRouteIdentity identity = SdlControllerRoutePolicy.CreateIdentity(0, steam, [physical]);
 
-        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", identity.RouteId);
-        Assert.AreEqual(@"path:\\?\hid#vid_054c&pid_0df2", identity.PhysicalDeviceId);
+        Assert.AreEqual(@"path:\\?\hid#vid_28de&pid_1302", identity.RouteId);
+        Assert.AreEqual(@"path:\\?\hid#vid_28de&pid_1302", identity.PhysicalDeviceId);
     }
 
     /// <summary>Steam id reuse with a different controller identity is treated as stale.</summary>
@@ -382,10 +341,10 @@ public sealed class SdlControllerRoutePolicyTests
     {
         SdlControllerInfo first = Controller(
             SdlControllerSource.Steam,
-            0x054c,
-            0x0df2,
+            0x28de,
+            0x11ff,
             "XInput#0",
-            "DualSense Edge Wireless Controller",
+            "XInput Controller #1",
             id: "steam:05de143a9a0d5235",
             steamHandle: 0x05de143a9a0d5235);
         SdlControllerInfo reused = Controller(

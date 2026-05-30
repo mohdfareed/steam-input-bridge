@@ -22,12 +22,16 @@ internal sealed partial class ServerSessions(
     ControllerPipeSessions controllerPipes,
     Func<ServerInputStatus>? getInputStatus = null,
     Func<ServerSteamInputStatus>? getSteamInputStatus = null,
-    Func<ServerHidHideStatus>? getHidHideStatus = null,
     Func<OverlayStatus>? getOverlayStatus = null,
-    Action? routeStateChanged = null,
+    Func<ShortcutRuntimeStatus>? getShortcutStatus = null,
+    Func<IReadOnlyList<ObservedGameProcess>, int>? killProcesses = null,
+    Func<int, int>? killProcess = null,
     Action? statusChanged = null)
 {
     private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
+    private readonly Func<IReadOnlyList<ObservedGameProcess>, int> _killProcesses =
+        killProcesses ?? GameProcessKiller.Kill;
+    private readonly Func<int, int> _killProcess = killProcess ?? GameProcessKiller.KillProcess;
 
     internal IReadOnlyCollection<ConnectedClient> Clients => [.. _clients.Values];
 
@@ -47,7 +51,6 @@ internal sealed partial class ServerSessions(
         forwarding.RemoveClient(clientId);
         mouseForwarding.RemoveClient(clientId);
         await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
-        routeStateChanged?.Invoke();
         statusChanged?.Invoke();
 
         HostingLog.ClientDisconnected(logger, clientId, _clients.Count);
@@ -59,17 +62,16 @@ internal sealed partial class ServerSessions(
         forwarding.RemoveClient(clientId);
         mouseForwarding.RemoveClient(clientId);
         await controllerPipes.RemoveAsync(clientId).ConfigureAwait(false);
-        routeStateChanged?.Invoke();
         statusChanged?.Invoke();
     }
 
     internal async Task StopClientAsync(Guid clientId)
     {
         ConnectedClient client = GetClient(clientId);
-        _ = GameProcessKiller.Kill(runtime.GetLifecycleOwnedProcesses(clientId));
+        _ = _killProcesses(runtime.GetLifecycleOwnedProcesses(clientId));
         if (client.ProcessId != Environment.ProcessId)
         {
-            _ = GameProcessKiller.KillProcess(client.ProcessId);
+            _ = _killProcess(client.ProcessId);
         }
 
         await EndRunAsync(clientId).ConfigureAwait(false);

@@ -14,9 +14,9 @@ internal sealed partial class ServerSessions
             Inputs = getInputStatus?.Invoke() ??
                 new ServerInputStatus(new MouseInputPumpStatus(false, false, null)),
             SteamInput = getSteamInputStatus?.Invoke() ?? new ServerSteamInputStatus(false, null, null, null),
-            HidHide = getHidHideStatus?.Invoke() ?? new ServerHidHideStatus(false, false, false, [], [], [], null, null),
             ControllerPipes = controllerPipes.GetStatus(),
             Overlay = getOverlayStatus?.Invoke() ?? OverlayStatus.Hidden,
+            Shortcuts = getShortcutStatus?.Invoke() ?? ShortcutRuntimeStatus.Empty,
         });
     }
 }

@@ -51,7 +51,7 @@ internal static class ServerStatusCommand
                     await Console.Out.WriteAsync(ServerStatusTextFormatter.Format(status)).ConfigureAwait(false);
                 }
             }
-            catch (IOException exception)
+            catch (Exception exception) when (exception is IOException or TimeoutException)
             {
                 await Console.Error.WriteLineAsync($"server status: unavailable ({exception.Message})")
                     .ConfigureAwait(false);

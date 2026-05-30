@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Forwarding.Controller.Routing;
 using SteamInputBridge.Forwarding.Mouse;
-using SteamInputBridge.HidHide;
 using SteamInputBridge.Hosting.Server.Orchestration.Active;
 using SteamInputBridge.Hosting.Server.Pipes;
 using SteamInputBridge.Runtime;
@@ -35,8 +34,6 @@ public sealed class ServerService : IAsyncDisposable
     private readonly ControllerPipeSessions _controllerPipes;
     private readonly MouseInputPump _mouseInput;
     private readonly PhysicalControllerPump _physicalControllers;
-    private readonly ServerHidHideDeviceResolver _hidHideDevices;
-    private readonly HidHideService? _hidHide;
     private readonly ServerShortcutService? _shortcuts;
     private readonly Func<CancellationToken, Task> _startupCleanup;
 
@@ -65,10 +62,7 @@ public sealed class ServerService : IAsyncDisposable
         ServerActiveClientLoop? activeClients,
         ControllerBroker? forwarding = null,
         MouseBroker? mouseForwarding = null,
-        HidHideService? hidHide = null,
-        HidHideDeviceCatalog? hidHideDevices = null,
         ServerShortcutService? shortcuts = null,
-        OwnedVirtualControllerRegistry? ownedVirtualControllers = null,
         Func<CancellationToken, Task>? startupCleanup = null,
         string? pipeName = null)
     {
@@ -81,25 +75,16 @@ public sealed class ServerService : IAsyncDisposable
             : pipeName;
         _startupCleanup = startupCleanup ?? (static _ => Task.CompletedTask);
         _shortcuts = shortcuts;
-        _hidHide = hidHide;
         _controllerBroker = forwarding ?? new ControllerBroker(new NoopControllerOutputFactory());
         _mouseBroker = mouseForwarding ?? new MouseBroker(new NoopMouseOutputFactory());
-        ServerControllerInputFilter controllerInputFilter = new(hidHideDevices, hidHide, ownedVirtualControllers);
-        _physicalControllers = new PhysicalControllerPump(_controllerBroker, logger, controllerInputFilter);
+        _physicalControllers = new PhysicalControllerPump(_controllerBroker, logger);
         _controllerPipes = new ControllerPipeSessions(_controllerBroker, logger, _physicalControllers);
-        _hidHideDevices = new ServerHidHideDeviceResolver(
-            hidHideDevices,
-            _controllerPipes);
 
         ActiveClientRegistry activeRuntime = runtime ?? new ActiveClientRegistry();
         _mouseInput = new MouseInputPump(_mouseBroker, logger);
         _activeClients = activeClients ?? ServerActiveClientLoop.CreateDefault(
             activeRuntime,
             logger,
-            profiles,
-            hidHide,
-            _hidHideDevices.GetDevicePaths,
-            _hidHideDevices.GetDeviceLabels,
             _controllerBroker,
             _mouseBroker,
             NotifyStatusChanged);
@@ -113,10 +98,9 @@ public sealed class ServerService : IAsyncDisposable
             _controllerPipes,
             () => new ServerInputStatus(_mouseInput.GetStatus(), _physicalControllers.GetStatus()),
             () => _activeClients.GetSteamInputStatus(),
-            () => _activeClients.GetHidHideStatus(),
             () => _shortcuts?.GetOverlayStatus() ?? OverlayStatus.Hidden,
-            OnRouteStateChanged,
-            NotifyStatusChanged);
+            () => _shortcuts?.GetShortcutStatus() ?? ShortcutRuntimeStatus.Empty,
+            statusChanged: NotifyStatusChanged);
 
         _physicalControllers.ControllersChanged += OnPhysicalControllersChanged;
         SubscribeShortcutStateChanged();
@@ -144,14 +128,13 @@ public sealed class ServerService : IAsyncDisposable
         }
 
         await RunStartupCleanupAsync(cancellationToken).ConfigureAwait(false);
-        RegisterHidHideApplicationAccess();
 
         using CancellationTokenSource orchestrationStop =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task orchestrationTask = _activeClients.RunAsync(orchestrationStop.Token);
         _mouseInput.Start(orchestrationStop.Token);
         _physicalControllers.Start(orchestrationStop.Token);
-        _shortcuts?.Start();
+        _shortcuts?.Start(orchestrationStop.Token);
 
         try
         {
@@ -197,7 +180,6 @@ public sealed class ServerService : IAsyncDisposable
             await _mouseInput.DisposeAsync().ConfigureAwait(false);
             await _physicalControllers.DisposeAsync().ConfigureAwait(false);
             _shortcuts?.Dispose();
-            _activeClients.ClearHidHide();
             await _connections.DisposeAsync().ConfigureAwait(false);
             await DisposeForwardingAsync().ConfigureAwait(false);
         }
@@ -230,7 +212,6 @@ public sealed class ServerService : IAsyncDisposable
         await _mouseInput.DisposeAsync().ConfigureAwait(false);
         await _physicalControllers.DisposeAsync().ConfigureAwait(false);
         _shortcuts?.Dispose();
-        _activeClients.ClearHidHide();
         await _connections.DisposeAsync().ConfigureAwait(false);
         await DisposeForwardingAsync().ConfigureAwait(false);
     }
@@ -247,17 +228,8 @@ public sealed class ServerService : IAsyncDisposable
 
     private void OnPhysicalControllersChanged()
     {
-        if (_controllerPipes.RefreshControllerRoutes())
-        {
-            _activeClients.RefreshHidHide();
-        }
-
+        _ = _controllerPipes.RefreshControllerRoutes();
         NotifyStatusChanged();
-    }
-
-    private void OnRouteStateChanged()
-    {
-        _activeClients.RefreshHidHide();
     }
 
     private void NotifyStatusChanged()
@@ -278,33 +250,6 @@ public sealed class ServerService : IAsyncDisposable
     private void TrackConnection(ServerConnectionHandle connection)
     {
         _connections.Track(connection);
-    }
-
-    private void RegisterHidHideApplicationAccess()
-    {
-        if (_hidHide is null)
-        {
-            return;
-        }
-
-        try
-        {
-            // HidHide normal mode uses one global app allow list. Keep only
-            // the required local processes on it: this app, HidHideCLI, and
-            // Steam's controller-owning processes.
-            _hidHide.AllowRequiredApplications();
-            _hidHide.ClearPreviousOwnedScope();
-            HostingLog.HidHideApplicationAccessRegistered(_logger);
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or
-                ArgumentException or
-                System.ComponentModel.Win32Exception or
-                IOException or
-                UnauthorizedAccessException)
-        {
-            HostingLog.HidHideApplicationAccessFailed(_logger, exception.Message);
-        }
     }
 
     private ServerInstanceLease? TryAcquireInstanceLease()

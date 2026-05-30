@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Settings.Profiles;
 using SteamInputBridge.Steam;
@@ -10,34 +9,6 @@ namespace SteamInputBridge.App;
 
 internal static class SrmExport
 {
-    private static readonly Action<ILogger, string?, int, Exception?> SrmStartupExported =
-        LoggerMessage.Define<string?, int>(
-            LogLevel.Information,
-            new EventId(1001, nameof(SrmStartupExported)),
-            "Exported SRM manifest on server startup: manifest={ManifestPath} profiles={ProfileCount}");
-
-    private static readonly Action<ILogger, string, Exception?> SrmStartupExportFailed =
-        LoggerMessage.Define<string>(
-            LogLevel.Warning,
-            new EventId(1002, nameof(SrmStartupExportFailed)),
-            "Could not export SRM manifest on server startup: {Message}");
-
-    public static void ExportOnServerStartup(IServiceProvider services)
-    {
-        SrmExportResult result = Export(services);
-        ILogger logger = services
-            .GetRequiredService<ILoggerFactory>()
-            .CreateLogger("SteamInputBridge.App.SrmExport");
-
-        if (result.Exported)
-        {
-            SrmStartupExported(logger, result.ManifestPath, result.ProfileCount, null);
-            return;
-        }
-
-        SrmStartupExportFailed(logger, result.Error ?? "unknown error", null);
-    }
-
     public static SrmExportResult Export(IServiceProvider services, string? manifestPathOverride = null)
     {
         try

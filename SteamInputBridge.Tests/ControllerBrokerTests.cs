@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Forwarding.Controller.Routing;
@@ -11,6 +12,7 @@ namespace SteamInputBridge.Tests;
 public sealed class ControllerBrokerTests
 {
     private static readonly ControllerId ControllerId = new("physical-1");
+    private static readonly ConditionalWeakTable<ControllerBroker, RouteCache> RegisteredRoutes = [];
 
     /// <summary>Client controls win while physical motion fills the missing feature group.</summary>
     [TestMethod]
@@ -26,7 +28,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             new ControllerState(null, Motion(1), null),
             ControllerFeatures.Motion);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -51,7 +53,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             new ControllerState(null, Motion(1), null),
             ControllerFeatures.Motion);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), Motion(2), null),
@@ -72,18 +74,22 @@ public sealed class ControllerBrokerTests
         broker.RegisterClient(first, ControllerOutput.Xbox360);
         broker.RegisterClient(second, ControllerOutput.Xbox360);
         broker.UpdatePhysicalController(ControllerId, ControllerState.Empty, ControllerFeatures.StandardControls);
-        broker.RegisterClientController(first, 0, ControllerId, ControllerFeatures.StandardControls);
-        broker.RegisterClientController(second, 0, ControllerId, ControllerFeatures.StandardControls);
+        broker.SetClientControllers(
+            first,
+            [new ControllerClientRegistration(0, ControllerId, ControllerFeatures.StandardControls)]);
+        broker.SetClientControllers(
+            second,
+            [new ControllerClientRegistration(0, ControllerId, ControllerFeatures.StandardControls)]);
 
         broker.SetActiveClient(first);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             first,
             0,
             new ControllerState(Standard(ControllerButtons.South), null, null),
             ControllerFeatures.StandardControls);
         Assert.AreEqual(ControllerButtons.South, factory.SingleOutput.LastState.Standard?.Buttons);
 
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             second,
             0,
             new ControllerState(Standard(ControllerButtons.East), null, null),
@@ -111,7 +117,7 @@ public sealed class ControllerBrokerTests
                 null,
                 null),
             ControllerFeatures.StandardControls);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(
@@ -145,7 +151,7 @@ public sealed class ControllerBrokerTests
                 null,
                 null),
             ControllerFeatures.StandardControls);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(
@@ -178,7 +184,7 @@ public sealed class ControllerBrokerTests
                     new ControllerTouchContact(true, 0.10f, 0.20f, 0.30f),
                     new ControllerTouchContact(true, 0.70f, 0.80f, 0.90f))),
             ControllerFeatures.Touchpad);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(
@@ -217,7 +223,7 @@ public sealed class ControllerBrokerTests
                     new ControllerTouchContact(true, 0.10f, 0.20f),
                     new ControllerTouchContact(true, 0.30f, 0.40f))),
             ControllerFeatures.Touchpad);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(
@@ -249,7 +255,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             new ControllerState(null, Motion(1), null),
             ControllerFeatures.Motion | ControllerFeatures.Rumble);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -279,7 +285,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), Motion(2), null),
@@ -307,7 +313,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             new ControllerState(null, Motion(1), null),
             ControllerFeatures.Motion);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -351,7 +357,7 @@ public sealed class ControllerBrokerTests
             ControllerFeatures.None);
         broker.UpdateClientController(
             clientId,
-            ControllerId,
+            0,
             new ControllerState(Standard(ControllerButtons.South), null, null),
             ControllerFeatures.StandardControls);
 
@@ -371,14 +377,12 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.RegisterClientController(
+        broker.SetClientControllers(
             clientId,
-            0,
-            ControllerId,
-            ControllerFeatures.StandardControls);
+            [new ControllerClientRegistration(0, ControllerId, ControllerFeatures.StandardControls)]);
 
         Assert.HasCount(1, factory.Outputs);
-        Assert.AreEqual(1, factory.SingleOutput.SendCount);
+        Assert.AreEqual(2, factory.SingleOutput.SendCount);
         Assert.IsNull(factory.SingleOutput.LastState.Standard);
         ControllerBrokerStatus status = broker.GetStatus();
         Assert.HasCount(1, status.Slots);
@@ -451,11 +455,9 @@ public sealed class ControllerBrokerTests
         Assert.AreEqual(0, waitingStatus.Slots[0].ClientEndpointCount);
         Assert.IsFalse(waitingStatus.Slots[0].OutputConnected);
 
-        broker.RegisterClientController(
+        broker.SetClientControllers(
             clientId,
-            0,
-            ControllerId,
-            ControllerFeatures.StandardControls);
+            [new ControllerClientRegistration(0, ControllerId, ControllerFeatures.StandardControls)]);
 
         Assert.HasCount(1, factory.Outputs);
         ControllerBrokerStatus routedStatus = broker.GetStatus();
@@ -545,11 +547,9 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.RegisterClientController(
+        broker.SetClientControllers(
             clientId,
-            0,
-            ControllerId,
-            ControllerFeatures.StandardControls);
+            [new ControllerClientRegistration(0, ControllerId, ControllerFeatures.StandardControls)]);
 
         Assert.HasCount(1, factory.Outputs);
         Assert.AreEqual(2, factory.SingleOutput.SendCount);
@@ -572,13 +572,13 @@ public sealed class ControllerBrokerTests
         broker.SetActiveClient(firstClient);
         broker.UpdatePhysicalController(firstController, ControllerState.Empty, ControllerFeatures.None);
         broker.UpdatePhysicalController(secondController, ControllerState.Empty, ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             firstClient,
             0,
             firstController,
             new ControllerState(Standard(ControllerButtons.South), null, null),
             ControllerFeatures.StandardControls);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             firstClient,
             1,
             secondController,
@@ -590,13 +590,13 @@ public sealed class ControllerBrokerTests
         Assert.AreEqual(ControllerButtons.South, firstOutput.LastState.Standard?.Buttons);
         Assert.AreEqual(ControllerButtons.East, secondOutput.LastState.Standard?.Buttons);
 
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             secondClient,
             0,
             firstController,
             new ControllerState(Standard(ControllerButtons.North), null, null),
             ControllerFeatures.StandardControls);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             secondClient,
             1,
             secondController,
@@ -611,7 +611,7 @@ public sealed class ControllerBrokerTests
         Assert.IsNull(firstOutput.LastState.Standard);
         Assert.IsNull(secondOutput.LastState.Standard);
 
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             firstClient,
             0,
             firstController,
@@ -640,7 +640,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -671,13 +671,13 @@ public sealed class ControllerBrokerTests
         broker.SetActiveClient(clientId);
         broker.UpdatePhysicalController(firstController, ControllerState.Empty, ControllerFeatures.None);
         broker.UpdatePhysicalController(secondController, ControllerState.Empty, ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             0,
             firstController,
             new ControllerState(Standard(ControllerButtons.South), null, null),
             ControllerFeatures.StandardControls);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             1,
             secondController,
@@ -718,7 +718,7 @@ public sealed class ControllerBrokerTests
             new ControllerState(null, Motion(1), null),
             ControllerFeatures.Motion | ControllerFeatures.Rumble,
             physicalFeedback);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -753,7 +753,7 @@ public sealed class ControllerBrokerTests
             new ControllerState(null, Motion(1), null),
             ControllerFeatures.Motion | ControllerFeatures.Rumble | ControllerFeatures.Light,
             physicalFeedback);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -787,7 +787,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -795,7 +795,7 @@ public sealed class ControllerBrokerTests
             firstFeedback);
 
         factory.SingleOutput.EmitFeedback(new ControllerFeedback(new ControllerRumble(10, 20)));
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -822,7 +822,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -830,13 +830,13 @@ public sealed class ControllerBrokerTests
             feedback);
 
         factory.SingleOutput.EmitFeedback(new ControllerFeedback(new ControllerRumble(10, 20)));
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.East), null, null),
             ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
             feedback);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.North), null, null),
@@ -861,7 +861,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -890,7 +890,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -920,7 +920,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -952,14 +952,14 @@ public sealed class ControllerBrokerTests
             new ControllerId("physical-2"),
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             controllerIndex: 0,
             new ControllerId("physical-1"),
             new ControllerState(Standard(ControllerButtons.South), null, null),
             ControllerFeatures.StandardControls | ControllerFeatures.Rumble,
             firstFeedback);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             controllerIndex: 1,
             new ControllerId("physical-2"),
@@ -988,7 +988,7 @@ public sealed class ControllerBrokerTests
             ControllerId,
             ControllerState.Empty,
             ControllerFeatures.None);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             ControllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -1025,36 +1025,6 @@ public sealed class ControllerBrokerTests
         Assert.IsTrue(output.Disposed);
     }
 
-    /// <summary>Output probes bypass foreground gates so routing can detect VIIPER SDL echoes.</summary>
-    [TestMethod]
-    public void OutputProbeSendsToConnectedOutputs()
-    {
-        Guid clientId = Guid.NewGuid();
-        FakeControllerOutputFactory factory = new();
-        using ControllerBroker broker = new(factory);
-
-        broker.RegisterClient(clientId, ControllerOutput.Xbox360);
-        broker.UpdatePhysicalController(
-            ControllerId,
-            ControllerState.Empty,
-            ControllerFeatures.None);
-        broker.RegisterClientController(
-            clientId,
-            0,
-            ControllerId,
-            ControllerFeatures.StandardControls);
-
-        ControllerState probe = new(
-            new ControllerStandardState(ControllerButtons.DPadUp, 0, 0, 0, 0, 0, 0),
-            null,
-            null);
-
-        int count = broker.SendOutputProbe(probe);
-
-        Assert.AreEqual(1, count);
-        Assert.AreEqual(ControllerButtons.DPadUp, factory.SingleOutput.LastState.Standard?.Buttons);
-    }
-
     /// <summary>Output devices are created with stable physical-controller labels.</summary>
     [TestMethod]
     public void OutputUsesPhysicalControllerLabel()
@@ -1070,7 +1040,7 @@ public sealed class ControllerBrokerTests
             controllerId,
             new ControllerState(null, Motion(1), null),
             ControllerFeatures.Motion);
-        broker.UpdateClientController(
+        RegisterAndUpdateClientController(broker,
             clientId,
             controllerId,
             new ControllerState(Standard(ControllerButtons.South), null, null),
@@ -1098,6 +1068,56 @@ public sealed class ControllerBrokerTests
         throw new InvalidOperationException($"Expected slot for {controllerId}.");
     }
 
+    private static void RegisterAndUpdateClientController(
+        ControllerBroker broker,
+        Guid clientId,
+        ControllerId controllerId,
+        ControllerState state,
+        ControllerFeatures features,
+        IControllerFeedbackSink? feedbackSink = null)
+    {
+        RegisterAndUpdateClientController(
+            broker,
+            clientId,
+            controllerIndex: 0,
+            controllerId,
+            state,
+            features,
+            feedbackSink);
+    }
+
+    private static void RegisterAndUpdateClientController(
+        ControllerBroker broker,
+        Guid clientId,
+        ushort controllerIndex,
+        ControllerId controllerId,
+        ControllerState state,
+        ControllerFeatures features,
+        IControllerFeedbackSink? feedbackSink = null)
+    {
+        RouteCache routes = RegisteredRoutes.GetValue(broker, static _ => new RouteCache());
+        if (routes.TrySet(
+            clientId,
+            new ControllerClientRegistration(controllerIndex, controllerId, features),
+            out IReadOnlyList<ControllerClientRegistration> registrations))
+        {
+            broker.SetClientControllers(clientId, registrations);
+        }
+
+        broker.UpdateClientController(clientId, controllerIndex, state, features, feedbackSink);
+    }
+
+    private static void RegisterAndUpdateClientController(
+        ControllerBroker broker,
+        Guid clientId,
+        ushort controllerIndex,
+        ControllerState state,
+        ControllerFeatures features,
+        IControllerFeedbackSink? feedbackSink = null)
+    {
+        broker.UpdateClientController(clientId, controllerIndex, state, features, feedbackSink);
+    }
+
     private static ControllerStandardState Standard(ControllerButtons buttons)
     {
         return new ControllerStandardState(buttons, 1, 2, 3, 4, 5, 6);
@@ -1106,6 +1126,34 @@ public sealed class ControllerBrokerTests
     private static ControllerMotionState Motion(float gyroX)
     {
         return new ControllerMotionState(true, gyroX, 0, 0, false, 0, 0, 0);
+    }
+
+    private sealed class RouteCache
+    {
+        private readonly Dictionary<Guid, Dictionary<ushort, ControllerClientRegistration>> _routes = [];
+
+        public bool TrySet(
+            Guid clientId,
+            ControllerClientRegistration route,
+            out IReadOnlyList<ControllerClientRegistration> registrations)
+        {
+            if (!_routes.TryGetValue(clientId, out Dictionary<ushort, ControllerClientRegistration>? routes))
+            {
+                routes = [];
+                _routes[clientId] = routes;
+            }
+
+            if (routes.TryGetValue(route.ControllerIndex, out ControllerClientRegistration? existing) &&
+                existing == route)
+            {
+                registrations = [];
+                return false;
+            }
+
+            routes[route.ControllerIndex] = route;
+            registrations = [.. routes.Values];
+            return true;
+        }
     }
 
     private sealed class FakeControllerOutputFactory : IControllerOutputFactory

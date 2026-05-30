@@ -35,7 +35,7 @@ public sealed class ClientRunStateTests
 
         Assert.HasCount(1, receivers);
         Assert.AreEqual(12, receivers[0].ProcessId);
-        IReadOnlyList<ObservedGameProcess> owned = state.GetOwnedReceiversSnapshot();
+        IReadOnlyList<ObservedGameProcess> owned = state.GetOwnedReceiversSnapshot([]);
         Assert.HasCount(1, owned);
         Assert.AreEqual(12, owned[0].ProcessId);
     }
@@ -57,7 +57,7 @@ public sealed class ClientRunStateTests
 
         IReadOnlyList<ObservedGameProcess> currentReceivers =
             state.UpdateReceivers([new ObservedGameProcess(10, "game.exe")]);
-        IReadOnlyList<ObservedGameProcess> cleanupReceivers = state.GetOwnedReceiversSnapshot();
+        IReadOnlyList<ObservedGameProcess> cleanupReceivers = state.GetOwnedReceiversSnapshot([]);
 
         Assert.IsEmpty(currentReceivers);
         Assert.HasCount(1, cleanupReceivers);
@@ -115,7 +115,6 @@ public sealed class ClientRunStateTests
                 MouseOutput.None,
                 ControllerPipeName: "unused"),
             registeredClientId: Guid.NewGuid(),
-            new StartRunRequest("test", SteamAppId: null),
-            killReceivers: false);
+            new StartRunRequest("test", SteamAppId: null));
     }
 }

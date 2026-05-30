@@ -1,12 +1,11 @@
 using System;
-using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Vanara.PInvoke;
+using static Vanara.PInvoke.Shell32;
 
 namespace SteamInputBridge.App.Cli;
 
@@ -64,18 +63,17 @@ internal static class ClientServerBootstrapper
             return;
         }
 
-        _ = Process.Start(new ProcessStartInfo
+        IntPtr result = ShellExecute(
+            default,
+            "open",
+            processPath,
+            "tray",
+            System.AppContext.BaseDirectory,
+            ShowWindowCommand.SW_HIDE);
+        if (result.ToInt64() <= 32)
         {
-            FileName = processPath,
-            Arguments = "tray",
-            WorkingDirectory = System.AppContext.BaseDirectory,
-            // Steam can keep a shortcut "running" while direct child
-            // processes stay alive. Shell execution makes the autostarted
-            // tray behave like a normal double-click/startup launch instead
-            // of a child helper owned by the client run.
-            UseShellExecute = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
-        });
+            throw new InvalidOperationException("Could not start the tray server.");
+        }
     }
 
     private static bool TryStartTrayServerThroughDesktopShell(string processPath)
@@ -91,10 +89,10 @@ internal static class ClientServerBootstrapper
             return false;
         }
 
-        object? shell = null;
+        IShellDispatch2? shell = null;
         try
         {
-            shell = Activator.CreateInstance(shellType);
+            shell = Activator.CreateInstance(shellType) as IShellDispatch2;
             if (shell is null)
             {
                 return false;
@@ -104,27 +102,15 @@ internal static class ClientServerBootstrapper
             // Ask Explorer's shell COM server to launch the tray app so the
             // server starts like a desktop/startup launch instead of as a
             // child of the Steam shortcut process.
-            _ = shellType.InvokeMember(
-                "ShellExecute",
-                BindingFlags.InvokeMethod,
-                binder: null,
-                target: shell,
-                args:
-                [
-                    processPath,
-                    "tray",
-                    System.AppContext.BaseDirectory,
-                    "open",
-                    0,
-                ],
-                culture: CultureInfo.InvariantCulture);
+            shell.ShellExecute(
+                processPath,
+                "tray",
+                System.AppContext.BaseDirectory,
+                "open",
+                0);
             return true;
         }
-        catch (COMException)
-        {
-            return false;
-        }
-        catch (TargetInvocationException)
+        catch (Exception exception) when (exception is COMException or InvalidCastException)
         {
             return false;
         }

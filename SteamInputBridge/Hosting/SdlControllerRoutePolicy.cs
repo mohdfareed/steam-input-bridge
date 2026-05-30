@@ -9,10 +9,8 @@ namespace SteamInputBridge.Hosting;
 internal static class SdlControllerRoutePolicy
 {
     private const ushort ValveVendorId = 0x28de;
-    private const ushort SonyVendorId = 0x054c;
     private const ushort SteamControllerProductId = 0x1302;
     private const ushort SteamVirtualXInputProductId = 0x11ff;
-    private const string DualSenseName = "DualSense";
     private const string SteamControllerName = "Steam Controller";
 
     public static SdlControllerRouteIdentity CreateIdentity(
@@ -33,8 +31,17 @@ internal static class SdlControllerRoutePolicy
 
     public static bool IsForwardable(SdlControllerInfo controller)
     {
-        return !ViiperDevices.IsController(controller.VendorId, controller.ProductId, controller.Name, controller.Path) &&
+        return IsSteamController(controller) &&
+            !ViiperDevices.IsController(controller.VendorId, controller.ProductId, controller.Name, controller.Path) &&
             !IsSteamVirtualXInputFallback(controller);
+    }
+
+    public static bool IsSteamController(SdlControllerInfo controller)
+    {
+        ArgumentNullException.ThrowIfNull(controller);
+
+        return controller.VendorId == ValveVendorId &&
+            IsSteamControllerName(controller.Name);
     }
 
     public static bool IsValveVirtualXInput(SdlControllerInfo controller)
@@ -56,7 +63,7 @@ internal static class SdlControllerRoutePolicy
             string.IsNullOrWhiteSpace(controller.PhysicalDeviceId) &&
             controller.VendorId == ValveVendorId &&
             controller.ProductId == SteamControllerProductId &&
-            string.Equals(controller.Label, SteamControllerName, StringComparison.OrdinalIgnoreCase);
+            IsSteamControllerName(controller.Label);
     }
 
     public static string GetPhysicalControllerId(SdlControllerInfo controller)
@@ -133,9 +140,30 @@ internal static class SdlControllerRoutePolicy
     {
         ArgumentNullException.ThrowIfNull(physicalControllers);
 
-        return vendorId == 0
-            ? null
-            : FindPhysicalControllerByDeviceIdentityCore(vendorId, productId, name, physicalControllers);
+        if (vendorId != ValveVendorId || !IsSteamControllerName(name))
+        {
+            return null;
+        }
+
+        SdlControllerInfo? exact = FindUnique(
+            physicalControllers,
+            controller => controller.Source == SdlControllerSource.Physical &&
+                IsSteamController(controller) &&
+                productId != 0 &&
+                controller.ProductId == productId);
+
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        // Steam Controllers can expose different Steam/physical product ids.
+        // When multiple identical controllers exist, activity matching owns
+        // the pairing instead of guessing here.
+        return FindUnique(
+            physicalControllers,
+            controller => controller.Source == SdlControllerSource.Physical &&
+                IsSteamController(controller));
     }
 
     public static bool CanBePhysicalCounterpart(
@@ -151,17 +179,19 @@ internal static class SdlControllerRoutePolicy
             return false;
         }
 
+        if (vendorId != ValveVendorId ||
+            !IsSteamControllerName(name) ||
+            !IsSteamController(physicalController))
+        {
+            return false;
+        }
+
         bool exactMatch = physicalController.VendorId == vendorId &&
             productId != 0 &&
             physicalController.ProductId == productId;
 
-        return exactMatch || (vendorId == ValveVendorId
-            ? physicalController.VendorId == ValveVendorId &&
-                string.Equals(physicalController.Name, name, StringComparison.OrdinalIgnoreCase)
-            : vendorId == SonyVendorId &&
-            physicalController.VendorId == SonyVendorId &&
-            IsDualSenseName(name) &&
-            IsDualSenseName(physicalController.Name));
+        return exactMatch ||
+            string.Equals(physicalController.Name, name, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetRouteId(
@@ -210,47 +240,6 @@ internal static class SdlControllerRoutePolicy
         return count == 1 ? match : null;
     }
 
-    private static SdlControllerInfo? FindPhysicalControllerByDeviceIdentityCore(
-        ushort vendorId,
-        ushort productId,
-        string? name,
-        IReadOnlyList<SdlControllerInfo> physicalControllers)
-    {
-        SdlControllerInfo? exact = FindUnique(
-            physicalControllers,
-            controller => controller.Source == SdlControllerSource.Physical &&
-                controller.VendorId == vendorId &&
-                controller.ProductId == productId);
-
-        if (exact is not null)
-        {
-            return exact;
-        }
-
-        // Steam Controllers expose different Steam/physical product ids. SDL
-        // does not expose enough identity to pair multiple Valve controllers.
-        if (vendorId == ValveVendorId)
-        {
-            return FindUnique(
-                physicalControllers,
-                controller => controller.Source == SdlControllerSource.Physical &&
-                    controller.VendorId == ValveVendorId &&
-                    string.Equals(controller.Name, name, StringComparison.OrdinalIgnoreCase));
-        }
-
-        // Steam Input can report a normal DualSense id while host SDL sees a
-        // DualSense Edge physical id. Pair only one host-visible DualSense so
-        // we keep Steam's remapped buttons and fill missing physical features
-        // without guessing between multiple Sony controllers.
-        return vendorId == SonyVendorId && IsDualSenseName(name)
-            ? FindUnique(
-                physicalControllers,
-                controller => controller.Source == SdlControllerSource.Physical &&
-                    controller.VendorId == SonyVendorId &&
-                    IsDualSenseName(controller.Name))
-            : null;
-    }
-
     private static string? GetPathControllerId(SdlControllerInfo controller)
     {
         return string.IsNullOrWhiteSpace(controller.Path)
@@ -272,9 +261,9 @@ internal static class SdlControllerRoutePolicy
         return routeId.StartsWith("steam:", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsDualSenseName(string? name)
+    private static bool IsSteamControllerName(string? name)
     {
-        return name?.Contains(DualSenseName, StringComparison.OrdinalIgnoreCase) == true;
+        return name?.Contains(SteamControllerName, StringComparison.OrdinalIgnoreCase) == true;
     }
 }
 
