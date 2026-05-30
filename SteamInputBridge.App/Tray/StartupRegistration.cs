@@ -12,8 +12,7 @@ internal static class StartupRegistration
     public static bool IsEnabled()
     {
         using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
-        return key?.GetValue(ValueName) is string value &&
-            string.Equals(value, Quote(Application.ExecutablePath), StringComparison.OrdinalIgnoreCase);
+        return key?.GetValue(ValueName) is string value && IsCurrentExecutable(value);
     }
 
     public static void SetEnabled(bool enabled)
@@ -34,5 +33,13 @@ internal static class StartupRegistration
     private static string Quote(string path)
     {
         return "\"" + path + "\"";
+    }
+
+    private static bool IsCurrentExecutable(string value)
+    {
+        string expected = Quote(Application.ExecutablePath);
+        string trimmed = value.Trim();
+        return string.Equals(trimmed, expected, StringComparison.OrdinalIgnoreCase) ||
+            trimmed.StartsWith(expected + " ", StringComparison.OrdinalIgnoreCase);
     }
 }

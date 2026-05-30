@@ -3,7 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
-    <NoWarn>$(NoWarn);CA1515;CA2007;CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

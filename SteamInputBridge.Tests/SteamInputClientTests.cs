@@ -40,20 +40,36 @@ public sealed class SteamInputClientTests
             .ConfigureAwait(false);
     }
 
-    /// <summary>Checks controller configurator URL shape.</summary>
+    /// <summary>Checks controller configurator app id dispatch.</summary>
     [TestMethod]
-    public async Task OpenControllerConfigAsyncOpensControllerConfigUrl()
+    public async Task OpenControllerConfigAsyncOpensControllerConfigAppId()
     {
-        Uri? openedUrl = null;
-        SteamInputClient client = new((url, _) =>
+        uint? openedAppId = null;
+        SteamInputClient client = new(openControllerConfig: (appId, _) =>
         {
-            openedUrl = url;
+            openedAppId = appId;
             return ValueTask.CompletedTask;
         });
 
-        await client.OpenControllerConfigAsync(SteamInputClient.DesktopConfigAppId).ConfigureAwait(false);
+        await client.OpenControllerConfigAsync(123).ConfigureAwait(false);
 
-        Assert.AreEqual("steam://controllerconfig/413080", openedUrl?.AbsoluteUri);
+        Assert.AreEqual<uint?>(123, openedAppId);
+    }
+
+    /// <summary>Checks the desktop action uses Steam's desktop config app id.</summary>
+    [TestMethod]
+    public async Task OpenSteamControllerDesktopConfigAsyncOpensDesktopConfigAppId()
+    {
+        uint? openedAppId = null;
+        SteamInputClient client = new(openControllerConfig: (appId, _) =>
+        {
+            openedAppId = appId;
+            return ValueTask.CompletedTask;
+        });
+
+        await client.OpenSteamControllerDesktopConfigAsync().ConfigureAwait(false);
+
+        Assert.AreEqual<uint?>(SteamInputClient.DesktopConfigAppId, openedAppId);
     }
 
     /// <summary>Checks Steam app id environment resolution.</summary>

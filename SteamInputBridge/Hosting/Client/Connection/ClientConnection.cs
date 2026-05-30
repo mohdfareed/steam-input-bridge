@@ -98,13 +98,6 @@ internal sealed class ClientConnection(
         }
     }
 
-    internal async Task ReconnectNowAsync(CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        await ClearAsync().ConfigureAwait(false);
-        await ReconnectAsync(cancellationToken).ConfigureAwait(false);
-    }
-
     internal async ValueTask DisposeAsync()
     {
         if (_disposed)

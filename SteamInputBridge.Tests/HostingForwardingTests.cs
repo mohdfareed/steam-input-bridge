@@ -72,7 +72,7 @@ public sealed class HostingForwardingTests
             {
                 await client.ConnectAsync(CancellationToken.None).ConfigureAwait(false);
                 ClientRunLaunch launch = await client
-                    .StartRunAsync(new StartRunRequest("game", SteamAppId: 123), CancellationToken.None)
+                    .RegisterRunAsync(new RegisterRunRequest("game", SteamAppId: 123), CancellationToken.None)
                     .ConfigureAwait(false);
                 ControllerId controllerId = new("physical-1", "Physical 1");
                 broker.UpdatePhysicalController(
@@ -379,7 +379,7 @@ public sealed class HostingForwardingTests
 
             Guid clientId = sessions.ConnectClient(Environment.ProcessId);
             ClientRunLaunch launch = await sessions
-                .StartRunAsync(clientId, new StartRunRequest("native", SteamAppId: null))
+                .RegisterRunAsync(clientId, new RegisterRunRequest("native", SteamAppId: null))
                 .ConfigureAwait(false);
 
             Assert.AreEqual(string.Empty, launch.ControllerPipeName);

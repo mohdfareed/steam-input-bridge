@@ -98,8 +98,16 @@ internal static class SteamCommands
         command.Arguments.Add(appId);
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            uint parsedAppId = ParseAppId(parseResult.GetValue(appId));
+            string? appIdValue = parseResult.GetValue(appId);
             SteamInputClient client = new();
+            if (IsDesktopAppId(appIdValue))
+            {
+                await client.OpenSteamControllerDesktopConfigAsync(cancellationToken).ConfigureAwait(false);
+                await Console.Out.WriteLineAsync("opened desktop Steam Controller config").ConfigureAwait(false);
+                return;
+            }
+
+            uint parsedAppId = ParseAppId(appIdValue);
             await client.OpenControllerConfigAsync(parsedAppId, cancellationToken).ConfigureAwait(false);
             await Console.Out.WriteLineAsync($"opened appid={parsedAppId.ToString(CultureInfo.InvariantCulture)}")
                 .ConfigureAwait(false);
@@ -191,9 +199,14 @@ internal static class SteamCommands
 
     private static uint ParseAppId(string? value)
     {
-        return string.Equals(value, "desktop", StringComparison.OrdinalIgnoreCase)
+        return IsDesktopAppId(value)
             ? SteamInputClient.DesktopConfigAppId
             : uint.Parse(value ?? string.Empty, NumberStyles.Integer, CultureInfo.InvariantCulture);
+    }
+
+    private static bool IsDesktopAppId(string? value)
+    {
+        return string.Equals(value, "desktop", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FormatAppId(uint? appId)

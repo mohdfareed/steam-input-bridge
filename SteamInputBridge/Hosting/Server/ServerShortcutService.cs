@@ -23,7 +23,7 @@ internal sealed class ServerShortcutService(
     private IReadOnlyDictionary<int, IReadOnlyList<ShortcutEntry>> _shortcuts =
         new Dictionary<int, IReadOnlyList<ShortcutEntry>>();
     private Dictionary<ShortcutTargetKey, ShortcutHold> _holds = [];
-    private List<int> _heldShortcutOrder = [];
+    private HashSet<int> _pressedShortcutIds = [];
     private List<ShortcutColorSource> _actionColors = [];
     private bool _started;
     private bool _disposed;
@@ -76,30 +76,22 @@ internal sealed class ServerShortcutService(
     {
         lock (_gate)
         {
-            List<HeldShortcutStatus> held = [];
-            foreach (int shortcutId in _heldShortcutOrder)
+            List<ShortcutStatus> shortcuts = [];
+            for (int shortcutId = 1; shortcutId <= _shortcuts.Count; shortcutId++)
             {
-                if (!_shortcuts.TryGetValue(shortcutId, out IReadOnlyList<ShortcutEntry>? shortcuts))
+                if (!_shortcuts.TryGetValue(shortcutId, out IReadOnlyList<ShortcutEntry>? entries) ||
+                    entries.Count == 0)
                 {
                     continue;
                 }
 
-                foreach (ShortcutEntry shortcut in shortcuts)
-                {
-                    if (shortcut.Value is not ShortcutValue.HoldEnabled and not ShortcutValue.HoldDisabled)
-                    {
-                        continue;
-                    }
-
-                    held.Add(new HeldShortcutStatus(
-                        shortcutId,
-                        shortcut.Keys,
-                        FormatTargets(shortcut.Targets),
-                        shortcut.Value.Value.ToString()));
-                }
+                shortcuts.Add(new ShortcutStatus(
+                    shortcutId,
+                    entries[0].Keys,
+                    _pressedShortcutIds.Contains(shortcutId)));
             }
 
-            return new ShortcutRuntimeStatus(held);
+            return new ShortcutRuntimeStatus(shortcuts);
         }
     }
 
@@ -143,9 +135,16 @@ internal sealed class ServerShortcutService(
     private void OnShortcutPressed(int id)
     {
         IReadOnlyList<ShortcutEntry>? shortcuts;
+        bool pressedStateChanged;
         lock (_gate)
         {
+            pressedStateChanged = _pressedShortcutIds.Add(id);
             _ = _shortcuts.TryGetValue(id, out shortcuts);
+        }
+
+        if (pressedStateChanged)
+        {
+            StateChanged?.Invoke();
         }
 
         if (shortcuts is null)
@@ -212,10 +211,6 @@ internal sealed class ServerShortcutService(
         lock (_gate)
         {
             _holds[key] = new ShortcutHold(EnabledOnRelease: !enabledWhileHeld);
-            if (!_heldShortcutOrder.Contains(id))
-            {
-                _heldShortcutOrder.Add(id);
-            }
         }
 
         SetTarget(id, target, enabledWhileHeld);
@@ -225,9 +220,11 @@ internal sealed class ServerShortcutService(
     private void OnShortcutReleased(int id)
     {
         List<KeyValuePair<ShortcutTargetKey, ShortcutHold>> release = [];
+        bool pressedStateChanged;
 
         lock (_gate)
         {
+            pressedStateChanged = _pressedShortcutIds.Remove(id);
             foreach (KeyValuePair<ShortcutTargetKey, ShortcutHold> hold in _holds)
             {
                 if (hold.Key.ShortcutId == id)
@@ -241,12 +238,16 @@ internal sealed class ServerShortcutService(
                 _ = _holds.Remove(hold.Key);
             }
 
-            _ = _heldShortcutOrder.Remove(id);
         }
 
         foreach (KeyValuePair<ShortcutTargetKey, ShortcutHold> hold in release)
         {
             SetTarget(id, hold.Key.Target, hold.Value.EnabledOnRelease);
+        }
+
+        if (pressedStateChanged)
+        {
+            StateChanged?.Invoke();
         }
     }
 
@@ -336,10 +337,6 @@ internal sealed class ServerShortcutService(
         lock (_gate)
         {
             _ = _holds.Remove(target);
-            if (!HasHoldLocked(target.ShortcutId))
-            {
-                _ = _heldShortcutOrder.Remove(target.ShortcutId);
-            }
         }
     }
 
@@ -360,25 +357,12 @@ internal sealed class ServerShortcutService(
     private bool ClearShortcutStateLocked()
     {
         bool changed = _holds.Count != 0 ||
-            _heldShortcutOrder.Count != 0 ||
+            _pressedShortcutIds.Count != 0 ||
             _actionColors.Count != 0;
         _holds = [];
-        _heldShortcutOrder = [];
+        _pressedShortcutIds = [];
         _actionColors = [];
         return changed;
-    }
-
-    private bool HasHoldLocked(int shortcutId)
-    {
-        foreach (ShortcutTargetKey key in _holds.Keys)
-        {
-            if (key.ShortcutId == shortcutId)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void LogShortcut(ShortcutEntry shortcut, int id, ShortcutTargetSpec target)
@@ -398,17 +382,6 @@ internal sealed class ServerShortcutService(
         return string.IsNullOrWhiteSpace(entry.Name)
             ? $"#{index}"
             : entry.Name;
-    }
-
-    private static List<string> FormatTargets(IEnumerable<ShortcutTargetSpec> targets)
-    {
-        List<string> values = [];
-        foreach (ShortcutTargetSpec target in targets)
-        {
-            values.Add(target.ToString());
-        }
-
-        return values;
     }
 
     private readonly record struct ShortcutTargetKey(int ShortcutId, ShortcutTargetSpec Target);

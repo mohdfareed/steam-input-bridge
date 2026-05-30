@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Hosting.Server.Pipes;
@@ -14,7 +15,7 @@ namespace SteamInputBridge.Hosting.Server.Orchestration;
 
 internal sealed partial class ServerSessions
 {
-    internal Task<ClientRunLaunch> StartRunAsync(Guid clientId, StartRunRequest request)
+    internal Task<ClientRunLaunch> RegisterRunAsync(Guid clientId, RegisterRunRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -27,14 +28,19 @@ internal sealed partial class ServerSessions
             throw new InvalidOperationException($"Profile \"{request.ProfileId}\" was not found.");
         ResolvedGameProfile resolved = ProfileResolver.Resolve(request.ProfileId, profile);
         ConnectedClient client = GetClient(clientId);
+        bool ownsReceiverProcesses = !string.IsNullOrWhiteSpace(resolved.Executable);
+        HashSet<int>? receiverBaselineProcessIds = ownsReceiverProcesses
+            ? [.. GameProcessHost.FindReceivers(resolved.ReceiverProcesses).Select(static process => process.ProcessId)]
+            : null;
 
         runtime.RegisterClient(
             clientId,
             client.ProcessId,
             resolved.Id,
-            request.SteamAppId,
+            request.SteamAppId ?? resolved.SteamAppId,
             resolved.ReceiverProcesses,
-            ownsReceiverProcesses: !string.IsNullOrWhiteSpace(resolved.Executable));
+            ownsReceiverProcesses,
+            receiverBaselineProcessIds);
 
         forwarding.RegisterClient(clientId, MapControllerOutput(resolved.ControllerOutput));
         mouseForwarding.RegisterClient(clientId, MapMouseOutput(resolved.MouseOutput));

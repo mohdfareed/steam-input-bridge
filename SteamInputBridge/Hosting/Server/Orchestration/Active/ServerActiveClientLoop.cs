@@ -54,14 +54,15 @@ internal sealed class ServerActiveClientLoop(
             // forcing and forwarding gates do not grow their own timers.
             while (!cancellationToken.IsCancellationRequested)
             {
+                clients.RefreshReceiverProcesses(GameProcessHost.FindReceivers);
                 int foregroundProcessId = getForegroundProcessId();
                 if (foregroundProcessId != lastForegroundProcessId)
                 {
                     clients.RefreshClients(foregroundProcessId);
-                    stateChanged?.Invoke();
                     lastForegroundProcessId = foregroundProcessId;
                 }
 
+                stateChanged?.Invoke();
                 await Task.Delay(pollInterval, cancellationToken).ConfigureAwait(false);
             }
         }

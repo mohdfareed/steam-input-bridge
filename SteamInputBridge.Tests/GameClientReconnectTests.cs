@@ -21,13 +21,13 @@ using SteamInputBridge.Settings.Profiles;
 
 namespace SteamInputBridge.Tests;
 
-/// <summary>Tests full client-run restoration across server restarts.</summary>
+/// <summary>Tests full client-run re-registration across server restarts.</summary>
 [TestClass]
 public sealed class GameClientReconnectTests
 {
     /// <summary>Checks that a running client re-registers its profile run after the server restarts.</summary>
     [TestMethod]
-    public async Task RunningClientRestoresProfileRunAfterServerRestart()
+    public async Task RunningClientRegistersProfileRunAfterServerRestart()
     {
         string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
         _ = Directory.CreateDirectory(directory);
@@ -41,7 +41,6 @@ public sealed class GameClientReconnectTests
         await using ClientService client = new(NullLoggerFactory.Instance, pipeName);
         await using GameClient game = new(
             client,
-            services.GetRequiredService<ProfilesService>(),
             NullLogger<GameClient>.Instance);
         using CancellationTokenSource runStop = new();
         using CancellationTokenSource serverOneStop = new();
@@ -61,9 +60,9 @@ public sealed class GameClientReconnectTests
             try
             {
                 await WaitUntilAsync(() => runtimeTwo.GetStatus().Clients.Count == 1).ConfigureAwait(false);
-                ClientStatus restored = runtimeTwo.GetStatus().Clients[0];
-                Assert.AreEqual("attached", restored.ProfileId);
-                Assert.AreEqual((uint)123, restored.SteamAppId);
+                ClientStatus registered = runtimeTwo.GetStatus().Clients[0];
+                Assert.AreEqual("attached", registered.ProfileId);
+                Assert.AreEqual((uint)123, registered.SteamAppId);
             }
             finally
             {
@@ -78,9 +77,9 @@ public sealed class GameClientReconnectTests
         }
     }
 
-    /// <summary>Checks that a restored run also recreates its controller pipe route.</summary>
+    /// <summary>Checks that a re-registered run also recreates its controller pipe route.</summary>
     [TestMethod]
-    public async Task RunningClientRestoresControllerRouteAfterServerRestart()
+    public async Task RunningClientRegistersControllerRouteAfterServerRestart()
     {
         string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
         _ = Directory.CreateDirectory(directory);
@@ -96,7 +95,6 @@ public sealed class GameClientReconnectTests
         await using ClientService client = new(NullLoggerFactory.Instance, pipeName);
         await using GameClient game = new(
             client,
-            services.GetRequiredService<ProfilesService>(),
             NullLogger<GameClient>.Instance,
             () =>
             {

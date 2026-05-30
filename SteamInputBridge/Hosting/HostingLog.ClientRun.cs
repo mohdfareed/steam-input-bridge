@@ -32,9 +32,9 @@ internal static partial class HostingLog
     [LoggerMessage(EventId = 29, Level = LogLevel.Warning, Message = "Could not attach launched process to cleanup job: {Message}")]
     public static partial void CouldNotAttachProcessJob(ILogger logger, string message);
 
-    [LoggerMessage(EventId = 30, Level = LogLevel.Information, Message = "Restored server registration for {ProfileId} client={ClientId}")]
-    public static partial void RestoredServerRegistration(ILogger logger, string profileId, Guid? clientId);
+    [LoggerMessage(EventId = 30, Level = LogLevel.Information, Message = "Registered run with server for {ProfileId} client={ClientId}")]
+    public static partial void RegisteredRunWithServer(ILogger logger, string profileId, Guid? clientId);
 
-    [LoggerMessage(EventId = 46, Level = LogLevel.Warning, Message = "Server registration restore failed; retrying: {Message}")]
-    public static partial void ServerRegistrationRestoreRetrying(ILogger logger, string message);
+    [LoggerMessage(EventId = 46, Level = LogLevel.Warning, Message = "Run registration failed; waiting for reconnect: {Message}")]
+    public static partial void RunRegistrationFailed(ILogger logger, string message);
 }

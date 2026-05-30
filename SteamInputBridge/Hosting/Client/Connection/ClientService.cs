@@ -79,12 +79,6 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
         return _connection.ConnectAsync(cancellationToken);
     }
 
-    internal Task ReconnectAsync(CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        return _connection.ReconnectNowAsync(cancellationToken);
-    }
-
     /// <summary>Keeps the client alive until cancellation and reconnects when the server restarts.</summary>
     public Task WaitAsync(CancellationToken cancellationToken)
     {
@@ -99,14 +93,14 @@ public sealed class ClientService : IDisposable, IAsyncDisposable
         return _connection.Server.GetStatusAsync().WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 
-    /// <summary>Starts a profile-backed client run.</summary>
-    public Task<ClientRunLaunch> StartRunAsync(
-        StartRunRequest request,
+    /// <summary>Registers a profile-backed client run with the server.</summary>
+    public Task<ClientRunLaunch> RegisterRunAsync(
+        RegisterRunRequest request,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         return _connection.Server
-            .StartRunAsync(request)
+            .RegisterRunAsync(request)
             .WaitAsync(ServerRequestTimeout, cancellationToken);
     }
 

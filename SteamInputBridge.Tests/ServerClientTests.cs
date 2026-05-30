@@ -244,7 +244,7 @@ public sealed class ServerClientTests
             throw new NotSupportedException();
         }
 
-        public Task<ClientRunLaunch> StartRunAsync(StartRunRequest request)
+        public Task<ClientRunLaunch> RegisterRunAsync(RegisterRunRequest request)
         {
             throw new NotSupportedException();
         }

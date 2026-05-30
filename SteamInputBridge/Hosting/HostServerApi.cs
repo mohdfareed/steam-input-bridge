@@ -26,8 +26,8 @@ public sealed record ClientRunLaunch(
     ProfileMouseOutput MouseOutput,
     string ControllerPipeName);
 
-/// <summary>Client request to start or restore a profile-backed run.</summary>
-public sealed record StartRunRequest(string ProfileId, uint? SteamAppId);
+/// <summary>Client request to register a profile-backed run.</summary>
+public sealed record RegisterRunRequest(string ProfileId, uint? SteamAppId);
 
 /// <summary>Client-visible controller mapped to one physical controller slot.</summary>
 public sealed record ClientControllerInfo(
@@ -56,8 +56,8 @@ internal partial interface IHostServerApi
     /// <summary>Gets server, client, and active-client status.</summary>
     Task<ServerStatus> GetStatusAsync();
 
-    /// <summary>Starts or restores this client's active profile run.</summary>
-    Task<ClientRunLaunch> StartRunAsync(StartRunRequest request);
+    /// <summary>Registers this client's active profile run.</summary>
+    Task<ClientRunLaunch> RegisterRunAsync(RegisterRunRequest request);
 
     /// <summary>Registers controllers this client can stream over its controller pipe.</summary>
     Task RegisterClientControllersAsync(IReadOnlyList<ClientControllerInfo> controllers);

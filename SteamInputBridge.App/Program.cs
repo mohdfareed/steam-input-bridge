@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using System.Windows;
 using SteamInputBridge.App.Cli;
 using SteamInputBridge.App.Tray.Core;
 
@@ -73,11 +72,7 @@ internal static class Program
     {
         if (args.Length == 0 || IsMode(args[0], "tray") || IsMode(args[0], "shortcut"))
         {
-            _ = MessageBox.Show(
-                exception.Message,
-                "Steam Input Bridge",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            AppErrorDialog.ShowException(exception);
             return;
         }
 

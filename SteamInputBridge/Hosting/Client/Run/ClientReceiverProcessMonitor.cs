@@ -14,10 +14,10 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
 
     public async Task WatchAsync(
         ClientRunState state,
-        Func<IReadOnlyList<ObservedGameProcess>, CancellationToken, Task> update,
         CancellationToken cancellationToken)
     {
-        LogReceiverWatch(state);
+        ClientRunLaunch launch = state.RegisteredLaunch;
+        LogReceiverWatch(launch);
 
         // Receiver discovery is intentionally isolated here. Windows can raise
         // process start/exit events, but filtering arbitrary profile receiver
@@ -25,15 +25,14 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
         while (!cancellationToken.IsCancellationRequested)
         {
             IReadOnlyList<ObservedGameProcess> observed =
-                GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
+                GameProcessHost.FindReceivers(launch.ReceiverProcesses);
             // For launched profiles, pre-existing receiver processes are not
             // this run. They must not keep the client alive or claim focus on
             // the server; only receivers that appear after launch are reported.
             IReadOnlyList<ObservedGameProcess> receivers = state.UpdateReceivers(observed);
             if (HasReceiverChange(state, receivers))
             {
-                LogReceiverChange(state, receivers);
-                await update(receivers, cancellationToken).ConfigureAwait(false);
+                LogReceiverChange(launch, receivers);
             }
 
             state.SawReceiver |= receivers.Count != 0;
@@ -46,15 +45,15 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
         }
     }
 
-    private void LogReceiverWatch(ClientRunState state)
+    private void LogReceiverWatch(ClientRunLaunch launch)
     {
         if (!logger.IsEnabled(LogLevel.Information))
         {
             return;
         }
 
-        string receivers = string.Join(", ", state.Launch.ReceiverProcesses);
-        HostingLog.WatchingReceiverProcesses(logger, state.Launch.ProfileId, receivers);
+        string receivers = string.Join(", ", launch.ReceiverProcesses);
+        HostingLog.WatchingReceiverProcesses(logger, launch.ProfileId, receivers);
     }
 
     private static bool HasReceiverChange(
@@ -74,12 +73,12 @@ internal sealed class ClientReceiverProcessMonitor(ILogger logger)
     }
 
     private void LogReceiverChange(
-        ClientRunState state,
+        ClientRunLaunch launch,
         IReadOnlyList<ObservedGameProcess> observed)
     {
         HostingLog.ReceiverProcesses(
             logger,
-            state.Launch.ProfileId,
+            launch.ProfileId,
             observed.Count,
             observed.Count == 0 ? "none" : FormatProcesses(observed));
     }

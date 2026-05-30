@@ -27,7 +27,8 @@ public sealed partial class ActiveClientRegistry
         string profileId,
         uint? steamAppId,
         IReadOnlyList<string> receiverProcesses,
-        bool ownsReceiverProcesses = false)
+        bool ownsReceiverProcesses = false,
+        IReadOnlySet<int>? receiverBaselineProcessIds = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentNullException.ThrowIfNull(receiverProcesses);
@@ -38,11 +39,32 @@ public sealed partial class ActiveClientRegistry
             profileId,
             steamAppId,
             receiverProcesses,
-            ownsReceiverProcesses);
+            ownsReceiverProcesses,
+            receiverBaselineProcessIds);
         lock (_lock)
         {
             _clients[clientId] = client;
         }
+    }
+
+    /// <summary>Refreshes receiver-process claims for every registered client.</summary>
+    public void RefreshReceiverProcesses(
+        Func<IReadOnlyList<string>, IReadOnlyList<ObservedGameProcess>> findReceivers)
+    {
+        ArgumentNullException.ThrowIfNull(findReceivers);
+        ActiveClientChangedEventArgs? changed;
+
+        lock (_lock)
+        {
+            foreach (ClientState client in _clients.Values)
+            {
+                UpdateClientProcesses(client, findReceivers(client.ReceiverProcesses));
+            }
+
+            changed = RefreshActiveClient();
+        }
+
+        RaiseChanged(changed);
     }
 
     /// <summary>Removes a connected client and releases its receiver-process claims.</summary>
@@ -77,20 +99,7 @@ public sealed partial class ActiveClientRegistry
         lock (_lock)
         {
             ClientState client = GetClient(clientId);
-            Dictionary<int, ObservedGameProcess> added = FilterProcesses(client, processes);
-
-            foreach (int removedProcessId in client.Processes.Keys.Except(added.Keys).ToArray())
-            {
-                _ = client.Processes.Remove(removedProcessId);
-                RemoveObserver(clientId, removedProcessId);
-            }
-
-            foreach (ObservedGameProcess process in added.Values)
-            {
-                client.Processes[process.ProcessId] = process;
-                AddObserver(clientId, process.ProcessId);
-            }
-
+            UpdateClientProcesses(client, processes);
             changed = RefreshActiveClient();
         }
 
@@ -182,6 +191,25 @@ public sealed partial class ActiveClientRegistry
             observers[0] == clientId;
     }
 
+    private void UpdateClientProcesses(
+        ClientState client,
+        IReadOnlyList<ObservedGameProcess> processes)
+    {
+        Dictionary<int, ObservedGameProcess> added = FilterProcesses(client, processes);
+
+        foreach (int removedProcessId in client.Processes.Keys.Except(added.Keys).ToArray())
+        {
+            _ = client.Processes.Remove(removedProcessId);
+            RemoveObserver(client.ClientId, removedProcessId);
+        }
+
+        foreach (ObservedGameProcess process in added.Values)
+        {
+            client.Processes[process.ProcessId] = process;
+            AddObserver(client.ClientId, process.ProcessId);
+        }
+    }
+
     private static Dictionary<int, ObservedGameProcess> FilterProcesses(
         ClientState client,
         IReadOnlyList<ObservedGameProcess> processes)
@@ -190,6 +218,8 @@ public sealed partial class ActiveClientRegistry
         foreach (ObservedGameProcess process in processes)
         {
             if (process.ProcessId > 0 &&
+                (!client.OwnsReceiverProcesses ||
+                    !client.ReceiverBaselineProcessIds.Contains(process.ProcessId)) &&
                 client.ReceiverProcesses.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
             {
                 filtered[process.ProcessId] = process;

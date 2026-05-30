@@ -54,6 +54,20 @@ internal static class AppText
         return active ? "Active" : "Idle";
     }
 
+    public static string Held(bool held)
+    {
+        return held ? "Held" : "Idle";
+    }
+
+    public static string MicrophoneMuted(MicrophoneOverlayStatus status)
+    {
+        return !status.Available
+            ? "Unavailable"
+            : status.Muted
+            ? "Muted"
+            : "Un-muted";
+    }
+
     public static string Count(int count)
     {
         return count == 0 ? None : count.ToString(CultureInfo.InvariantCulture);
@@ -73,9 +87,9 @@ internal static class AppText
     {
         return output switch
         {
-            SteamInputBridge.Forwarding.Mouse.MouseOutput.None => None,
-            SteamInputBridge.Forwarding.Mouse.MouseOutput.Viiper => "VIIPER",
-            SteamInputBridge.Forwarding.Mouse.MouseOutput.Teensy => "Teensy",
+            MouseOutput.None => None,
+            MouseOutput.Viiper => "VIIPER",
+            MouseOutput.Teensy => "Teensy",
             _ => output.ToString(),
         };
     }
@@ -100,7 +114,7 @@ internal static class AppText
 
     public static string FormatMouseOutput(MouseBrokerStatus status)
     {
-        return status.Output == SteamInputBridge.Forwarding.Mouse.MouseOutput.None
+        return status.Output == MouseOutput.None
             ? Enabled(false)
             : $"{Output(status.Output)} {Connected(status.OutputConnected)}";
     }

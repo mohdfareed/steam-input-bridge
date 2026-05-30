@@ -66,18 +66,17 @@ public sealed record MicrophoneOverlayStatus(
 }
 
 /// <summary>Global keyboard shortcut runtime status.</summary>
-public sealed record ShortcutRuntimeStatus(IReadOnlyList<HeldShortcutStatus> HeldShortcuts)
+public sealed record ShortcutRuntimeStatus(IReadOnlyList<ShortcutStatus> Shortcuts)
 {
-    /// <summary>No held shortcuts.</summary>
+    /// <summary>No configured shortcuts.</summary>
     public static ShortcutRuntimeStatus Empty { get; } = new([]);
 }
 
-/// <summary>One held keyboard shortcut as reported to diagnostics.</summary>
-public sealed record HeldShortcutStatus(
+/// <summary>One configured keyboard shortcut as reported to diagnostics.</summary>
+public sealed record ShortcutStatus(
     int ShortcutId,
     string Keys,
-    IReadOnlyList<string> Targets,
-    string Value);
+    bool Held);
 
 /// <summary>Server-owned input source status.</summary>
 public sealed record ServerInputStatus(

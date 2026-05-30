@@ -6,14 +6,11 @@ This repository is Steam Input Bridge (`steam-input-bridge`). Keep work scoped
 to this repository.
 
 This file is the maintainer operating contract: how to work, communicate, and
-avoid repeating past mistakes. It is not the place for route facts or bug notes.
+avoid repeating past mistakes.
 
-- Technical quirks and external behavior live in `NOTES.md`.
-- User-visible behavior contracts live in `BEHAVIOR.md`.
-- File responsibilities live in `CODEMAP.md`.
-- Data/state flow, loops, side effects, and cleanup targets live in
-  `FLOWMAP.md`.
-- Test ownership and behavior coverage live in `TEST_AUDIT.md`.
+- User-facing usage belongs in `README.md`.
+- Durable technical quirks belong in `NOTES.md`.
+- Do not create extra ledger/review/map docs unless the user explicitly asks.
 
 ## Communication
 
@@ -56,12 +53,9 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 
 ## Working Method
 
-- Before runtime edits, read `BEHAVIOR.md` and name the behavior rule touched.
-  If no rule covers the change, update `BEHAVIOR.md` first or ask whether the
-  behavior is intended.
-- Runtime edit preflight must state the behavior rule, files read fully,
-  ownership boundary affected or not, expected deletion/simplification, and
-  tests that protect the behavior.
+- Runtime edit preflight must state the files read fully, ownership boundary
+  affected or not, expected deletion/simplification, and tests that protect the
+  behavior.
 - Before changing runtime code, understand the current path in words: input,
   output, owner, lifecycle, state transitions, side effects, cleanup, and tests.
 - Before proposing or applying a bug fix, read the owner files from current
@@ -91,8 +85,8 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 - Cleanup/refactor changes should reduce production complexity. If production
   LOC grows, or a new loop/state owner/registry is added, get explicit approval
   unless the user already approved that exact tradeoff.
-- If a new loop, timer, registry, route owner, or global side effect is added
-  after confirmation, document it in `FLOWMAP.md`.
+- If a new loop, timer, registry, route owner, or global side effect is needed,
+  get explicit confirmation and keep the implementation locally obvious.
 
 ## Runtime Rules
 
@@ -158,11 +152,8 @@ avoid repeating past mistakes. It is not the place for route facts or bug notes.
 ## Verification
 
 - Add or update tests for changed behavior.
-- Every normal test must map to a `BEHAVIOR.md` rule or a `NOTES.md` quirk.
-  Tests that only preserve implementation shape should be deleted, rewritten,
+- Tests that only preserve implementation shape should be deleted, rewritten,
   or moved out of the normal tier.
-- Keep `TEST_AUDIT.md` current when adding, deleting, demoting, or rewriting
-  tests.
 - Use targeted tests while developing. Run broader suites when the changed code
   crosses shared behavior or when asked.
 - Do not run a full test suite for docs-only or comment-only edits unless there

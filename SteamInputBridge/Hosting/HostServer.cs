@@ -83,9 +83,9 @@ internal sealed class HostServer(
         return sessions.GetStatusAsync();
     }
 
-    public Task<ClientRunLaunch> StartRunAsync(StartRunRequest request)
+    public Task<ClientRunLaunch> RegisterRunAsync(RegisterRunRequest request)
     {
-        return sessions.StartRunAsync(GetClientId(), request);
+        return sessions.RegisterRunAsync(GetClientId(), request);
     }
 
     public Task RegisterClientControllersAsync(IReadOnlyList<ClientControllerInfo> controllers)

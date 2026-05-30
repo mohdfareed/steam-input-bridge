@@ -23,7 +23,7 @@ internal static class SrmExport
                 settingsFile.Path);
 
             string shortcutPath = Path.Combine(
-                System.AppContext.BaseDirectory,
+                AppContext.BaseDirectory,
                 "SteamInputBridge.exe");
             string manifest = SteamRomManagerExport.CreateJson(profiles, shortcutPath);
 
@@ -50,7 +50,7 @@ internal static class SrmExport
         return Path.IsPathFullyQualified(filePath)
             ? filePath
             : Path.Combine(
-                Path.GetDirectoryName(settingsPath) ?? System.AppContext.BaseDirectory,
+                Path.GetDirectoryName(settingsPath) ?? AppContext.BaseDirectory,
                 filePath);
     }
 }

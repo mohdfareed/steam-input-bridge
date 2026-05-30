@@ -103,8 +103,9 @@ public sealed class ClientRunStateTests
 
     private static ClientRunState CreateState(string? executable)
     {
-        return new ClientRunState(
-            new ClientRunLaunch(
+        ClientRunState state = new(new RegisterRunRequest("test", SteamAppId: null))
+        {
+            Launch = new ClientRunLaunch(
                 "test",
                 "Test",
                 executable,
@@ -114,7 +115,8 @@ public sealed class ClientRunStateTests
                 ControllerOutput.None,
                 MouseOutput.None,
                 ControllerPipeName: "unused"),
-            registeredClientId: Guid.NewGuid(),
-            new StartRunRequest("test", SteamAppId: null));
+            RegisteredClientId = Guid.NewGuid(),
+        };
+        return state;
     }
 }

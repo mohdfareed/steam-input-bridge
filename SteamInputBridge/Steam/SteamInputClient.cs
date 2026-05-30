@@ -1,23 +1,27 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using SteamInputBridge.Steam.GameCatalog;
-using Vanara.PInvoke;
-using static Vanara.PInvoke.Shell32;
 
 namespace SteamInputBridge.Steam;
 
 /// <summary>Reads local Steam state and controls Steam Input through Steam URLs.</summary>
 /// <param name="openUrl">Steam URL opener. Defaults to the OS URL handler.</param>
-public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? openUrl = null)
+/// <param name="openControllerConfig">Steam controller configurator opener. Defaults to Steam CEF.</param>
+public sealed class SteamInputClient(
+    Func<Uri, CancellationToken, ValueTask>? openUrl = null,
+    Func<uint, CancellationToken, ValueTask>? openControllerConfig = null)
 {
     /// <summary>Steam's desktop controller configuration app id.</summary>
     public const uint DesktopConfigAppId = 413080;
 
     private readonly Func<Uri, CancellationToken, ValueTask> _openUrl = openUrl ?? OpenSteamUrlAsync;
+    private readonly Func<uint, CancellationToken, ValueTask> _openControllerConfig =
+        openControllerConfig ?? SteamControllerConfigurator.OpenAsync;
 
     // MARK: Publics
     // ========================================================================
@@ -60,7 +64,15 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
     public ValueTask OpenControllerConfigAsync(uint appId, CancellationToken cancellationToken = default)
     {
         ValidateAppId(appId);
-        return OpenAsync(CreateOpenConfigUri(appId), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return _openControllerConfig(appId, cancellationToken);
+    }
+
+    /// <summary>Opens Steam's desktop controller configurator.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public ValueTask OpenSteamControllerDesktopConfigAsync(CancellationToken cancellationToken = default)
+    {
+        return OpenControllerConfigAsync(DesktopConfigAppId, cancellationToken);
     }
 
     // MARK: Privates
@@ -75,11 +87,6 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
     private static Uri CreateForceInputUri(uint appId)
     {
         return new Uri($"steam://forceinputappid/{appId.ToString(CultureInfo.InvariantCulture)}");
-    }
-
-    private static Uri CreateOpenConfigUri(uint appId)
-    {
-        return new Uri($"steam://controllerconfig/{appId.ToString(CultureInfo.InvariantCulture)}");
     }
 
     private static void ValidateAppId(uint appId)
@@ -113,14 +120,27 @@ public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? op
         ArgumentNullException.ThrowIfNull(url);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!string.Equals(url.Scheme, "steam", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException("Only steam:// URLs are supported.", nameof(url));
-        }
+        ValidateSteamUrl(url);
 
-        IntPtr result = ShellExecute(default, "open", url.AbsoluteUri, null, null, ShowWindowCommand.SW_SHOWNORMAL);
-        return result.ToInt64() > 32
+        ProcessStartInfo start = new()
+        {
+            FileName = url.AbsoluteUri,
+            UseShellExecute = true,
+        };
+
+        using Process? process = Process.Start(start);
+        return process is not null
             ? ValueTask.CompletedTask
             : throw new InvalidOperationException("Could not open the Steam URL.");
+    }
+
+    private static void ValidateSteamUrl(Uri url)
+    {
+        if (string.Equals(url.Scheme, "steam", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new ArgumentException("Only steam:// URLs are supported.", nameof(url));
     }
 }

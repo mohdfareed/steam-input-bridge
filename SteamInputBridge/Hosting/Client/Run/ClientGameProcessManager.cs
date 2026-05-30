@@ -11,7 +11,8 @@ internal sealed class ClientGameProcessManager(ILogger logger)
 {
     public void StartProfileProcess(ClientRunState state)
     {
-        if (string.IsNullOrWhiteSpace(state.Launch.Executable))
+        ClientRunLaunch launch = state.RegisteredLaunch;
+        if (string.IsNullOrWhiteSpace(launch.Executable))
         {
             return;
         }
@@ -19,24 +20,25 @@ internal sealed class ClientGameProcessManager(ILogger logger)
         // Receiver processes that already existed before this launch are not
         // ours. Track only post-launch receiver pids so client shutdown can
         // close launcher-escaped games without killing unrelated matches.
-        state.CaptureReceiverBaseline(GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses));
+        state.CaptureReceiverBaseline(GameProcessHost.FindReceivers(launch.ReceiverProcesses));
         Process process = GameProcessHost.Launch(
-            state.Launch.Executable,
-            state.Launch.Arguments,
-            state.Launch.WorkingDirectory ?? AppContext.BaseDirectory);
+            launch.Executable,
+            launch.Arguments,
+            launch.WorkingDirectory ?? AppContext.BaseDirectory);
         state.LaunchedProcess = process;
         state.ProcessOwner = TryOwnProcessTree(process);
     }
 
     public void LogStarted(ClientRunState state)
     {
+        ClientRunLaunch launch = state.RegisteredLaunch;
         if (state.LaunchedProcess is null)
         {
-            HostingLog.Attached(logger, state.Launch.ProfileId);
+            HostingLog.Attached(logger, launch.ProfileId);
             return;
         }
 
-        HostingLog.Started(logger, state.Launch.ProfileId, state.LaunchedProcess.Id);
+        HostingLog.Started(logger, launch.ProfileId, state.LaunchedProcess.Id);
     }
 
     public void StopGameProcesses(ClientRunState state, string reason)
@@ -56,8 +58,9 @@ internal sealed class ClientGameProcessManager(ILogger logger)
             state.GameStopRequested = true;
         }
 
+        ClientRunLaunch launch = state.RegisteredLaunch;
         IReadOnlyList<ObservedGameProcess> currentReceivers =
-            GameProcessHost.FindReceivers(state.Launch.ReceiverProcesses);
+            GameProcessHost.FindReceivers(launch.ReceiverProcesses);
         IReadOnlyList<ObservedGameProcess> ownedReceivers =
             state.GetOwnedReceiversSnapshot(currentReceivers);
         int killed = GameProcessKiller.Kill(ownedReceivers);

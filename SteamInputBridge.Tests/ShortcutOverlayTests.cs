@@ -57,19 +57,42 @@ public sealed class ShortcutOverlayTests
     }
 
     [TestMethod]
-    public void HeldShortcutStatusUsesPressOrder()
+    public void ShortcutStatusListsConfiguredShortcutsAndHeldState()
     {
         using TestHost host = TestHost.Create(SettingsWithHeldColors());
         host.Service.Start(CancellationToken.None);
 
+        IReadOnlyList<ShortcutStatus> shortcuts = host.Service.GetShortcutStatus().Shortcuts;
+        Assert.HasCount(2, shortcuts);
+        Assert.AreEqual("Num1", shortcuts[0].Keys);
+        Assert.IsFalse(shortcuts[0].Held);
+        Assert.AreEqual("Num2", shortcuts[1].Keys);
+        Assert.IsFalse(shortcuts[1].Held);
+
         host.Shortcuts.Press(2);
+
+        shortcuts = host.Service.GetShortcutStatus().Shortcuts;
+        Assert.HasCount(2, shortcuts);
+        Assert.IsFalse(shortcuts[0].Held);
+        Assert.IsTrue(shortcuts[1].Held);
+    }
+
+    [TestMethod]
+    public void ShortcutStatusUsesPhysicalPressedStateForToggleShortcuts()
+    {
+        using TestHost host = TestHost.Create(SettingsWithMicToggle());
+        host.Service.Start(CancellationToken.None);
+
         host.Shortcuts.Press(1);
 
-        IReadOnlyList<HeldShortcutStatus> held = host.Service.GetShortcutStatus().HeldShortcuts;
-        Assert.HasCount(2, held);
-        Assert.AreEqual("Num2", held[0].Keys);
-        Assert.AreEqual("#222222", held[0].Targets[0]);
-        Assert.AreEqual("Num1", held[1].Keys);
+        IReadOnlyList<ShortcutStatus> shortcuts = host.Service.GetShortcutStatus().Shortcuts;
+        Assert.HasCount(1, shortcuts);
+        Assert.IsTrue(shortcuts[0].Held);
+
+        host.Shortcuts.Release(1);
+
+        shortcuts = host.Service.GetShortcutStatus().Shortcuts;
+        Assert.IsFalse(shortcuts[0].Held);
     }
 
     [TestMethod]

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Threading;
@@ -10,11 +11,13 @@ using Microsoft.Extensions.Hosting;
 using SteamInputBridge.App.Tray.Menu;
 using SteamInputBridge.Hosting.Server.Orchestration;
 using SteamInputBridge.Hosting.Server.Orchestration.Lifetime;
+using SteamInputBridge.Runtime;
 using SteamInputBridge.Settings;
+using SteamInputBridge.Steam;
 
 namespace SteamInputBridge.App.Tray.Core;
 
-internal sealed partial class AppContext : IDisposable
+internal sealed class AppContext : IDisposable
 {
     private readonly IHost _app;
     private readonly ServerService _server;
@@ -26,9 +29,9 @@ internal sealed partial class AppContext : IDisposable
     private readonly AppMenu _menu;
     private Task? _serverTask;
     private bool _refreshing;
-    private bool _menuOpen;
     private string? _serverError;
     private ServerStatus? _status;
+    private TrayActivitySnapshot? _lastActivity;
 
     private AppContext(IHost app)
     {
@@ -49,23 +52,14 @@ internal sealed partial class AppContext : IDisposable
             OpenDesktopSteamInputConfig,
             OpenSteamInputConfig,
             StopClient,
-            ShutdownApp);
+            ShutdownApp,
+            exception => ShowBalloonError(exception.Message));
         _server.StatusChanged += OnServerStatusChanged;
     }
 
     public static AppContext Create()
     {
-        IHost? app = AppSetup.CreateTray();
-        try
-        {
-            AppContext context = new(app);
-            app = null;
-            return context;
-        }
-        finally
-        {
-            app?.Dispose();
-        }
+        return new AppContext(AppSetup.CreateTray());
     }
 
     public void Start()
@@ -73,8 +67,9 @@ internal sealed partial class AppContext : IDisposable
         _serverTask = Task.Run(RunServerAsync, CancellationToken.None);
         _tray.Icon = _icon;
         _tray.Text = AppText.TrayStarting;
+        _menu.Rebuild(_status, _serverError, _lastActivity);
+        _tray.ContextMenuStrip = _menu.Menu;
         _tray.Visible = true;
-        _tray.MouseUp += ShowMenu;
         _ = RefreshStatusNowAsync();
         RefreshOverlayNow();
     }
@@ -84,16 +79,18 @@ internal sealed partial class AppContext : IDisposable
         _server.StatusChanged -= OnServerStatusChanged;
         _stop.Cancel();
         _overlay.Close();
-        _tray.MouseUp -= ShowMenu;
+        _tray.ContextMenuStrip = null;
         _tray.Visible = false;
         _tray.Dispose();
+        _menu.Menu.Dispose();
         _icon.Dispose();
 
         try
         {
             _ = _serverTask?.Wait(TimeSpan.FromSeconds(5));
         }
-        catch (AggregateException exception) when (IsExpectedStop(exception))
+        catch (AggregateException exception)
+            when (exception.GetBaseException() is OperationCanceledException or ObjectDisposedException)
         {
         }
 
@@ -118,6 +115,7 @@ internal sealed partial class AppContext : IDisposable
         catch (Exception exception)
         {
             _serverError = exception.Message;
+            _ = _dispatcher.BeginInvoke(new Action(() => AppErrorDialog.ShowException(exception)));
             QueueStatusRefresh();
         }
     }
@@ -159,7 +157,9 @@ internal sealed partial class AppContext : IDisposable
                 _status = await _server.GetStatusAsync().ConfigureAwait(true);
             }
 
+            RefreshLastActivitySnapshot();
             _tray.Text = AppText.TrayText(_status, _serverError);
+            RebuildMenuOrDefer();
         }
         finally
         {
@@ -167,42 +167,155 @@ internal sealed partial class AppContext : IDisposable
         }
     }
 
-    private void ShowMenu(object? sender, MouseEventArgs args)
+    private void RebuildMenuOrDefer()
     {
-        _ = sender;
-        if (args.Button == MouseButtons.Right)
+        if (_menu.Menu.Visible)
         {
-            _ = ShowMenuAsync();
+            _menu.RefreshVisibleStatus(_status, _lastActivity);
+            return;
         }
+
+        _menu.Rebuild(_status, _serverError, _lastActivity);
     }
 
-    private async Task ShowMenuAsync()
+    private void RefreshLastActivitySnapshot()
     {
-        if (_menuOpen)
+        if (_status?.Runtime.ActiveClientId is not Guid activeClientId)
         {
             return;
         }
 
-        _menuOpen = true;
-        bool shown = false;
-        try
+        foreach (ClientStatus client in _status.Runtime.Clients)
         {
-            await RefreshStatusNowAsync().ConfigureAwait(true);
-            _menu.Show(Cursor.Position, _status, _serverError, OnMenuClosed);
-            shown = true;
-        }
-        finally
-        {
-            if (!shown)
+            if (client.ClientId == activeClientId)
             {
-                _menuOpen = false;
+                _lastActivity = new TrayActivitySnapshot(client, _status.SteamInput);
+                return;
             }
         }
     }
 
-    private void OnMenuClosed()
+    private static void ShutdownApp()
     {
-        _menuOpen = false;
+        System.Windows.Application.Current.Shutdown();
+    }
+
+    private void OpenDesktopSteamInputConfig()
+    {
+        _ = OpenDesktopSteamInputConfigAsync();
+    }
+
+    private async Task OpenDesktopSteamInputConfigAsync()
+    {
+        try
+        {
+            SteamInputClient steam = new();
+            await steam.OpenSteamControllerDesktopConfigAsync(_stop.Token).ConfigureAwait(true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException or OperationCanceledException)
+        {
+            ShowBalloonError($"Could not open desktop Steam Input config: {exception.Message}");
+        }
+    }
+
+    private void OpenSteamInputConfig(uint appId)
+    {
+        _ = OpenSteamInputConfigAsync(appId);
+    }
+
+    private async Task OpenSteamInputConfigAsync(uint appId)
+    {
+        try
+        {
+            SteamInputClient steam = new();
+            await steam.OpenControllerConfigAsync(appId, _stop.Token).ConfigureAwait(true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ArgumentException or OperationCanceledException)
+        {
+            ShowBalloonError($"Could not open Steam Input config: {exception.Message}");
+        }
+    }
+
+    private void StopClient(Guid clientId)
+    {
+        _ = Task.Run(() => StopClientAsync(clientId));
+    }
+
+    private async Task StopClientAsync(Guid clientId)
+    {
+        try
+        {
+            await _server.StopClientAsync(clientId).ConfigureAwait(false);
+            ServerStatus status = await _server.GetStatusAsync().ConfigureAwait(false);
+            _ = _dispatcher.BeginInvoke(new Action(() =>
+            {
+                _status = status;
+                RefreshLastActivitySnapshot();
+                _tray.Text = AppText.TrayText(_status, _serverError);
+                RebuildMenuOrDefer();
+            }));
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or OperationCanceledException or ObjectDisposedException)
+        {
+            _ = _dispatcher.BeginInvoke(new Action(() =>
+                ShowBalloonError($"Could not stop client: {exception.Message}")));
+        }
+    }
+
+    private static void RestartApp()
+    {
+        if (Environment.ProcessPath is not { Length: > 0 } processPath)
+        {
+            return;
+        }
+
+        ProcessStartInfo start = new()
+        {
+            FileName = processPath,
+            Arguments = $"tray --wait-parent {Environment.ProcessId}",
+            WorkingDirectory = System.AppContext.BaseDirectory,
+            UseShellExecute = true,
+        };
+
+        using Process? process = Process.Start(start);
+        if (process is not null)
+        {
+            ShutdownApp();
+        }
+    }
+
+    private static Icon LoadApplicationIcon()
+    {
+        return Environment.ProcessPath is { Length: > 0 } processPath
+            ? Icon.ExtractAssociatedIcon(processPath) ?? (Icon)SystemIcons.Application.Clone()
+            : (Icon)SystemIcons.Application.Clone();
+    }
+
+    private void ExportSrmManifest()
+    {
+        SrmExportResult result = SrmExport.Export(_app.Services);
+        ShowBalloon(result.Exported
+            ? $"Exported {result.ProfileCount} SRM profiles."
+            : $"Could not export SRM manifest: {result.Error}",
+            result.Exported ? ToolTipIcon.Info : ToolTipIcon.Error);
+    }
+
+    private void ShowBalloonError(string message)
+    {
+        ShowBalloon(message, ToolTipIcon.Error);
+    }
+
+    private void ShowBalloon(string message, ToolTipIcon icon)
+    {
+        if (_stop.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _tray.ShowBalloonTip(5000, "Steam Input Bridge", message, icon);
     }
 
     private void RefreshOverlayNow()
@@ -222,10 +335,4 @@ internal sealed partial class AppContext : IDisposable
             _overlay.Update(OverlayStatus.Hidden);
         }
     }
-
-    private static bool IsExpectedStop(AggregateException exception)
-    {
-        return exception.GetBaseException() is OperationCanceledException or ObjectDisposedException;
-    }
-
 }
