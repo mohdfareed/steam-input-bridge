@@ -10,6 +10,7 @@ namespace SteamInputBridge.Settings;
 public sealed class SettingsService : IDisposable
 {
     private readonly ILogger<SettingsService> _logger;
+    private readonly SettingsFile _settingsFile;
     private readonly IDisposable? _reloadSubscription;
     private SteamInputBridgeSettings _current;
 
@@ -27,9 +28,11 @@ public sealed class SettingsService : IDisposable
         SettingsValidation.Validate(current);
 
         _logger = logger;
+        _settingsFile = settingsFile;
         _current = current;
+
         _reloadSubscription = settings.OnChange((changedSettings, _) => OnSettingsChanged(changedSettings));
-        BridgeLog.SettingsLoaded(_logger, settingsFile.Path);
+        BridgeLog.SettingsLoaded(_logger, settingsFile);
     }
 
     /// <summary>Raised after a valid settings reload is accepted.</summary>
@@ -53,7 +56,7 @@ public sealed class SettingsService : IDisposable
         }
 
         Volatile.Write(ref _current, settings);
-        BridgeLog.SettingsReloaded(_logger, settings);
+        BridgeLog.SettingsReloaded(_logger, _settingsFile);
         Changed?.Invoke(this, new ApplicationSettingsChangedEventArgs(settings));
     }
 }

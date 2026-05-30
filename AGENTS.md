@@ -69,7 +69,7 @@ avoid repeating past mistakes.
 - If a bug report crosses responsibilities, map the current responsibility
   boundary before editing. Do not guess which layer owns the fix.
 - Read the full file before editing it. In fragile areas, also read direct
-  callers and callees.
+  callers and callee's.
 - Fragile areas include controller routing, SDL, VIIPER, client
   reconnect, process lifetime, settings/runtime boundaries, foreground
   activation, status/diagnostics, and polling loops.

@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SteamInputBridge.Microphone;
 using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Hosting.Server;
@@ -19,6 +20,8 @@ public static class ServerServices
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
 
         _ = services.AddApplicationSettings(configuration, settingsPath);
+        _ = services.AddSingleton(_ => new MicrophoneService());
+        _ = services.AddSingleton<BridgeControlService>();
         _ = services.AddHostedService<BridgeServer>();
 
         return services;

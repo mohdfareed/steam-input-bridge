@@ -2,6 +2,7 @@
   "words": [
     "appmanifest",
     "appsettings",
+    "CLSCTX",
     "controllerconfig",
     "dualshock",
     "forceinputappid",
@@ -14,6 +15,7 @@
     "libraryfolders",
     "LOCALAPPDATA",
     "microcontroller",
+    "Nerdbank",
     "numpad",
     "overwatch",
     "patchline",

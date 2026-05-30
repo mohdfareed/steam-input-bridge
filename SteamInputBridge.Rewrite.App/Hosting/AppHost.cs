@@ -2,6 +2,7 @@ using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Hosting.Client;
 using SteamInputBridge.Hosting.Server;
 using SteamInputBridge.Settings;
 
@@ -13,23 +14,41 @@ internal static class AppHost
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
         string settingsPath = System.IO.Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+
         _ = builder.Configuration
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile(settingsPath, optional: true, reloadOnChange: true);
 
-        _ = builder.Logging.ClearProviders();
-        _ = builder.Logging.AddConsole();
-        _ = builder.Logging.SetMinimumLevel(GetConfiguredLogLevel(builder.Configuration));
+        ConfigureLogging(builder.Logging, builder.Configuration);
 
         _ = builder.Services.AddBridgeServer(builder.Configuration, settingsPath);
 
         return builder.Build();
     }
 
-    private static LogLevel GetConfiguredLogLevel(ConfigurationManager configuration)
+    public static IHost CreateClient(string profileId)
     {
-        LoggingSettings logging = new();
-        configuration.GetSection(LoggingSettings.SectionName).Bind(logging);
-        return logging.Level;
+        HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+        string settingsPath = System.IO.Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+
+        _ = builder.Configuration
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile(settingsPath, optional: true, reloadOnChange: true);
+
+        ConfigureLogging(builder.Logging, builder.Configuration);
+
+        _ = builder.Services.AddBridgeClient(profileId);
+        return builder.Build();
+    }
+
+    private static void ConfigureLogging(ILoggingBuilder logging, ConfigurationManager configuration)
+    {
+        LoggingSettings settings = new();
+        configuration.GetSection(LoggingSettings.SectionName).Bind(settings);
+
+        _ = logging.ClearProviders();
+        _ = logging.AddConsole();
+        _ = logging.AddApplicationFileLogger(settings.LogDirectory);
+        _ = logging.SetMinimumLevel(settings.Level);
     }
 }

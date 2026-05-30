@@ -16,7 +16,7 @@ internal static class Commands
         Command status = new("status", "Print server status.");
 
         Command run = new("run", "Run the local server.");
-        run.SetAction((_, cancellationToken) => RunServerAsync(cancellationToken));
+        run.SetAction((_, token) => RunServerAsync(token));
 
         Command server = new("server", "Run or inspect the local server.");
         server.Subcommands.Add(status);
@@ -32,6 +32,7 @@ internal static class Commands
         {
             Description = "Profile id to run.",
         });
+        run.SetAction((parseResult, token) => RunClientAsync(parseResult.GetValue<string>("profile")!, token));
 
         Command client = new("client", "Run profile clients.");
         client.Subcommands.Add(run);
@@ -57,6 +58,12 @@ internal static class Commands
     private static async Task RunServerAsync(CancellationToken cancellationToken)
     {
         using IHost host = AppHost.CreateServer();
+        await host.RunAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task RunClientAsync(string profileId, CancellationToken cancellationToken)
+    {
+        using IHost host = AppHost.CreateClient(profileId);
         await host.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 }

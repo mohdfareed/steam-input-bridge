@@ -12,11 +12,11 @@ internal static class BridgeLog
             new EventId(1, nameof(LogSettingsLoaded)),
             "Settings loaded from file: {FilePath}");
 
-    private static readonly Action<ILogger, int, int, Exception?> LogSettingsReloaded =
-        LoggerMessage.Define<int, int>(
+    private static readonly Action<ILogger, string, Exception?> LogSettingsReloaded =
+        LoggerMessage.Define<string>(
             LogLevel.Information,
             new EventId(2, nameof(LogSettingsReloaded)),
-            "Settings reloaded with {ProfileCount} profile(s) and {ShortcutCount} shortcut(s).");
+            "Settings reloaded from file: {FilePath}");
 
     private static readonly Action<ILogger, string, Exception?> LogSettingsReloadRejected =
         LoggerMessage.Define<string>(
@@ -42,14 +42,62 @@ internal static class BridgeLog
             new EventId(6, nameof(LogServerStopped)),
             "Server stopped.");
 
-    public static void SettingsLoaded(ILogger logger, string filePath)
+    private static readonly Action<ILogger, string, Exception?> LogServerListening =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(7, nameof(LogServerListening)),
+            "Server listening on control pipe {PipeName}.");
+
+    private static readonly Action<ILogger, int, string, Exception?> LogClientConnectAttempted =
+        LoggerMessage.Define<int, string>(
+            LogLevel.Information,
+            new EventId(8, nameof(LogClientConnectAttempted)),
+            "Client process {ProcessId} attempted to connect for profile {ProfileId}.");
+
+    private static readonly Action<ILogger, string, Exception?> LogClientControlPipeClosed =
+        LoggerMessage.Define<string>(
+            LogLevel.Debug,
+            new EventId(9, nameof(LogClientControlPipeClosed)),
+            "Client control pipe closed: {Message}");
+
+    private static readonly Action<ILogger, string, Exception?> LogClientStarted =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(10, nameof(LogClientStarted)),
+            "Client started for profile {ProfileId}.");
+
+    private static readonly Action<ILogger, string, Exception?> LogClientStopped =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(11, nameof(LogClientStopped)),
+            "Client stopped for profile {ProfileId}.");
+
+    private static readonly Action<ILogger, string, Exception?> LogClientConnecting =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(12, nameof(LogClientConnecting)),
+            "Client connecting to control pipe {PipeName}.");
+
+    private static readonly Action<ILogger, string, Exception?> LogClientConnected =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(13, nameof(LogClientConnected)),
+            "Client connected to control pipe {PipeName}.");
+
+    private static readonly Action<ILogger, string, Exception?> LogClientConnectionFailed =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(14, nameof(LogClientConnectionFailed)),
+            "Client connection failed: {Message}");
+
+    public static void SettingsLoaded(ILogger logger, SettingsFile settingsFile)
     {
-        LogSettingsLoaded(logger, filePath, null);
+        LogSettingsLoaded(logger, settingsFile.Path, null);
     }
 
-    public static void SettingsReloaded(ILogger logger, SteamInputBridgeSettings settings)
+    public static void SettingsReloaded(ILogger logger, SettingsFile settingsFile)
     {
-        LogSettingsReloaded(logger, settings.Games.Count, settings.Shortcuts.Count, null);
+        LogSettingsReloaded(logger, settingsFile.Path, null);
     }
 
     public static void SettingsReloadRejected(ILogger logger, string validationErrors)
@@ -70,5 +118,45 @@ internal static class BridgeLog
     public static void ServerStopped(ILogger logger)
     {
         LogServerStopped(logger, null);
+    }
+
+    public static void ServerListening(ILogger logger, string pipeName)
+    {
+        LogServerListening(logger, pipeName, null);
+    }
+
+    public static void ClientConnectAttempted(ILogger logger, int processId, string profileId)
+    {
+        LogClientConnectAttempted(logger, processId, profileId, null);
+    }
+
+    public static void ClientControlPipeClosed(ILogger logger, string message)
+    {
+        LogClientControlPipeClosed(logger, message, null);
+    }
+
+    public static void ClientStarted(ILogger logger, string profileId)
+    {
+        LogClientStarted(logger, profileId, null);
+    }
+
+    public static void ClientStopped(ILogger logger, string profileId)
+    {
+        LogClientStopped(logger, profileId, null);
+    }
+
+    public static void ClientConnecting(ILogger logger, string pipeName)
+    {
+        LogClientConnecting(logger, pipeName, null);
+    }
+
+    public static void ClientConnected(ILogger logger, string pipeName)
+    {
+        LogClientConnected(logger, pipeName, null);
+    }
+
+    public static void ClientConnectionFailed(ILogger logger, string message)
+    {
+        LogClientConnectionFailed(logger, message, null);
     }
 }
