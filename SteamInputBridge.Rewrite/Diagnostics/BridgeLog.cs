@@ -90,6 +90,12 @@ internal static class BridgeLog
             new EventId(14, nameof(LogClientConnectionFailed)),
             "Client connection failed: {Message}");
 
+    private static readonly Action<ILogger, int, string, Exception?> LogClientDisconnected =
+        LoggerMessage.Define<int, string>(
+            LogLevel.Information,
+            new EventId(15, nameof(LogClientDisconnected)),
+            "Client process {ProcessId} disconnected from profile {ProfileId}.");
+
     public static void SettingsLoaded(ILogger logger, SettingsFile settingsFile)
     {
         LogSettingsLoaded(logger, settingsFile.Path, null);
@@ -158,5 +164,10 @@ internal static class BridgeLog
     public static void ClientConnectionFailed(ILogger logger, string message)
     {
         LogClientConnectionFailed(logger, message, null);
+    }
+
+    public static void ClientDisconnected(ILogger logger, int processId, string profileId)
+    {
+        LogClientDisconnected(logger, processId, profileId, null);
     }
 }

@@ -63,15 +63,14 @@ public sealed class BridgeClient(ClientRunOptions options, ILogger<BridgeClient>
         {
             await pipe.ConnectAsync((int)ConnectTimeout.TotalMilliseconds, cancellationToken).ConfigureAwait(false);
             IBridgeControlApi server = JsonRpc.Attach<IBridgeControlApi>(pipe);
+            JsonRpc rpc = ((IJsonRpcClientProxy)server).JsonRpc;
+
             await server.ConnectAsync(Environment.ProcessId, options.ProfileId)
                 .WaitAsync(ConnectTimeout, cancellationToken)
                 .ConfigureAwait(false);
 
             BridgeLog.ClientConnected(logger, BridgePipeNames.Control);
-            while (pipe.IsConnected && !cancellationToken.IsCancellationRequested)
-            {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-            }
+            await rpc.Completion.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 

@@ -19,7 +19,10 @@ internal static class BridgePipeNames
 }
 
 /// <summary>Host-driven server runtime.</summary>
-public sealed class BridgeServer(SettingsService settings, BridgeControlService control, ILogger<BridgeServer> logger) : BackgroundService
+public sealed class BridgeServer(
+    SettingsService settings,
+    ILogger<BridgeServer> logger,
+    ILogger<BridgeControlService> controlLogger) : BackgroundService
 {
     private readonly ConcurrentBag<NamedPipeServerStream> _pipes = [];
 
@@ -87,6 +90,7 @@ public sealed class BridgeServer(SettingsService settings, BridgeControlService 
 
     private async Task RunClientAsync(NamedPipeServerStream pipe)
     {
+        BridgeControlService control = new(controlLogger);
         await using (pipe.ConfigureAwait(false))
         {
             try
@@ -97,6 +101,13 @@ public sealed class BridgeServer(SettingsService settings, BridgeControlService 
             catch (Exception exception) when (IsClientDisconnect(exception))
             {
                 BridgeLog.ClientControlPipeClosed(logger, exception.Message);
+            }
+            finally
+            {
+                if (control.Client is ConnectedClient client)
+                {
+                    BridgeLog.ClientDisconnected(logger, client.ProcessId, client.ProfileId);
+                }
             }
         }
     }

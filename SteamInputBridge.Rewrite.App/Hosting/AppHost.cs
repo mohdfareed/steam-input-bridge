@@ -48,7 +48,7 @@ internal static class AppHost
 
         _ = logging.ClearProviders();
         _ = logging.AddConsole();
-        _ = logging.AddApplicationFileLogger(settings.LogDirectory);
+        _ = logging.AddApplicationFileLogger();
         _ = logging.SetMinimumLevel(settings.Level);
     }
 }
