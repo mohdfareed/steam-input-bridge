@@ -1,0 +1,111 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+
+namespace SteamInputBridge.Settings;
+
+internal static class SettingsValidation
+{
+    public static void Validate(SteamInputBridgeSettings settings)
+    {
+        if (!TryValidate(settings, out string validationErrors))
+        {
+            throw new InvalidOperationException(validationErrors);
+        }
+    }
+
+    public static bool TryValidate(SteamInputBridgeSettings? settings, out string validationErrors)
+    {
+        List<string> failures = [];
+        if (settings is null)
+        {
+            failures.Add("settings are required.");
+        }
+        else
+        {
+            ValidateViiper(settings.Viiper, failures);
+            ValidateShortcuts(settings.Shortcuts, failures);
+            ValidateProfiles(settings.Games, failures);
+        }
+
+        validationErrors = string.Join(Environment.NewLine, failures);
+        return failures.Count == 0;
+    }
+
+    private static void ValidateViiper(ViiperSettings settings, List<string> failures)
+    {
+        if (string.IsNullOrWhiteSpace(settings.Host))
+        {
+            failures.Add("viiper:host is required.");
+        }
+
+        if (settings.Port is < 1 or > 65_535)
+        {
+            failures.Add("viiper:port must be between 1 and 65535.");
+        }
+    }
+
+    private static void ValidateShortcuts(Collection<ShortcutEntry> shortcuts, List<string> failures)
+    {
+        foreach (ShortcutEntry shortcut in shortcuts)
+        {
+            if (string.IsNullOrWhiteSpace(shortcut.Keys))
+            {
+                failures.Add("shortcuts:keys is required.");
+                continue;
+            }
+
+            string prefix = $"shortcuts:{shortcut.Keys.Trim()}";
+            if (shortcut.Targets.Count == 0)
+            {
+                failures.Add($"{prefix}:targets is required.");
+            }
+
+            if (!shortcut.Value.HasValue)
+            {
+                failures.Add($"{prefix}:value is required.");
+            }
+            else if (!Enum.IsDefined(shortcut.Value.Value))
+            {
+                failures.Add($"{prefix}:value is invalid.");
+            }
+        }
+    }
+
+    private static void ValidateProfiles(IReadOnlyDictionary<string, GameProfile> profiles, List<string> failures)
+    {
+        foreach ((string profileId, GameProfile profile) in profiles)
+        {
+            if (string.IsNullOrWhiteSpace(profileId))
+            {
+                failures.Add("games contains an empty profile id.");
+                continue;
+            }
+
+            bool hasExecutable = !string.IsNullOrWhiteSpace(profile.Executable);
+            bool hasReceivers = profile.ReceiverProcesses.Any(
+                static receiver => !string.IsNullOrWhiteSpace(receiver));
+
+            if (!hasExecutable && !hasReceivers)
+            {
+                failures.Add($"games:{profileId}:receiverProcesses is required when executable is missing.");
+            }
+
+            if (profile.ReceiverProcesses.Any(string.IsNullOrWhiteSpace))
+            {
+                failures.Add($"games:{profileId}:receiverProcesses cannot contain empty values.");
+            }
+
+            if (profile.ControllerOutput.HasValue && !Enum.IsDefined(profile.ControllerOutput.Value))
+            {
+                failures.Add($"games:{profileId}:controllerOutput is invalid.");
+            }
+
+            if (profile.MouseOutput.HasValue && !Enum.IsDefined(profile.MouseOutput.Value))
+            {
+                failures.Add($"games:{profileId}:mouseOutput is invalid.");
+            }
+        }
+    }
+}

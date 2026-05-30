@@ -174,6 +174,9 @@ avoid repeating past mistakes.
 - Keep explanations concise and concrete.
 - Use explicit `using` directives.
 - Use clear names instead of over-general names.
+- Do not spread method, constructor, or attribute arguments over multiple lines
+  unless the line would approach 120 characters or the split clearly improves
+  readability.
 - Keep files and folders navigable: avoid giant files, giant flat folders, and
   files so small that they only add navigation noise.
 - Group tiny related models together. Split models into separate files when

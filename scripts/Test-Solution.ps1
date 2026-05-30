@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 Push-Location "$PSScriptRoot\.."
 
 try {
-    $testArgs = @("test", ".\SteamInputBridge.Tests\SteamInputBridge.Tests.csproj")
+    $testArgs = @("test", ".\SteamInputBridge.Rewrite.Tests\SteamInputBridge.Tests.csproj")
     switch ($Tier) {
         "Normal" { $testArgs += @("--filter", "TestCategory!=Dependency&TestCategory!=Manual") }
         "Dependency" { $testArgs += @("--filter", "TestCategory=Dependency") }

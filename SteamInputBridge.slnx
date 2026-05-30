@@ -1,15 +1,15 @@
 <Solution>
 
   <Folder Name="/SteamInputBridge/">
-    <Project Path="SteamInputBridge/SteamInputBridge.csproj" />
+    <Project Path="SteamInputBridge.Rewrite/SteamInputBridge.csproj" />
   </Folder>
 
   <Folder Name="/SteamInputBridge.App/">
-    <Project Path="SteamInputBridge.App/SteamInputBridge.App.csproj" />
+    <Project Path="SteamInputBridge.Rewrite.App/SteamInputBridge.App.csproj" />
   </Folder>
 
   <Folder Name="/SteamInputBridge.Tests/">
-    <Project Path="SteamInputBridge.Tests/SteamInputBridge.Tests.csproj" />
+    <Project Path="SteamInputBridge.Rewrite.Tests/SteamInputBridge.Tests.csproj" />
   </Folder>
 
 </Solution>
