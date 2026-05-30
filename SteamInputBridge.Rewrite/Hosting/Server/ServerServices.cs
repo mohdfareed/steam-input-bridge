@@ -21,6 +21,7 @@ public static class ServerServices
 
         _ = services.AddApplicationSettings(configuration, settingsPath);
         _ = services.AddSingleton(_ => new MicrophoneService());
+        _ = services.AddSingleton<BridgeService>();
         _ = services.AddHostedService<BridgeServer>();
 
         return services;

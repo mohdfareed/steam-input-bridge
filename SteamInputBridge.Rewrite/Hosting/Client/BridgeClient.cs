@@ -6,8 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Diagnostics;
-using SteamInputBridge.Hosting.Control;
-using SteamInputBridge.Hosting.Server;
 using StreamJsonRpc;
 
 namespace SteamInputBridge.Hosting.Client;
@@ -56,8 +54,8 @@ public sealed class BridgeClient(ClientRunOptions options, ILogger<BridgeClient>
 
     private async Task RunConnectedAsync(CancellationToken cancellationToken)
     {
-        BridgeLog.ClientConnecting(logger, BridgePipeNames.Control);
-        NamedPipeClientStream pipe = new(".", BridgePipeNames.Control, PipeDirection.InOut, PipeOptions.Asynchronous);
+        BridgeLog.ClientConnecting(logger, IBridgeControlApi.Name);
+        NamedPipeClientStream pipe = new(".", IBridgeControlApi.Name, PipeDirection.InOut, PipeOptions.Asynchronous);
 
         await using (pipe.ConfigureAwait(false))
         {
@@ -69,7 +67,7 @@ public sealed class BridgeClient(ClientRunOptions options, ILogger<BridgeClient>
                 .WaitAsync(ConnectTimeout, cancellationToken)
                 .ConfigureAwait(false);
 
-            BridgeLog.ClientConnected(logger, BridgePipeNames.Control);
+            BridgeLog.ClientConnected(logger, IBridgeControlApi.Name);
             await rpc.Completion.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
     }

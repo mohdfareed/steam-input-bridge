@@ -12,17 +12,26 @@ using StreamJsonRpc;
 
 namespace SteamInputBridge.Hosting.Server;
 
-/// <summary>Named pipe names used by the bridge host.</summary>
-internal static class BridgePipeNames
+internal sealed class BridgeControlSession(BridgeService service, Guid connectionId) : IBridgeControlApi
 {
-    public const string Control = "SteamInputBridge";
+    /// <inheritdoc />
+    public Task ConnectAsync(int processId, string profileId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
+        _ = service.RegisterClient(connectionId, processId, profileId);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<BridgeServerStatus> GetStatusAsync()
+    {
+        return Task.FromResult(service.Status);
+    }
 }
 
 /// <summary>Host-driven server runtime.</summary>
-public sealed class BridgeServer(
-    SettingsService settings,
-    ILogger<BridgeServer> logger,
-    ILogger<BridgeControlService> controlLogger) : BackgroundService
+public sealed class BridgeServer(SettingsService settings, BridgeService service, ILogger<BridgeServer> logger)
+    : BackgroundService
 {
     private readonly ConcurrentBag<NamedPipeServerStream> _pipes = [];
 
@@ -34,14 +43,14 @@ public sealed class BridgeServer(
 
         try
         {
-            BridgeLog.ServerListening(logger, BridgePipeNames.Control);
+            BridgeLog.ServerListening(logger, IBridgeControlApi.Name);
             while (!stoppingToken.IsCancellationRequested)
             {
                 NamedPipeServerStream? pipe = null;
                 try
                 {
                     pipe = new NamedPipeServerStream(
-                        BridgePipeNames.Control,
+                        IBridgeControlApi.Name,
                         PipeDirection.InOut,
                         NamedPipeServerStream.MaxAllowedServerInstances,
                         PipeTransmissionMode.Byte,
@@ -90,12 +99,13 @@ public sealed class BridgeServer(
 
     private async Task RunClientAsync(NamedPipeServerStream pipe)
     {
-        BridgeControlService control = new(controlLogger);
+        Guid connectionId = Guid.NewGuid();
+        BridgeControlSession session = new(service, connectionId);
         await using (pipe.ConfigureAwait(false))
         {
             try
             {
-                using JsonRpc rpc = JsonRpc.Attach(pipe, control);
+                using JsonRpc rpc = JsonRpc.Attach(pipe, session);
                 await rpc.Completion.ConfigureAwait(false);
             }
             catch (Exception exception) when (IsClientDisconnect(exception))
@@ -104,7 +114,8 @@ public sealed class BridgeServer(
             }
             finally
             {
-                if (control.Client is ConnectedClient client)
+                ConnectedClient? client = service.UnregisterClient(connectionId);
+                if (client is not null)
                 {
                     BridgeLog.ClientDisconnected(logger, client.ProcessId, client.ProfileId);
                 }

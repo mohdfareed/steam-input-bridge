@@ -5,8 +5,10 @@ using System.Linq;
 
 namespace SteamInputBridge.Settings;
 
-internal static class SettingsValidation
+/// <summary>Validates application settings after configuration binding.</summary>
+public static class SettingsValidation
 {
+    /// <summary>Throws when the supplied settings are invalid.</summary>
     public static void Validate(SteamInputBridgeSettings settings)
     {
         if (!TryValidate(settings, out string validationErrors))
@@ -15,6 +17,7 @@ internal static class SettingsValidation
         }
     }
 
+    /// <summary>Validates settings and returns formatted validation failures.</summary>
     public static bool TryValidate(SteamInputBridgeSettings? settings, out string validationErrors)
     {
         List<string> failures = [];
