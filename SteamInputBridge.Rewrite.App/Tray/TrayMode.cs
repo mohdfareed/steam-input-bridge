@@ -21,11 +21,11 @@ using WpfShutdownMode = System.Windows.ShutdownMode;
 
 namespace SteamInputBridge.App.Tray;
 
+// MARK: Mode
+// ========================================================================
+
 internal static class TrayMode
 {
-    // MARK: Publics
-    // ========================================================================
-
     public static int Run()
     {
         FormsApplication.EnableVisualStyles();
@@ -40,6 +40,9 @@ internal static class TrayMode
         return app.Run();
     }
 }
+
+// MARK: Context
+// ========================================================================
 
 internal sealed class TrayContext : IDisposable
 {
@@ -68,6 +71,7 @@ internal sealed class TrayContext : IDisposable
     private readonly TrayActions _actions;
     private readonly TrayMenu _menu;
 
+    private string? _lastActiveProfileId;
     private bool _disposed;
     private bool _shutdownStarted;
 
@@ -86,8 +90,8 @@ internal sealed class TrayContext : IDisposable
         _menu.Menu.Opening += OnMenuOpening;
         _bridgeService.StatusChanged += OnServerStatusChanged;
         _server.Services.GetRequiredService<ProfilesService>().ProfilesChanged += OnProfilesChanged;
-        _server.Services.GetRequiredService<ProfilesService>().ActiveProfileChanged += OnProfilesChanged;
-        _server.Services.GetRequiredService<ShortcutService>().StatusChanged += OnServerStatusChanged;
+        _server.Services.GetRequiredService<ProfilesService>().ActiveProfileChanged += OnActiveProfileChanged;
+        _server.Services.GetRequiredService<ShortcutService>().StatusChanged += OnShortcutStatusChanged;
         _server.Services.GetRequiredService<SettingsService>().Changed += OnSettingsChanged;
     }
 
@@ -99,7 +103,7 @@ internal sealed class TrayContext : IDisposable
         _tray.Icon = _icon;
         _tray.Text = AppName;
 
-        RefreshMenu();
+        RebuildMenu();
 
         _tray.ContextMenuStrip = _menu.Menu;
         _tray.Visible = true;
@@ -133,8 +137,8 @@ internal sealed class TrayContext : IDisposable
         _tray.Dispose();
         _overlay.Dispose();
         _server.Services.GetRequiredService<SettingsService>().Changed -= OnSettingsChanged;
-        _server.Services.GetRequiredService<ShortcutService>().StatusChanged -= OnServerStatusChanged;
-        _server.Services.GetRequiredService<ProfilesService>().ActiveProfileChanged -= OnProfilesChanged;
+        _server.Services.GetRequiredService<ShortcutService>().StatusChanged -= OnShortcutStatusChanged;
+        _server.Services.GetRequiredService<ProfilesService>().ActiveProfileChanged -= OnActiveProfileChanged;
         _server.Services.GetRequiredService<ProfilesService>().ProfilesChanged -= OnProfilesChanged;
         _bridgeService.StatusChanged -= OnServerStatusChanged;
         _menu.Menu.Opening -= OnMenuOpening;
@@ -216,52 +220,110 @@ internal sealed class TrayContext : IDisposable
     {
         _ = sender;
         _ = args;
-        RefreshMenu();
+        RebuildMenu();
     }
 
     private void OnServerStatusChanged(object? sender, EventArgs args)
     {
         _ = sender;
         _ = args;
-        QueueMenuRefresh();
+        QueueMenuStateUpdate();
     }
 
     private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)
     {
         _ = sender;
         _ = args;
-        QueueMenuRefresh();
+        QueueMenuStateUpdate();
+    }
+
+    private void OnShortcutStatusChanged(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        QueueMenuStateUpdate();
     }
 
     private void OnProfilesChanged(object? sender, EventArgs args)
     {
         _ = sender;
         _ = args;
-        QueueMenuRefresh();
+        QueueMenuStateUpdate();
+    }
+
+    private void OnActiveProfileChanged(object? sender, ActiveProfileChangedEventArgs args)
+    {
+        _ = sender;
+        if (args.ActiveProfile is null)
+        {
+            return;
+        }
+
+        _lastActiveProfileId = args.ActiveProfile.Id;
+        QueueMenuStateUpdate();
     }
 
     // MARK: Implementation
     // ========================================================================
 
-    private void QueueMenuRefresh()
+    private void QueueMenuStateUpdate()
     {
         if (_disposed || _shutdownStarted)
         {
             return;
         }
 
-        _ = WpfApplication.Current.Dispatcher.BeginInvoke(new Action(RefreshMenu));
+        void UpdateMenuState()
+        {
+            if (_disposed || _shutdownStarted)
+            {
+                return;
+            }
+
+            _menu.SetState(CurrentMenuState());
+        }
+
+        _ = WpfApplication.Current.Dispatcher.BeginInvoke(new Action(UpdateMenuState));
     }
 
-    private void RefreshMenu()
+    private void RebuildMenu()
     {
         if (_disposed || _shutdownStarted)
         {
             return;
         }
 
+        _menu.SetState(CurrentMenuState());
+        _menu.Rebuild();
+    }
+
+    private TrayMenuState CurrentMenuState()
+    {
         IReadOnlyList<ProfileStatus> profiles = _server.Services.GetRequiredService<ProfilesService>().Profiles;
-        _menu.Rebuild(profiles, _bridgeService.Status, TrayActions.StartupEnabled);
+        if (!HasConnectedProfile(profiles, _lastActiveProfileId))
+        {
+            _lastActiveProfileId = null;
+        }
+
+        return new(profiles, _lastActiveProfileId, _bridgeService.Status, TrayActions.StartupEnabled);
+    }
+
+    private static bool HasConnectedProfile(IReadOnlyList<ProfileStatus> profiles, string? profileId)
+    {
+        if (string.IsNullOrWhiteSpace(profileId))
+        {
+            return false;
+        }
+
+        foreach (ProfileStatus profile in profiles)
+        {
+            if (profile.ClientProcessId.HasValue && string.Equals(profile.Id, profileId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void LogAppEnvironment()

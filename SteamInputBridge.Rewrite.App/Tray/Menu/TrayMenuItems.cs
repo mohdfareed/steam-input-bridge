@@ -1,4 +1,6 @@
 using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -76,9 +78,56 @@ internal static class TrayMenuItems
         return enabled ? "Enabled" : "Disabled";
     }
 
-    public static string? Output<T>(T? value) where T : struct
+    public static string Output<T>(T? value) where T : struct
     {
-        return value.HasValue ? value.Value.ToString() : "None";
+        return value.HasValue ? value.Value.ToString() ?? string.Empty : "None";
+    }
+
+    public static void SetValue(ToolStripMenuItem item, string value)
+    {
+        item.ShortcutKeyDisplayString = value;
+        item.ShowShortcutKeys = !string.IsNullOrWhiteSpace(value);
+    }
+
+    // MARK: Images
+    // ========================================================================
+
+    public static void SetGreenCheckMark(ToolStripMenuItem item, bool visible)
+    {
+        SetCheckMark(item, visible, Color.FromArgb(32, 160, 80));
+    }
+
+    public static void SetCheckMark(ToolStripMenuItem item, bool visible)
+    {
+        SetCheckMark(item, visible, SystemColors.MenuText);
+    }
+
+    private static void SetCheckMark(ToolStripMenuItem item, bool visible, Color color)
+    {
+        if (!visible)
+        {
+            item.Image?.Dispose();
+            item.Image = null;
+            return;
+        }
+
+        item.Image ??= CheckMark(color);
+    }
+
+    private static Bitmap CheckMark(Color color)
+    {
+        Bitmap image = new(16, 16);
+        using Graphics graphics = Graphics.FromImage(image);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using Pen pen = new(color, 2.4f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round,
+        };
+
+        graphics.DrawLines(pen, [new(3, 8), new(7, 12), new(13, 4)]);
+        return image;
     }
 
     // MARK: Runners
