@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Profiles;
@@ -15,7 +16,8 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
     private readonly CancellationTokenSource _stop = new();
 
     private Dictionary<string, ResolvedProfile> _profiles = ResolveProfiles(settings.Current);
-    private Dictionary<Guid, ConnectedProfileClient> _clients = [];
+    private readonly Dictionary<Guid, ConnectedProfileClient> _clients = [];
+    private readonly Dictionary<Guid, ProfileSession> _sessions = [];
     private ProfileStatus? _activeProfile;
     private bool _disposed;
 
@@ -33,6 +35,9 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
 
     /// <summary>Profiles with connected clients.</summary>
     public IReadOnlyList<ProfileStatus> MonitoredProfiles => SnapshotProfiles(static profile => profile.ClientProcessId.HasValue);
+
+    /// <summary>Connected profile clients.</summary>
+    internal IReadOnlyList<ProfileClientStatus> Clients => SnapshotClients();
 
     /// <summary>Current active profile, or null when no monitored profile is active.</summary>
     public ProfileStatus? ActiveProfile
@@ -59,6 +64,7 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
     {
         settings.Changed -= OnSettingsChanged;
         await _stop.CancelAsync().ConfigureAwait(false);
+        StopSessions();
 
         if (_monitor is not null)
         {
@@ -84,6 +90,7 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
 
         _disposed = true;
         settings.Changed -= OnSettingsChanged;
+        StopSessions();
         _stop.Cancel();
         _stop.Dispose();
     }
@@ -91,28 +98,57 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
     // MARK: Clients
     // ========================================================================
 
-    internal void ConnectClient(Guid connectionId, int processId, string profileId, uint? steamAppId)
+    internal ProfileClientStatus ConnectClient(Guid connectionId, int processId, string profileId, uint? steamAppId, IBridgeClientApi control)
     {
+        ResolvedProfile profile;
+        ConnectedProfileClient client;
         lock (_gate)
         {
-            _clients[connectionId] = new(connectionId, processId, profileId, steamAppId);
+            if (!_profiles.TryGetValue(profileId, out profile!))
+            {
+                throw new InvalidOperationException($"Profile '{profileId}' is not configured.");
+            }
+
+            if (_clients.ContainsKey(connectionId))
+            {
+                throw new InvalidOperationException($"Control connection '{connectionId}' is already registered.");
+            }
+
+            if (ConnectedClient(profileId) is not null)
+            {
+                throw new InvalidOperationException($"Profile '{profileId}' already has a connected client.");
+            }
+
+            client = new(connectionId, processId, profileId, steamAppId);
+            _clients[connectionId] = client;
+            StartSession(connectionId, profile, control);
         }
 
         ProfilesChanged?.Invoke(this, new(Profiles));
+        return ToStatus(client);
     }
 
-    internal void DisconnectClient(Guid connectionId)
+    internal ProfileClientStatus? DisconnectClient(Guid connectionId)
     {
+        ConnectedProfileClient? client;
         bool changed;
         lock (_gate)
         {
-            changed = _clients.Remove(connectionId);
+            changed = _clients.Remove(connectionId, out client);
+            StopSession(connectionId);
         }
 
         if (changed)
         {
             ProfilesChanged?.Invoke(this, new(Profiles));
         }
+
+        return client is null ? null : ToStatus(client);
+    }
+
+    internal Task StopClientAsync(Guid connectionId)
+    {
+        return StopSessionClientAsync(connectionId);
     }
 
     // MARK: Settings
@@ -124,7 +160,7 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
         lock (_gate)
         {
             _profiles = ResolveProfiles(args.Settings);
-            _clients = ConnectedClientsForKnownProfiles(_clients, _profiles);
+            RemoveUnknownClients();
         }
 
         ProfilesChanged?.Invoke(this, new(Profiles));
@@ -151,6 +187,20 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
         }
     }
 
+    private List<ProfileClientStatus> SnapshotClients()
+    {
+        lock (_gate)
+        {
+            List<ProfileClientStatus> clients = new(_clients.Count);
+            foreach (ConnectedProfileClient client in _clients.Values)
+            {
+                clients.Add(ToStatus(client));
+            }
+
+            return clients;
+        }
+    }
+
     private ProfileStatus ToStatus(ResolvedProfile profile, string? activeProfileId)
     {
         ConnectedProfileClient? client = ConnectedClient(profile.Id);
@@ -163,6 +213,12 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
             profile.ControllerOutput,
             profile.ReceiverProcesses,
             Active: string.Equals(activeProfileId, profile.Id, StringComparison.OrdinalIgnoreCase),
-            ClientProcessId: client?.ProcessId);
+            ClientProcessId: client?.ProcessId,
+            ClientConnectionId: client?.ConnectionId);
+    }
+
+    private static ProfileClientStatus ToStatus(ConnectedProfileClient client)
+    {
+        return new(client.ConnectionId, client.ProcessId, client.ProfileId, client.SteamAppId);
     }
 }

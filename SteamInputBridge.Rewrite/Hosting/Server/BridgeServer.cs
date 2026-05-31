@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Diagnostics;
+using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
 using StreamJsonRpc;
 
@@ -130,7 +131,7 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
             }
             finally
             {
-                ConnectedClient? client = service.UnregisterClient(connectionId);
+                ProfileClientStatus? client = service.UnregisterClient(connectionId);
                 if (client is not null)
                 {
                     BridgeLog.ClientDisconnected(logger, client.ProcessId, client.ProfileId);

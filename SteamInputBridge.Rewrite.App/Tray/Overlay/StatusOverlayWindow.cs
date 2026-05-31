@@ -127,13 +127,13 @@ internal sealed class StatusOverlayWindow : Window
 
     private static string? MicrophoneColor(MicrophoneStatus status)
     {
-        return !status.Available
-            ? null
-            : status.Muted
-            ? MutedColor
-            : status.IsActive
-            ? ActiveColor
-            : null;
+        return status switch
+        {
+            { Available: false } => null,
+            { Muted: true } => MutedColor,
+            { IsActive: true } => ActiveColor,
+            _ => null,
+        };
     }
 
     private static void SetDot(Ellipse dot, string? colorText)

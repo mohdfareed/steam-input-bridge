@@ -44,6 +44,13 @@ internal static class TrayMenuItems
         return item;
     }
 
+    public static ToolStripMenuItem ActionItem(string text, Action callback)
+    {
+        ToolStripMenuItem item = Item(text);
+        item.Click += (_, _) => callback();
+        return item;
+    }
+
     public static ToolStripMenuItem ActionItem(string text, Func<Task> callback, Action<Exception> onError)
     {
         ToolStripMenuItem item = Item(text);

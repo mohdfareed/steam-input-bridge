@@ -14,7 +14,8 @@ public sealed record ProfileStatus(
     ControllerOutput? ControllerOutput,
     IReadOnlyList<string> ReceiverProcesses,
     bool Active,
-    int? ClientProcessId);
+    int? ClientProcessId,
+    Guid? ClientConnectionId);
 
 /// <summary>Profile list change event data.</summary>
 public sealed class ProfilesChangedEventArgs(IReadOnlyList<ProfileStatus> profiles) : EventArgs
@@ -29,3 +30,6 @@ public sealed class ActiveProfileChangedEventArgs(ProfileStatus? activeProfile) 
     /// <summary>Current active profile, or null when no profile is active.</summary>
     public ProfileStatus? ActiveProfile { get; } = activeProfile;
 }
+
+/// <summary>Connected profile client snapshot.</summary>
+internal sealed record ProfileClientStatus(Guid ConnectionId, int ProcessId, string ProfileId, uint? SteamAppId);

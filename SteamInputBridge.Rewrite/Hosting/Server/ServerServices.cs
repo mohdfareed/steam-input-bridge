@@ -26,6 +26,8 @@ public static class ServerServices
         _ = services.AddSingleton<GlobalShortcutListener>();
         _ = services.AddSingleton<ShortcutService>();
         _ = services.AddHostedService(static services => services.GetRequiredService<ShortcutService>());
+        _ = services.AddSingleton<MicrophoneShortcutService>();
+        _ = services.AddHostedService(static services => services.GetRequiredService<MicrophoneShortcutService>());
         _ = services.AddSingleton(static services => new ActionColorService(services.GetRequiredService<ShortcutService>()));
         _ = services.AddSingleton<ProfilesService>();
         _ = services.AddHostedService(static services => services.GetRequiredService<ProfilesService>());

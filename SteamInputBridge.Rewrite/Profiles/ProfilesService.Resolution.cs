@@ -18,6 +18,9 @@ public sealed partial class ProfilesService
             profiles[profileId] = new(
                 profileId,
                 profile.Title,
+                profile.Executable,
+                profile.Arguments,
+                profile.WorkingDirectory,
                 profile.SteamAppId,
                 profile.MouseOutput,
                 profile.ControllerOutput,
@@ -27,20 +30,22 @@ public sealed partial class ProfilesService
         return profiles;
     }
 
-    private static Dictionary<Guid, ConnectedProfileClient> ConnectedClientsForKnownProfiles(
-        Dictionary<Guid, ConnectedProfileClient> clients,
-        Dictionary<string, ResolvedProfile> profiles)
+    private void RemoveUnknownClients()
     {
-        Dictionary<Guid, ConnectedProfileClient> knownClients = [];
-        foreach ((Guid connectionId, ConnectedProfileClient client) in clients)
+        List<Guid> removedClients = [];
+        foreach ((Guid connectionId, ConnectedProfileClient client) in _clients)
         {
-            if (profiles.ContainsKey(client.ProfileId))
+            if (!_profiles.ContainsKey(client.ProfileId))
             {
-                knownClients[connectionId] = client;
+                removedClients.Add(connectionId);
             }
         }
 
-        return knownClients;
+        foreach (Guid connectionId in removedClients)
+        {
+            _ = _clients.Remove(connectionId);
+            StopSession(connectionId);
+        }
     }
 
     private ConnectedProfileClient? ConnectedClient(string profileId)
@@ -64,6 +69,9 @@ public sealed partial class ProfilesService
     private sealed record ResolvedProfile(
         string Id,
         string Title,
+        string? Executable,
+        string? Arguments,
+        string? WorkingDirectory,
         uint? SteamAppId,
         MouseOutput? MouseOutput,
         ControllerOutput? ControllerOutput,

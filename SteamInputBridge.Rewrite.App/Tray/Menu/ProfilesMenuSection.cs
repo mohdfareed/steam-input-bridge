@@ -12,7 +12,10 @@ internal sealed class ProfilesMenuSection
     // MARK: Publics
     // ========================================================================
 
-    public ToolStripMenuItem Build(IReadOnlyList<ProfileStatus> profiles, string? lastActiveProfileId)
+    public ToolStripMenuItem Build(
+        IReadOnlyList<ProfileStatus> profiles,
+        string? lastActiveProfileId,
+        Action<Guid> stopClient)
     {
         _profiles.Clear();
         ToolStripMenuItem menu = TrayMenuItems.Menu("Profiles");
@@ -24,7 +27,7 @@ internal sealed class ProfilesMenuSection
 
         foreach (ProfileStatus profile in profiles)
         {
-            _ = menu.DropDownItems.Add(CreateProfileMenu(profile, IsLastActive(profile, lastActiveProfileId)));
+            _ = menu.DropDownItems.Add(CreateProfileMenu(profile, IsLastActive(profile, lastActiveProfileId), stopClient));
         }
 
         return menu;
@@ -65,7 +68,7 @@ internal sealed class ProfilesMenuSection
     // MARK: Build
     // ========================================================================
 
-    private ToolStripMenuItem CreateProfileMenu(ProfileStatus profile, bool lastActive)
+    private ToolStripMenuItem CreateProfileMenu(ProfileStatus profile, bool lastActive, Action<Guid> stopClient)
     {
         ToolStripMenuItem menu = TrayMenuItems.Menu(profile.Title);
         SetProfileCheckMark(menu, profile, lastActive);
@@ -80,6 +83,11 @@ internal sealed class ProfilesMenuSection
         _ = menu.DropDownItems.Add(TrayMenuItems.Item("Controller output", TrayMenuItems.Output(profile.ControllerOutput)));
         _ = menu.DropDownItems.Add(active);
         _ = menu.DropDownItems.Add(client);
+        if (profile.ClientConnectionId is Guid connectionId)
+        {
+            _ = menu.DropDownItems.Add(new ToolStripSeparator());
+            _ = menu.DropDownItems.Add(TrayMenuItems.ActionItem("Stop client", () => stopClient(connectionId)));
+        }
 
         _profiles[profile.Id] = new(menu, appId, active, client);
         return menu;

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
 using SteamInputBridge.Hosting;
+using SteamInputBridge.Microphone;
 using SteamInputBridge.Profiles;
 
 namespace SteamInputBridge.App.Tray.Menu;
@@ -10,12 +11,15 @@ internal sealed record TrayMenuState(
     IReadOnlyList<ProfileStatus> Profiles,
     string? LastActiveProfileId,
     BridgeServerStatus ServerStatus,
+    MicrophoneStatus Microphone,
+    string? ActionColor,
     bool StartupEnabled);
 
 internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit, Action<Exception> onError)
 {
     private readonly ProfilesMenuSection _profiles = new();
     private readonly ShortcutsMenuSection _shortcuts = new();
+    private readonly DiagnosticsMenuSection _diagnostics = new();
     private ToolStripMenuItem? _startupItem;
     private TrayMenuState? _state;
 
@@ -77,8 +81,12 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
         {
             _startupItem = null;
             Menu.Items.Clear();
-            _ = Menu.Items.Add(_profiles.Build(state.Profiles, state.LastActiveProfileId));
+            _ = Menu.Items.Add(_profiles.Build(
+                state.Profiles,
+                state.LastActiveProfileId,
+                connectionId => _ = TrayMenuItems.RunAsync(() => actions.StopClientAsync(connectionId), onError)));
             _ = Menu.Items.Add(_shortcuts.Build(state.ServerStatus.Shortcuts));
+            _ = Menu.Items.Add(_diagnostics.Build(state.Microphone, state.ActionColor));
             _ = Menu.Items.Add(new ToolStripSeparator());
             _ = Menu.Items.Add(TrayMenuItems.ActionItem(
                 "Open Steam Controller desktop config",
@@ -106,9 +114,11 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
     {
         _profiles.Update(state.Profiles, state.LastActiveProfileId);
         _shortcuts.Update(state.ServerStatus.Shortcuts);
+        _diagnostics.Update(state.Microphone, state.ActionColor);
+
         if (_startupItem is not null)
         {
-            TrayMenuItems.SetValue(_startupItem, TrayMenuItems.Enabled(state.StartupEnabled));
+            TrayMenuItems.SetCheckMark(_startupItem, state.StartupEnabled);
         }
 
         Menu.Invalidate();
@@ -119,7 +129,8 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
 
     private ToolStripMenuItem CreateStartupItem(bool isEnabled)
     {
-        ToolStripMenuItem item = TrayMenuItems.Item("Start on startup", TrayMenuItems.Enabled(isEnabled));
+        ToolStripMenuItem item = TrayMenuItems.Item("Start on startup");
+        TrayMenuItems.SetCheckMark(item, isEnabled);
         item.Click += (_, _) =>
         {
             TrayMenuItems.Run(TrayActions.ToggleStartup, onError);

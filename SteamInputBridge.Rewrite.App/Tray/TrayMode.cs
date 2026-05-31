@@ -12,6 +12,7 @@ using SteamInputBridge.App.Host;
 using SteamInputBridge.App.Tray.Menu;
 using SteamInputBridge.App.Tray.Overlay;
 using SteamInputBridge.Hosting.Server;
+using SteamInputBridge.Microphone;
 using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
@@ -60,7 +61,7 @@ internal sealed class TrayContext : IDisposable
     private static string AppName => "Steam Input Bridge";
 
     private readonly IHost _server = AppHost.CreateServer();
-    private readonly BridgeService _bridgeService;
+    private readonly RuntimeServices _runtime;
     private readonly SettingsFile _settingsFile;
     private readonly AppEnvironment _environment;
     private readonly ILogger<TrayContext> _logger;
@@ -80,19 +81,14 @@ internal sealed class TrayContext : IDisposable
 
     public TrayContext()
     {
-        _bridgeService = _server.Services.GetRequiredService<BridgeService>();
+        _runtime = RuntimeServices.Get(_server.Services);
         _settingsFile = _server.Services.GetRequiredService<SettingsFile>();
         _environment = _server.Services.GetRequiredService<AppEnvironment>();
         _logger = _server.Services.GetRequiredService<ILogger<TrayContext>>();
         _overlay = new(_server.Services);
-        _actions = new(_server, _environment, _settingsFile, _bridgeService, _tray, _stop.Token);
+        _actions = new(_server, _environment, _settingsFile, _runtime.Bridge, _tray, _stop.Token);
         _menu = new(_actions, () => _ = RestartAsync(), () => _ = ShutdownAsync(), AppErrorDialog.Show);
-        _menu.Menu.Opening += OnMenuOpening;
-        _bridgeService.StatusChanged += OnServerStatusChanged;
-        _server.Services.GetRequiredService<ProfilesService>().ProfilesChanged += OnProfilesChanged;
-        _server.Services.GetRequiredService<ProfilesService>().ActiveProfileChanged += OnActiveProfileChanged;
-        _server.Services.GetRequiredService<ShortcutService>().StatusChanged += OnShortcutStatusChanged;
-        _server.Services.GetRequiredService<SettingsService>().Changed += OnSettingsChanged;
+        SubscribeEvents();
     }
 
     public async Task StartAsync()
@@ -136,12 +132,7 @@ internal sealed class TrayContext : IDisposable
         _tray.Visible = false;
         _tray.Dispose();
         _overlay.Dispose();
-        _server.Services.GetRequiredService<SettingsService>().Changed -= OnSettingsChanged;
-        _server.Services.GetRequiredService<ShortcutService>().StatusChanged -= OnShortcutStatusChanged;
-        _server.Services.GetRequiredService<ProfilesService>().ActiveProfileChanged -= OnActiveProfileChanged;
-        _server.Services.GetRequiredService<ProfilesService>().ProfilesChanged -= OnProfilesChanged;
-        _bridgeService.StatusChanged -= OnServerStatusChanged;
-        _menu.Menu.Opening -= OnMenuOpening;
+        UnsubscribeEvents();
         _menu.Menu.Dispose();
         _icon.Dispose();
 
@@ -216,6 +207,30 @@ internal sealed class TrayContext : IDisposable
     // MARK: Event Handlers
     // ========================================================================
 
+    private void SubscribeEvents()
+    {
+        _menu.Menu.Opening += OnMenuOpening;
+        _runtime.Bridge.StatusChanged += OnServerStatusChanged;
+        _runtime.Profiles.ProfilesChanged += OnProfilesChanged;
+        _runtime.Profiles.ActiveProfileChanged += OnActiveProfileChanged;
+        _runtime.Shortcuts.StatusChanged += OnShortcutStatusChanged;
+        _runtime.Microphone.StatusChanged += OnDiagnosticsChanged;
+        _runtime.ActionColor.ColorChanged += OnDiagnosticsChanged;
+        _runtime.Settings.Changed += OnSettingsChanged;
+    }
+
+    private void UnsubscribeEvents()
+    {
+        _runtime.Settings.Changed -= OnSettingsChanged;
+        _runtime.ActionColor.ColorChanged -= OnDiagnosticsChanged;
+        _runtime.Microphone.StatusChanged -= OnDiagnosticsChanged;
+        _runtime.Shortcuts.StatusChanged -= OnShortcutStatusChanged;
+        _runtime.Profiles.ActiveProfileChanged -= OnActiveProfileChanged;
+        _runtime.Profiles.ProfilesChanged -= OnProfilesChanged;
+        _runtime.Bridge.StatusChanged -= OnServerStatusChanged;
+        _menu.Menu.Opening -= OnMenuOpening;
+    }
+
     private void OnMenuOpening(object? sender, System.ComponentModel.CancelEventArgs args)
     {
         _ = sender;
@@ -245,6 +260,13 @@ internal sealed class TrayContext : IDisposable
     }
 
     private void OnProfilesChanged(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        QueueMenuStateUpdate();
+    }
+
+    private void OnDiagnosticsChanged(object? sender, EventArgs args)
     {
         _ = sender;
         _ = args;
@@ -299,13 +321,19 @@ internal sealed class TrayContext : IDisposable
 
     private TrayMenuState CurrentMenuState()
     {
-        IReadOnlyList<ProfileStatus> profiles = _server.Services.GetRequiredService<ProfilesService>().Profiles;
+        IReadOnlyList<ProfileStatus> profiles = _runtime.Profiles.Profiles;
         if (!HasConnectedProfile(profiles, _lastActiveProfileId))
         {
             _lastActiveProfileId = null;
         }
 
-        return new(profiles, _lastActiveProfileId, _bridgeService.Status, TrayActions.StartupEnabled);
+        return new(
+            profiles,
+            _lastActiveProfileId,
+            _runtime.Bridge.Status,
+            _runtime.Microphone.GetStatus(),
+            _runtime.ActionColor.Color,
+            TrayActions.StartupEnabled);
     }
 
     private static bool HasConnectedProfile(IReadOnlyList<ProfileStatus> profiles, string? profileId)
@@ -343,5 +371,25 @@ internal sealed class TrayContext : IDisposable
         return Environment.ProcessPath is { Length: > 0 } processPath
             ? Icon.ExtractAssociatedIcon(processPath) ?? (Icon)SystemIcons.Application.Clone()
             : (Icon)SystemIcons.Application.Clone();
+    }
+
+    private sealed record RuntimeServices(
+        BridgeService Bridge,
+        SettingsService Settings,
+        ProfilesService Profiles,
+        ShortcutService Shortcuts,
+        MicrophoneService Microphone,
+        ActionColorService ActionColor)
+    {
+        public static RuntimeServices Get(IServiceProvider services)
+        {
+            return new(
+                services.GetRequiredService<BridgeService>(),
+                services.GetRequiredService<SettingsService>(),
+                services.GetRequiredService<ProfilesService>(),
+                services.GetRequiredService<ShortcutService>(),
+                services.GetRequiredService<MicrophoneService>(),
+                services.GetRequiredService<ActionColorService>());
+        }
     }
 }
