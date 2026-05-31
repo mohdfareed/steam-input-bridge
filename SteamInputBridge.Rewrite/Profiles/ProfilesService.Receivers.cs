@@ -13,9 +13,9 @@ public sealed partial class ProfilesService
     // MARK: Receiver Processes
     // ========================================================================
 
-    private static List<int> FindReceivers(IReadOnlyList<string> processNames)
+    private static HashSet<int> FindReceivers(IReadOnlyList<string> processNames)
     {
-        List<int> processIds = [];
+        HashSet<int> processIds = [];
         foreach (string processName in processNames)
         {
             string normalized = Path.GetFileNameWithoutExtension(processName.Trim());
@@ -28,7 +28,7 @@ public sealed partial class ProfilesService
             {
                 try
                 {
-                    processIds.Add(process.Id);
+                    _ = processIds.Add(process.Id);
                 }
                 catch (InvalidOperationException)
                 {
@@ -43,10 +43,20 @@ public sealed partial class ProfilesService
         return processIds;
     }
 
-    private static int StopReceivers(ResolvedProfile profile)
+    private static bool RefreshSessionReceivers(ProfileSession session)
+    {
+        HashSet<int> receivers = FindReceivers(session.Profile.ReceiverProcesses);
+        receivers.ExceptWith(session.ReceiverBaseline);
+        _ = session.Receivers.RemoveWhere(processId => !receivers.Contains(processId));
+        session.Receivers.UnionWith(receivers);
+
+        return session.Receivers.Count != 0;
+    }
+
+    private static int StopSessionReceivers(ProfileSession session)
     {
         int stopped = 0;
-        foreach (int processId in FindReceivers(profile.ReceiverProcesses))
+        foreach (int processId in session.Receivers)
         {
             stopped += StopProcess(processId);
         }

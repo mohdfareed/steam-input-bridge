@@ -11,6 +11,7 @@ public sealed class ActionColorService : IDisposable
 {
     private readonly Lock _gate = new();
     private readonly ShortcutService _shortcuts;
+    private readonly Dictionary<string, ShortcutSwitch> _switches = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ActionColorSource> _sources = [];
     private string? _color;
     private bool _disposed;
@@ -64,44 +65,31 @@ public sealed class ActionColorService : IDisposable
             return;
         }
 
-        ActionColorSource source = new(args.ShortcutId, args.Target.Color, Enabled: args.Action != ShortcutValue.Disable);
-        if (args.Action == ShortcutValue.Enable)
-        {
-            SetSource(source, active: args.Phase == ShortcutPhase.Pressed);
-        }
-        else if (args.Action == ShortcutValue.Disable)
-        {
-            SetSource(source, active: args.Phase == ShortcutPhase.Pressed);
-        }
-        else if (args.Action == ShortcutValue.Toggle && args.Phase == ShortcutPhase.Pressed)
-        {
-            ToggleSource(source);
-        }
+        string color = args.Target.Color;
+        bool enabled = ApplySwitch(color, args.ShortcutId, args.Action, args.Phase);
+        SetSource(new(color, enabled));
     }
 
-    private void ToggleSource(ActionColorSource source)
+    private bool ApplySwitch(string color, int shortcutId, ShortcutValue action, ShortcutPhase phase)
     {
         lock (_gate)
         {
-            _ = _sources.Remove(source);
-            if (!_sources.Contains(source))
+            if (!_switches.TryGetValue(color, out ShortcutSwitch? shortcutSwitch))
             {
-                _sources.Add(source);
+                shortcutSwitch = new();
+                _switches[color] = shortcutSwitch;
             }
-        }
 
-        Publish();
+            return shortcutSwitch.Apply(shortcutId, action, phase, defaultEnabled: false);
+        }
     }
 
-    private void SetSource(ActionColorSource source, bool active)
+    private void SetSource(ActionColorSource source)
     {
         lock (_gate)
         {
-            _ = _sources.Remove(source);
-            if (active)
-            {
-                _sources.Add(source);
-            }
+            _ = _sources.RemoveAll(existing => string.Equals(existing.Color, source.Color, StringComparison.OrdinalIgnoreCase));
+            _sources.Add(source);
         }
 
         Publish();
@@ -113,7 +101,7 @@ public sealed class ActionColorService : IDisposable
         bool changed;
         lock (_gate)
         {
-            color = _sources.Count == 0 || !_sources[^1].Enabled ? null : _sources[^1].Color;
+            color = ActiveColor();
             changed = color != _color;
             _color = color;
         }
@@ -124,7 +112,20 @@ public sealed class ActionColorService : IDisposable
         }
     }
 
-    private readonly record struct ActionColorSource(int ShortcutId, string Color, bool Enabled);
+    private string? ActiveColor()
+    {
+        for (int i = _sources.Count - 1; i >= 0; i--)
+        {
+            if (_sources[i].Enabled)
+            {
+                return _sources[i].Color;
+            }
+        }
+
+        return null;
+    }
+
+    private readonly record struct ActionColorSource(string Color, bool Enabled);
 }
 
 /// <summary>Action color change event data.</summary>

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,8 +15,7 @@ public sealed class MicrophoneShortcutService(
     MicrophoneService microphone,
     ILogger<MicrophoneShortcutService> logger) : IHostedService, IDisposable
 {
-    private readonly Lock _gate = new();
-    private readonly List<MicrophoneHold> _holds = [];
+    private readonly ShortcutSwitch _switch = new();
     private bool _disposed;
 
     // MARK: Lifecycle
@@ -36,7 +34,7 @@ public sealed class MicrophoneShortcutService(
     {
         _ = cancellationToken;
         shortcuts.Shortcut -= OnShortcut;
-        ClearHolds();
+        _switch.Reset();
         return Task.CompletedTask;
     }
 
@@ -63,109 +61,8 @@ public sealed class MicrophoneShortcutService(
             return;
         }
 
-        if (args.Phase == ShortcutPhase.Pressed)
-        {
-            ApplyPressed(args.ShortcutId, args.Action);
-        }
-        else
-        {
-            ApplyReleased(args.ShortcutId, args.Action);
-        }
-    }
-
-    private void ApplyPressed(int shortcutId, ShortcutValue action)
-    {
-        switch (action)
-        {
-            case ShortcutValue.Toggle:
-                SetMicrophoneEnabled(!IsMicrophoneEnabled());
-                break;
-            case ShortcutValue.Enable:
-                Hold(shortcutId, enabled: true);
-                break;
-            case ShortcutValue.Disable:
-                Hold(shortcutId, enabled: false);
-                break;
-            default:
-                break;
-        }
-    }
-
-    private void ApplyReleased(int shortcutId, ShortcutValue action)
-    {
-        if (action == ShortcutValue.Enable)
-        {
-            Release(shortcutId, enabled: false);
-        }
-        else if (action == ShortcutValue.Disable)
-        {
-            Release(shortcutId, enabled: true);
-        }
-    }
-
-    // MARK: Holds
-    // ========================================================================
-
-    private void Hold(int shortcutId, bool enabled)
-    {
-        lock (_gate)
-        {
-            _ = _holds.RemoveAll(hold => hold.ShortcutId == shortcutId);
-            _holds.Add(new(shortcutId, enabled));
-        }
-
-        SetCurrentHold();
-    }
-
-    private void Release(int shortcutId, bool enabled)
-    {
-        lock (_gate)
-        {
-            _ = _holds.RemoveAll(hold => hold.ShortcutId == shortcutId);
-        }
-
-        SetCurrentHold(enabled);
-    }
-
-    private void SetCurrentHold(bool releasedEnabled)
-    {
-        bool enabled;
-        lock (_gate)
-        {
-            enabled = _holds.Count == 0 ? releasedEnabled : _holds[^1].Enabled;
-        }
-
+        bool enabled = _switch.Apply(args.ShortcutId, args.Action, args.Phase, IsMicrophoneEnabled());
         SetMicrophoneEnabled(enabled);
-    }
-
-    private void SetCurrentHold()
-    {
-        bool enabled;
-        lock (_gate)
-        {
-            enabled = _holds[^1].Enabled;
-        }
-
-        SetMicrophoneEnabled(enabled);
-    }
-
-    private void ClearHolds()
-    {
-        bool? enabled = null;
-        lock (_gate)
-        {
-            if (_holds.Count != 0)
-            {
-                enabled = !_holds[^1].Enabled;
-            }
-
-            _holds.Clear();
-        }
-
-        if (enabled.HasValue)
-        {
-            SetMicrophoneEnabled(enabled.Value);
-        }
     }
 
     private bool IsMicrophoneEnabled()
@@ -184,8 +81,6 @@ public sealed class MicrophoneShortcutService(
             LogMicrophoneShortcutFailed(logger, exception.Message, null);
         }
     }
-
-    private readonly record struct MicrophoneHold(int ShortcutId, bool Enabled);
 
     // MARK: Logging
     // ========================================================================

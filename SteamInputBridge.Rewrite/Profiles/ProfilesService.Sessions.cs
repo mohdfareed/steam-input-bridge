@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,9 +18,15 @@ public sealed partial class ProfilesService
     private void StartSession(Guid connectionId, ResolvedProfile profile, IBridgeClientApi control)
     {
         StopSession(connectionId);
+        HashSet<int> receiverBaseline = string.IsNullOrWhiteSpace(profile.Executable)
+            ? []
+            : FindReceivers(profile.ReceiverProcesses);
 
+#pragma warning disable CA2000 // CancellationTokenSource ownership transfers to ProfileSession.
         CancellationTokenSource stop = new();
-        ProfileSession session = new(connectionId, profile, control, stop);
+        ProfileSession session = new(connectionId, profile, control, receiverBaseline, stop);
+#pragma warning restore CA2000
+
         _sessions[connectionId] = session;
         session.Task = Task.Run(() => RunSessionAsync(session, stop.Token), CancellationToken.None);
     }
@@ -28,7 +35,7 @@ public sealed partial class ProfilesService
     {
         if (_sessions.Remove(connectionId, out ProfileSession? session))
         {
-            session.Stop();
+            session.Cancel();
         }
     }
 
@@ -36,28 +43,10 @@ public sealed partial class ProfilesService
     {
         foreach (ProfileSession session in _sessions.Values)
         {
-            session.Stop();
+            session.Cancel();
         }
 
         _sessions.Clear();
-    }
-
-    private async Task StopSessionClientAsync(Guid connectionId)
-    {
-        ProfileSession session;
-        lock (_gate)
-        {
-            if (!_sessions.TryGetValue(connectionId, out ProfileSession? existing))
-            {
-                throw new InvalidOperationException($"Profile session '{connectionId}' is not connected.");
-            }
-
-            session = existing;
-        }
-
-        int stopped = StopReceivers(session.Profile);
-        LogProfileReceiversStopped(logger, session.Profile.Id, stopped, null);
-        await session.Control.StopAsync().ConfigureAwait(false);
     }
 
     private async Task RunSessionAsync(ProfileSession session, CancellationToken cancellationToken)
@@ -105,7 +94,7 @@ public sealed partial class ProfilesService
         bool sawReceiver = false;
         while (!cancellationToken.IsCancellationRequested)
         {
-            bool hasReceiver = FindReceivers(session.Profile.ReceiverProcesses).Count != 0;
+            bool hasReceiver = RefreshSessionReceivers(session);
             sawReceiver |= hasReceiver;
             if (sawReceiver && !hasReceiver)
             {
@@ -120,6 +109,7 @@ public sealed partial class ProfilesService
         Guid connectionId,
         ResolvedProfile profile,
         IBridgeClientApi control,
+        HashSet<int> receiverBaseline,
         CancellationTokenSource stop)
     {
         public Guid ConnectionId { get; } = connectionId;
@@ -128,13 +118,25 @@ public sealed partial class ProfilesService
 
         public IBridgeClientApi Control { get; } = control;
 
+        public HashSet<int> ReceiverBaseline { get; } = receiverBaseline;
+
+        public HashSet<int> Receivers { get; } = [];
+
         public Task? Task { get; set; }
 
-        public void Stop()
+        public ReceiverDisconnectAction ReceiversOnDisconnect { get; set; } = ReceiverDisconnectAction.Stop;
+
+        public void Cancel()
         {
             stop.Cancel();
             stop.Dispose();
         }
+    }
+
+    private enum ReceiverDisconnectAction
+    {
+        Stop,
+        Keep,
     }
 
     // MARK: Logging

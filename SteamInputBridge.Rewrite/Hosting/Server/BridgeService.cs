@@ -23,6 +23,12 @@ public sealed class BridgeService(
         await profiles.StopClientAsync(connectionId).ConfigureAwait(false);
     }
 
+    /// <summary>Stops the connected profile session receiver processes.</summary>
+    public void StopReceivers(Guid connectionId)
+    {
+        profiles.StopReceivers(connectionId);
+    }
+
     internal ProfileClientStatus RegisterClient(
         Guid connectionId,
         int processId,

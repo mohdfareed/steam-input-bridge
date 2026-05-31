@@ -131,11 +131,23 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
     internal ProfileClientStatus? DisconnectClient(Guid connectionId)
     {
         ConnectedProfileClient? client;
+        ProfileSession? session;
         bool changed;
         lock (_gate)
         {
             changed = _clients.Remove(connectionId, out client);
-            StopSession(connectionId);
+            _ = _sessions.Remove(connectionId, out session);
+        }
+
+        if (session is not null)
+        {
+            if (session.ReceiversOnDisconnect == ReceiverDisconnectAction.Stop)
+            {
+                int stopped = StopSessionReceivers(session);
+                LogProfileReceiversStopped(logger, session.Profile.Id, stopped, null);
+            }
+
+            session.Cancel();
         }
 
         if (changed)
@@ -146,9 +158,39 @@ public sealed partial class ProfilesService(SettingsService settings, ILogger<Pr
         return client is null ? null : ToStatus(client);
     }
 
-    internal Task StopClientAsync(Guid connectionId)
+    internal async Task StopClientAsync(Guid connectionId)
     {
-        return StopSessionClientAsync(connectionId);
+        ProfileSession session;
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(connectionId, out ProfileSession? existing))
+            {
+                throw new InvalidOperationException($"Profile session '{connectionId}' is not connected.");
+            }
+
+            session = existing;
+            session.ReceiversOnDisconnect = ReceiverDisconnectAction.Keep;
+        }
+
+        await session.Control.StopAsync().ConfigureAwait(false);
+    }
+
+    internal void StopReceivers(Guid connectionId)
+    {
+        ProfileSession session;
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(connectionId, out ProfileSession? existing))
+            {
+                throw new InvalidOperationException($"Profile session '{connectionId}' is not connected.");
+            }
+
+            session = existing;
+            session.ReceiversOnDisconnect = ReceiverDisconnectAction.Keep;
+        }
+
+        int stopped = StopSessionReceivers(session);
+        LogProfileReceiversStopped(logger, session.Profile.Id, stopped, null);
     }
 
     // MARK: Settings
