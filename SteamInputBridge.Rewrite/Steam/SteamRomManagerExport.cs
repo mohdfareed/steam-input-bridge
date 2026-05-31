@@ -38,6 +38,42 @@ public static class SteamRomManagerExport
         return JsonSerializer.Serialize(entries, JsonOptions);
     }
 
+    /// <summary>Writes a Steam ROM Manager manifest and returns the manifest path.</summary>
+    /// <param name="settings">Current application settings.</param>
+    /// <param name="settingsPath">Settings file path used to resolve relative manifest paths.</param>
+    /// <param name="appPath">Steam Input Bridge executable used as the shortcut target.</param>
+    /// <param name="manifestPathOverride">Optional manifest path override.</param>
+    public static string WriteManifest(
+        SteamInputBridgeSettings settings,
+        string settingsPath,
+        string appPath,
+        string? manifestPathOverride = null)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(appPath);
+
+        string manifestPath = ResolveManifestPath(manifestPathOverride ?? settings.Steam.SrmExportPath, settingsPath);
+        string manifest = CreateJson(settings.Games, appPath);
+
+        string? directory = Path.GetDirectoryName(manifestPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            _ = Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(manifestPath, manifest);
+        return manifestPath;
+    }
+
+    private static string ResolveManifestPath(string? path, string settingsPath)
+    {
+        string filePath = Environment.ExpandEnvironmentVariables(string.IsNullOrWhiteSpace(path) ? "srm-manifest.json" : path);
+        return Path.IsPathFullyQualified(filePath)
+            ? filePath
+            : Path.Combine(Path.GetDirectoryName(settingsPath) ?? AppContext.BaseDirectory, filePath);
+    }
+
     private static string QuoteArgument(string value)
     {
         return !value.Contains(' ', StringComparison.Ordinal) && !value.Contains('"', StringComparison.Ordinal)

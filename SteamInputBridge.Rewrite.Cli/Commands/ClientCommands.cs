@@ -2,9 +2,8 @@ using System.CommandLine;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
-using SteamInputBridge.App.Hosting;
 
-namespace SteamInputBridge.App.Cli;
+namespace SteamInputBridge.Cli.Commands;
 
 internal static class ClientCommands
 {
@@ -21,7 +20,7 @@ internal static class ClientCommands
 
     private static async Task RunClientAsync(string profileId, CancellationToken cancellationToken)
     {
-        using IHost host = AppHost.CreateClient(profileId);
+        using IHost host = CliHost.CreateClient(profileId);
         await host.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 }

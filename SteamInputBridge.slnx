@@ -8,6 +8,10 @@
     <Project Path="SteamInputBridge.Rewrite.App/SteamInputBridge.App.csproj" />
   </Folder>
 
+  <Folder Name="/SteamInputBridge.Cli/">
+    <Project Path="SteamInputBridge.Rewrite.Cli/SteamInputBridge.Cli.csproj" />
+  </Folder>
+
   <Folder Name="/SteamInputBridge.Tests/">
     <Project Path="SteamInputBridge.Rewrite.Tests/SteamInputBridge.Tests.csproj" />
   </Folder>

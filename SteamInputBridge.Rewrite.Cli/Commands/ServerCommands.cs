@@ -7,11 +7,10 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
-using SteamInputBridge.App.Hosting;
 using SteamInputBridge.Hosting;
 using StreamJsonRpc;
 
-namespace SteamInputBridge.App.Cli;
+namespace SteamInputBridge.Cli.Commands;
 
 internal static class ServerCommands
 {
@@ -35,7 +34,7 @@ internal static class ServerCommands
 
     private static async Task RunServerAsync(CancellationToken cancellationToken)
     {
-        using IHost host = AppHost.CreateServer();
+        using IHost host = CliHost.CreateServer();
         await host.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 

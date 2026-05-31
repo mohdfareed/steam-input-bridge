@@ -1,47 +1,18 @@
 using System;
-using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Threading;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace SteamInputBridge.App.Hosting;
+namespace SteamInputBridge.Diagnostics;
 
-// MARK: Dependency Injection
-// ============================================================================
-
-/// <summary>File logging registration for application composition.</summary>
-internal static class FileLogging
-{
-    /// <summary>Adds file logging beside the application executable.</summary>
-    public static ILoggingBuilder AddApplicationFileLogger(this ILoggingBuilder logging)
-    {
-        ArgumentNullException.ThrowIfNull(logging);
-
-        _ = logging.Services.AddSingleton<ILoggerProvider>(_ => new FileLoggerProvider(ResolveRunLogFilePath()));
-        return logging;
-    }
-
-    /// <summary>Gets the per-process log path beside the application executable.</summary>
-    public static string ResolveRunLogFilePath()
-    {
-        string directory = Path.Combine(AppContext.BaseDirectory, "logs");
-        string start = Process.GetCurrentProcess().StartTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-        string fileName = $"{start}-{Environment.ProcessId.ToString(CultureInfo.InvariantCulture)}.log";
-        return Path.Combine(directory, fileName);
-    }
-}
-
-// MARK: Provider
-// ============================================================================
-
-internal sealed class FileLoggerProvider : ILoggerProvider
+/// <summary>Simple file logger provider for entrypoint-owned file logging.</summary>
+public sealed class FileLoggerProvider : ILoggerProvider
 {
     private readonly Lock _gate = new();
     private readonly string _path;
     private bool _disposed;
 
+    /// <summary>Creates a provider that writes all log entries to the given file.</summary>
     public FileLoggerProvider(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -54,11 +25,13 @@ internal sealed class FileLoggerProvider : ILoggerProvider
         }
     }
 
+    /// <inheritdoc />
     public ILogger CreateLogger(string categoryName)
     {
         return new FileLogger(categoryName, Write);
     }
 
+    /// <inheritdoc />
     public void Dispose()
     {
         lock (_gate)
@@ -69,7 +42,7 @@ internal sealed class FileLoggerProvider : ILoggerProvider
 
     private void Write(string categoryName, LogLevel logLevel, string message, Exception? exception)
     {
-        string timestamp = DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture);
+        string timestamp = DateTimeOffset.Now.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
         string line = $"{timestamp} [{logLevel}] {categoryName}: {message}";
         if (exception is not null)
         {

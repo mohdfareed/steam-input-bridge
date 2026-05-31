@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Extensions.Hosting;
-using SteamInputBridge.App.Hosting;
 
 namespace SteamInputBridge.App.Tray;
 

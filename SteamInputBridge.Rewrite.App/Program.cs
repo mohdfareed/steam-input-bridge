@@ -1,6 +1,6 @@
 using System;
 using System.Windows.Forms;
-using SteamInputBridge.App.Cli;
+using SteamInputBridge.App.Commands;
 
 namespace SteamInputBridge.App;
 
@@ -16,7 +16,7 @@ internal static class Program
 
         try
         {
-            return CliMode.RunAsync(args).ConfigureAwait(false).GetAwaiter().GetResult();
+            return AppMode.RunAsync(args).ConfigureAwait(false).GetAwaiter().GetResult();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

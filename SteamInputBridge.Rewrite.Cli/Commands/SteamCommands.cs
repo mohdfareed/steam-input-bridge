@@ -2,16 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SteamInputBridge.App.Hosting;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Steam;
 
-namespace SteamInputBridge.App.Cli;
+namespace SteamInputBridge.Cli.Commands;
 
 internal static class SteamCommands
 {
@@ -133,31 +131,11 @@ internal static class SteamCommands
 
     private static string Export(string? manifestPathOverride = null)
     {
-        using IHost host = AppHost.CreateCli();
+        using IHost host = CliHost.CreateCli();
         SettingsService settings = host.Services.GetRequiredService<SettingsService>();
         SettingsFile settingsFile = host.Services.GetRequiredService<SettingsFile>();
-        SteamInputBridgeSettings current = settings.Current;
-
-        string manifestPath = ResolveManifestPath(manifestPathOverride ?? current.Steam.SrmExportPath, settingsFile.Path);
-        string shortcutPath = Path.Combine(AppContext.BaseDirectory, "SteamInputBridge.exe");
-        string manifest = SteamRomManagerExport.CreateJson(current.Games, shortcutPath);
-
-        string? directory = Path.GetDirectoryName(manifestPath);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            _ = Directory.CreateDirectory(directory);
-        }
-
-        File.WriteAllText(manifestPath, manifest);
-        return manifestPath;
-    }
-
-    private static string ResolveManifestPath(string? path, string settingsPath)
-    {
-        string filePath = Environment.ExpandEnvironmentVariables(string.IsNullOrWhiteSpace(path) ? "srm-manifest.json" : path);
-        return Path.IsPathFullyQualified(filePath)
-            ? filePath
-            : Path.Combine(Path.GetDirectoryName(settingsPath) ?? AppContext.BaseDirectory, filePath);
+        string shortcutPath = System.IO.Path.Combine(AppContext.BaseDirectory, "SteamInputBridge.exe");
+        return SteamRomManagerExport.WriteManifest(settings.Current, settingsFile.Path, shortcutPath, manifestPathOverride);
     }
 
     private static uint ParseAppId(string? value)

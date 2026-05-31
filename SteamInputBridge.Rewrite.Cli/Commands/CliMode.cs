@@ -1,7 +1,7 @@
 using System.CommandLine;
 using System.Threading.Tasks;
 
-namespace SteamInputBridge.App.Cli;
+namespace SteamInputBridge.Cli.Commands;
 
 internal static class CliMode
 {
@@ -10,13 +10,11 @@ internal static class CliMode
         return CreateRootCommand().Parse(args).InvokeAsync();
     }
 
-    internal static RootCommand CreateRootCommand()
+    private static RootCommand CreateRootCommand()
     {
-        RootCommand root = new("Steam Input Bridge");
+        RootCommand root = new("Steam Input Bridge CLI");
         root.Subcommands.Add(ServerCommands.CreateCommand());
         root.Subcommands.Add(ClientCommands.CreateCommand());
-        root.Subcommands.Add(TrayCommands.CreateCommand());
-        root.Subcommands.Add(ShortcutCommands.CreateCommand());
         root.Subcommands.Add(SteamCommands.CreateCommand());
         return root;
     }

@@ -8,14 +8,16 @@ param(
 $ErrorActionPreference = "Stop"
 
 $appProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Rewrite.App\SteamInputBridge.App.csproj"
+$cliProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Rewrite.Cli\SteamInputBridge.Cli.csproj"
 
 $outputPath = [System.IO.Path]::GetFullPath($Output)
-$exePath = Join-Path $outputPath "SteamInputBridge.exe"
+$appExePath = Join-Path $outputPath "SteamInputBridge.exe"
+$cliExePath = Join-Path $outputPath "SteamInputBridge.Cli.exe"
 
 # MARK: Functions
 # =============================================================================
 
-function Deploy-App {
+function Deploy-Project {
     param(
         [string] $Configuration,
         [string] $Runtime,
@@ -51,7 +53,7 @@ function Deploy-App {
         }
     }
 
-    Write-Host "Deployed SteamInputBridge to $OutputPath"
+    Write-Host "Deployed $([System.IO.Path]::GetFileNameWithoutExtension($ProjectPath)) to $OutputPath"
 }
 
 function Start-DeployedApp {
@@ -101,14 +103,21 @@ function Stop-DeployedApp {
 # MARK: Entry Point
 # =============================================================================
 
-Stop-DeployedApp -Path $exePath
+Stop-DeployedApp -Path $appExePath
+Stop-DeployedApp -Path $cliExePath
 
-Deploy-App `
+Deploy-Project `
     -Configuration $Configuration `
     -Runtime $Runtime `
     -ProjectPath $appProject `
     -OutputPath $outputPath
 
+Deploy-Project `
+    -Configuration $Configuration `
+    -Runtime $Runtime `
+    -ProjectPath $cliProject `
+    -OutputPath $outputPath
+
 if ($Start) {
-    Start-DeployedApp -Path $exePath
+    Start-DeployedApp -Path $appExePath
 }
