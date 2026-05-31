@@ -11,7 +11,7 @@ using SteamInputBridge.Hosting.Server;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Steam;
 
-namespace SteamInputBridge.App.Tray;
+namespace SteamInputBridge.App.Tray.Menu;
 
 internal sealed class TrayActions(
     IHost server,

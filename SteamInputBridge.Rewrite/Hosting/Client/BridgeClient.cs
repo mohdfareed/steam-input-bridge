@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Diagnostics;
+using SteamInputBridge.Steam;
 using StreamJsonRpc;
 
 namespace SteamInputBridge.Hosting.Client;
@@ -84,7 +85,7 @@ public sealed class BridgeClient(ClientRunOptions options, IHostApplicationLifet
             IBridgeControlApi server = rpc.Attach<IBridgeControlApi>();
             rpc.StartListening();
 
-            await server.ConnectAsync(Environment.ProcessId, options.ProfileId)
+            await server.ConnectAsync(Environment.ProcessId, options.ProfileId, SteamInputClient.ResolveAppId())
                 .WaitAsync(ConnectTimeout, cancellationToken)
                 .ConfigureAwait(false);
 

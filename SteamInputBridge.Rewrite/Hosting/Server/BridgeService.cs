@@ -13,6 +13,9 @@ public sealed class BridgeService(SettingsService settings)
     private readonly Lock _gate = new();
     private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
 
+    /// <summary>Raised after the server status snapshot changes.</summary>
+    public event EventHandler? StatusChanged;
+
     /// <summary>Current server status snapshot.</summary>
     public BridgeServerStatus Status => ServerStatus();
 
@@ -33,13 +36,19 @@ public sealed class BridgeService(SettingsService settings)
         await client.Control.StopAsync().ConfigureAwait(false);
     }
 
-    internal ConnectedClient RegisterClient(Guid connectionId, int processId, string profileId, IBridgeClientApi control)
+    internal ConnectedClient RegisterClient(
+        Guid connectionId,
+        int processId,
+        string profileId,
+        uint? steamAppId,
+        IBridgeClientApi control)
     {
         if (!settings.Current.Games.ContainsKey(profileId))
         {
             throw new InvalidOperationException($"Profile '{profileId}' is not configured.");
         }
 
+        ConnectedClient client;
         lock (_gate)
         {
             if (_clients.ContainsKey(connectionId))
@@ -55,21 +64,30 @@ public sealed class BridgeService(SettingsService settings)
                 }
             }
 
-            ConnectedClient client = new(connectionId, processId, profileId, control);
-            return _clients.TryAdd(connectionId, client)
-                ? client
-                : throw new InvalidOperationException($"Control connection '{connectionId}' is already registered.");
+            client = new(connectionId, processId, profileId, steamAppId, control);
+            if (!_clients.TryAdd(connectionId, client))
+            {
+                throw new InvalidOperationException($"Control connection '{connectionId}' is already registered.");
+            }
         }
+
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+        return client;
     }
 
     internal ConnectedClient? UnregisterClient(Guid connectionId)
     {
+        ConnectedClient? client;
         lock (_gate)
         {
-            return _clients.TryRemove(connectionId, out ConnectedClient? client)
-                ? client
-                : null;
+            if (!_clients.TryRemove(connectionId, out client))
+            {
+                return null;
+            }
         }
+
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+        return client;
     }
 
     private BridgeServerStatus ServerStatus()
@@ -79,7 +97,11 @@ public sealed class BridgeService(SettingsService settings)
             List<BridgeClientStatus> clients = new(_clients.Count);
             foreach (ConnectedClient client in _clients.Values)
             {
-                clients.Add(new BridgeClientStatus(client.ConnectionId, client.ProcessId, client.ProfileId));
+                clients.Add(new BridgeClientStatus(
+                    client.ConnectionId,
+                    client.ProcessId,
+                    client.ProfileId,
+                    client.SteamAppId));
             }
 
             return new BridgeServerStatus(clients);
@@ -87,4 +109,9 @@ public sealed class BridgeService(SettingsService settings)
     }
 }
 
-internal sealed record ConnectedClient(Guid ConnectionId, int ProcessId, string ProfileId, IBridgeClientApi Control);
+internal sealed record ConnectedClient(
+    Guid ConnectionId,
+    int ProcessId,
+    string ProfileId,
+    uint? SteamAppId,
+    IBridgeClientApi Control);

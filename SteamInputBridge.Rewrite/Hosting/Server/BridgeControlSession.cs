@@ -9,10 +9,10 @@ internal sealed class BridgeControlSession(BridgeService service, Guid connectio
     : IBridgeControlApi
 {
     /// <inheritdoc />
-    public Task ConnectAsync(int processId, string profileId)
+    public Task ConnectAsync(int processId, string profileId, uint? steamAppId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
-        _ = service.RegisterClient(connectionId, processId, profileId, client);
+        _ = service.RegisterClient(connectionId, processId, profileId, steamAppId, client);
 
         BridgeLog.ClientRegistered(logger, processId, profileId);
         return Task.CompletedTask;

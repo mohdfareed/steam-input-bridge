@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 
@@ -23,9 +22,8 @@ public static class ProductMetadata
     {
         ArgumentNullException.ThrowIfNull(assembly);
 
-        FileVersionInfo version = FileVersionInfo.GetVersionInfo(assembly.Location);
-        return string.IsNullOrWhiteSpace(version.ProductVersion)
-            ? "unknown"
-            : version.ProductVersion;
+        string? version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ??
+            assembly.GetName().Version?.ToString();
+        return string.IsNullOrWhiteSpace(version) ? "unknown" : version;
     }
 }

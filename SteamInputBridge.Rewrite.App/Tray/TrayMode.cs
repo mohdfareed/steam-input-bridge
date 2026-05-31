@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.App.Host;
+using SteamInputBridge.App.Tray.Menu;
+using SteamInputBridge.App.Tray.Overlay;
 using SteamInputBridge.Hosting.Server;
 using SteamInputBridge.Settings;
 using FormsApplication = System.Windows.Forms.Application;
@@ -63,7 +65,6 @@ internal sealed class TrayContext : IDisposable
     private readonly TrayActions _actions;
     private readonly TrayMenu _menu;
 
-    private Task _serverTask = Task.CompletedTask;
     private bool _disposed;
     private bool _shutdownStarted;
 
@@ -78,29 +79,22 @@ internal sealed class TrayContext : IDisposable
         _logger = _server.Services.GetRequiredService<ILogger<TrayContext>>();
         _overlay = new(_server.Services);
         _actions = new(_server, _environment, _settingsFile, _bridgeService, _tray, _stop.Token);
-        _menu = new(
-            () => _ = RunActionAsync(_actions.OpenDesktopSteamInputConfigAsync),
-            () => RunAction(_actions.ExportSrmManifest),
-            () => RunAction(_actions.OpenSettings),
-            () => RunAction(_actions.OpenLogs),
-            () => TrayActions.StartupEnabled,
-            () => RunAction(TrayActions.ToggleStartup),
-            () => _ = RestartAsync(),
-            connectionId => _ = RunActionAsync(() => _actions.StopClientAsync(connectionId)),
-            () => _ = ShutdownAsync(),
-            AppErrorDialog.Show);
+        _menu = new(_actions, () => _ = RestartAsync(), () => _ = ShutdownAsync(), AppErrorDialog.Show);
         _menu.Menu.Opening += OnMenuOpening;
+        _bridgeService.StatusChanged += OnServerStatusChanged;
+        _server.Services.GetRequiredService<SettingsService>().Changed += OnSettingsChanged;
     }
 
     public async Task StartAsync()
     {
         LogAppEnvironment();
         await _server.StartAsync(_stop.Token).ConfigureAwait(true);
-        _serverTask = _server.WaitForShutdownAsync(CancellationToken.None);
 
         _tray.Icon = _icon;
         _tray.Text = AppName;
-        _menu.Rebuild(_bridgeService.Status, TrayActions.StartupEnabled);
+
+        RefreshMenu();
+
         _tray.ContextMenuStrip = _menu.Menu;
         _tray.Visible = true;
         _overlay.Start();
@@ -132,6 +126,8 @@ internal sealed class TrayContext : IDisposable
         _tray.Visible = false;
         _tray.Dispose();
         _overlay.Dispose();
+        _server.Services.GetRequiredService<SettingsService>().Changed -= OnSettingsChanged;
+        _bridgeService.StatusChanged -= OnServerStatusChanged;
         _menu.Menu.Opening -= OnMenuOpening;
         _menu.Menu.Dispose();
         _icon.Dispose();
@@ -178,6 +174,7 @@ internal sealed class TrayContext : IDisposable
             WorkingDirectory = _environment.BaseDirectory,
             UseShellExecute = true,
         };
+
         _ = Process.Start(start) ?? throw new InvalidOperationException("Could not restart Steam Input Bridge.");
         WpfApplication.Current.Shutdown();
     }
@@ -189,7 +186,6 @@ internal sealed class TrayContext : IDisposable
         try
         {
             await _server.StopAsync(stopTimeout.Token).ConfigureAwait(true);
-            await _serverTask.ConfigureAwait(true);
             return true;
         }
         catch (OperationCanceledException) when (stopTimeout.IsCancellationRequested)
@@ -204,41 +200,52 @@ internal sealed class TrayContext : IDisposable
         }
     }
 
-    // MARK: Actions
-    // ========================================================================
-
-    private static void RunAction(Action action)
-    {
-        try
-        {
-            action();
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
-        {
-            AppErrorDialog.Show(exception);
-        }
-    }
-
-    private static async Task RunActionAsync(Func<Task> action)
-    {
-        try
-        {
-            await action().ConfigureAwait(true);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException and not StackOverflowException)
-        {
-            AppErrorDialog.Show(exception);
-        }
-    }
-
-    // MARK: Implementation
+    // MARK: Event Handlers
     // ========================================================================
 
     private void OnMenuOpening(object? sender, System.ComponentModel.CancelEventArgs args)
     {
         _ = sender;
         _ = args;
-        _menu.Rebuild(_bridgeService.Status, TrayActions.StartupEnabled);
+        RefreshMenu();
+    }
+
+    private void OnServerStatusChanged(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        QueueMenuRefresh();
+    }
+
+    private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        QueueMenuRefresh();
+    }
+
+    // MARK: Implementation
+    // ========================================================================
+
+    private void QueueMenuRefresh()
+    {
+        if (_disposed || _shutdownStarted)
+        {
+            return;
+        }
+
+        _ = WpfApplication.Current.Dispatcher.BeginInvoke(new Action(RefreshMenu));
+    }
+
+    private void RefreshMenu()
+    {
+        if (_disposed || _shutdownStarted)
+        {
+            return;
+        }
+
+        SteamInputBridgeSettings settings = _server.Services.GetRequiredService<SettingsService>().Current;
+        _menu.Rebuild(settings, _bridgeService.Status, TrayActions.StartupEnabled);
     }
 
     private void LogAppEnvironment()

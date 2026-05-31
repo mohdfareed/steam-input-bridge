@@ -9,7 +9,7 @@ using SteamInputBridge.Microphone;
 using Vanara.PInvoke;
 using static Vanara.PInvoke.User32;
 
-namespace SteamInputBridge.App.Tray;
+namespace SteamInputBridge.App.Tray.Overlay;
 
 internal sealed class StatusOverlayWindow : Window
 {

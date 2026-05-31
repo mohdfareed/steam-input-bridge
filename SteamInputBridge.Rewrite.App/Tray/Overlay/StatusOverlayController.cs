@@ -3,7 +3,7 @@ using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using SteamInputBridge.Microphone;
 
-namespace SteamInputBridge.App.Tray;
+namespace SteamInputBridge.App.Tray.Overlay;
 
 internal sealed class StatusOverlayController : IDisposable
 {

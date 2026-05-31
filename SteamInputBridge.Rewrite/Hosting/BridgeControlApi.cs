@@ -15,7 +15,7 @@ public partial interface IBridgeControlApi
     const string Name = "SteamInputBridge";
 
     /// <summary>Registers a client process with the server.</summary>
-    Task ConnectAsync(int processId, string profileId);
+    Task ConnectAsync(int processId, string profileId, uint? steamAppId);
 
     /// <summary>Gets current server status.</summary>
     Task<BridgeServerStatus> GetStatusAsync();
@@ -48,7 +48,8 @@ public sealed class BridgeServerStatus(IReadOnlyList<BridgeClientStatus> clients
 /// <param name="connectionId">Control connection id.</param>
 /// <param name="processId">Client process id.</param>
 /// <param name="profileId">Client profile id.</param>
-public sealed class BridgeClientStatus(Guid connectionId, int processId, string profileId)
+/// <param name="steamAppId">Steam app id reported by the client.</param>
+public sealed class BridgeClientStatus(Guid connectionId, int processId, string profileId, uint? steamAppId)
 {
     /// <summary>Control connection id.</summary>
     public Guid ConnectionId { get; } = connectionId;
@@ -58,4 +59,7 @@ public sealed class BridgeClientStatus(Guid connectionId, int processId, string 
 
     /// <summary>Client profile id.</summary>
     public string ProfileId { get; } = profileId;
+
+    /// <summary>Steam app id reported by the client.</summary>
+    public uint? SteamAppId { get; } = steamAppId;
 }
