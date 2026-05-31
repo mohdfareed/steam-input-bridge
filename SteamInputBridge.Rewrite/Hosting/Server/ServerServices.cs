@@ -2,6 +2,7 @@ using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SteamInputBridge.Microphone;
+using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
 
@@ -26,6 +27,8 @@ public static class ServerServices
         _ = services.AddSingleton<ShortcutService>();
         _ = services.AddHostedService(static services => services.GetRequiredService<ShortcutService>());
         _ = services.AddSingleton(static services => new ActionColorService(services.GetRequiredService<ShortcutService>()));
+        _ = services.AddSingleton<ProfilesService>();
+        _ = services.AddHostedService(static services => services.GetRequiredService<ProfilesService>());
         _ = services.AddSingleton<BridgeService>();
         _ = services.AddHostedService<BridgeServer>();
 

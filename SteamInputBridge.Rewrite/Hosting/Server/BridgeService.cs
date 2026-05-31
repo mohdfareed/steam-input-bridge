@@ -3,12 +3,14 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
+using SteamInputBridge.Shortcuts;
 
 namespace SteamInputBridge.Hosting.Server;
 
 /// <summary>Owns server behavior and connected clients.</summary>
-public sealed class BridgeService(SettingsService settings)
+public sealed class BridgeService(SettingsService settings, ShortcutService shortcuts, ProfilesService profiles)
 {
     private readonly Lock _gate = new();
     private readonly ConcurrentDictionary<Guid, ConnectedClient> _clients = [];
@@ -72,6 +74,7 @@ public sealed class BridgeService(SettingsService settings)
         }
 
         StatusChanged?.Invoke(this, EventArgs.Empty);
+        profiles.ConnectClient(connectionId, processId, profileId, steamAppId);
         return client;
     }
 
@@ -87,6 +90,7 @@ public sealed class BridgeService(SettingsService settings)
         }
 
         StatusChanged?.Invoke(this, EventArgs.Empty);
+        profiles.DisconnectClient(connectionId);
         return client;
     }
 
@@ -104,7 +108,7 @@ public sealed class BridgeService(SettingsService settings)
                     client.SteamAppId));
             }
 
-            return new BridgeServerStatus(clients);
+            return new BridgeServerStatus(clients, shortcuts.Status);
         }
     }
 }

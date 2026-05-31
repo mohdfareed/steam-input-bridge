@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Microphone;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts.Runtime;
@@ -25,6 +26,7 @@ public sealed class ShortcutService(
 {
     private readonly Lock _gate = new();
     private IReadOnlyDictionary<int, IReadOnlyList<ShortcutEntry>> _shortcuts = new Dictionary<int, IReadOnlyList<ShortcutEntry>>();
+    private readonly HashSet<int> _pressedShortcuts = [];
     private readonly List<MicrophoneHold> _microphoneHolds = [];
     private bool? _microphoneBaseline;
     private bool _disposed;
@@ -33,6 +35,12 @@ public sealed class ShortcutService(
     // ========================================================================
 
     internal event EventHandler<ShortcutEventArgs>? Shortcut;
+
+    /// <summary>Raised after shortcut status changes.</summary>
+    public event EventHandler? StatusChanged;
+
+    /// <summary>Current shortcut status snapshot.</summary>
+    public IReadOnlyList<BridgeShortcutStatus> Status => GetStatus();
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -81,8 +89,10 @@ public sealed class ShortcutService(
         lock (_gate)
         {
             _shortcuts = bindings.Shortcuts;
+            _pressedShortcuts.Clear();
         }
 
+        StatusChanged?.Invoke(this, EventArgs.Empty);
         ClearMicrophoneHolds();
 
         try
@@ -106,9 +116,20 @@ public sealed class ShortcutService(
             return;
         }
 
+        bool changed;
+        lock (_gate)
+        {
+            changed = _pressedShortcuts.Add(id);
+        }
+
         foreach (ShortcutEntry shortcut in shortcuts)
         {
             ApplyPressed(id, shortcut);
+        }
+
+        if (changed)
+        {
+            StatusChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -119,9 +140,20 @@ public sealed class ShortcutService(
             return;
         }
 
+        bool changed;
+        lock (_gate)
+        {
+            changed = _pressedShortcuts.Remove(id);
+        }
+
         foreach (ShortcutEntry shortcut in shortcuts)
         {
             ApplyReleased(id, shortcut);
+        }
+
+        if (changed)
+        {
+            StatusChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -276,6 +308,41 @@ public sealed class ShortcutService(
     }
 
     private readonly record struct MicrophoneHold(int ShortcutId, bool Enabled);
+
+    // MARK: Status
+    // ========================================================================
+
+    private List<BridgeShortcutStatus> GetStatus()
+    {
+        lock (_gate)
+        {
+            List<BridgeShortcutStatus> status = [];
+            foreach ((int shortcutId, IReadOnlyList<ShortcutEntry> entries) in _shortcuts)
+            {
+                foreach (ShortcutEntry entry in entries)
+                {
+                    status.Add(new(
+                        entry.Keys,
+                        ShortcutTargets(entry),
+                        entry.Action.ToString(),
+                        _pressedShortcuts.Contains(shortcutId)));
+                }
+            }
+
+            return status;
+        }
+    }
+
+    private static List<string> ShortcutTargets(ShortcutEntry entry)
+    {
+        List<string> targets = new(entry.Targets.Count);
+        foreach (ShortcutTargetSetting target in entry.Targets)
+        {
+            targets.Add(target.ToString());
+        }
+
+        return targets;
+    }
 
     // MARK: Logging
     // ========================================================================

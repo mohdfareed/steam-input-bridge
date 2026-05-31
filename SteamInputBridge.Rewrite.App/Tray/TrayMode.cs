@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Threading;
@@ -11,7 +12,9 @@ using SteamInputBridge.App.Host;
 using SteamInputBridge.App.Tray.Menu;
 using SteamInputBridge.App.Tray.Overlay;
 using SteamInputBridge.Hosting.Server;
+using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
+using SteamInputBridge.Shortcuts;
 using FormsApplication = System.Windows.Forms.Application;
 using WpfApplication = System.Windows.Application;
 using WpfShutdownMode = System.Windows.ShutdownMode;
@@ -82,6 +85,9 @@ internal sealed class TrayContext : IDisposable
         _menu = new(_actions, () => _ = RestartAsync(), () => _ = ShutdownAsync(), AppErrorDialog.Show);
         _menu.Menu.Opening += OnMenuOpening;
         _bridgeService.StatusChanged += OnServerStatusChanged;
+        _server.Services.GetRequiredService<ProfilesService>().ProfilesChanged += OnProfilesChanged;
+        _server.Services.GetRequiredService<ProfilesService>().ActiveProfileChanged += OnProfilesChanged;
+        _server.Services.GetRequiredService<ShortcutService>().StatusChanged += OnServerStatusChanged;
         _server.Services.GetRequiredService<SettingsService>().Changed += OnSettingsChanged;
     }
 
@@ -127,6 +133,9 @@ internal sealed class TrayContext : IDisposable
         _tray.Dispose();
         _overlay.Dispose();
         _server.Services.GetRequiredService<SettingsService>().Changed -= OnSettingsChanged;
+        _server.Services.GetRequiredService<ShortcutService>().StatusChanged -= OnServerStatusChanged;
+        _server.Services.GetRequiredService<ProfilesService>().ActiveProfileChanged -= OnProfilesChanged;
+        _server.Services.GetRequiredService<ProfilesService>().ProfilesChanged -= OnProfilesChanged;
         _bridgeService.StatusChanged -= OnServerStatusChanged;
         _menu.Menu.Opening -= OnMenuOpening;
         _menu.Menu.Dispose();
@@ -224,6 +233,13 @@ internal sealed class TrayContext : IDisposable
         QueueMenuRefresh();
     }
 
+    private void OnProfilesChanged(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        QueueMenuRefresh();
+    }
+
     // MARK: Implementation
     // ========================================================================
 
@@ -244,8 +260,8 @@ internal sealed class TrayContext : IDisposable
             return;
         }
 
-        SteamInputBridgeSettings settings = _server.Services.GetRequiredService<SettingsService>().Current;
-        _menu.Rebuild(settings, _bridgeService.Status, TrayActions.StartupEnabled);
+        IReadOnlyList<ProfileStatus> profiles = _server.Services.GetRequiredService<ProfilesService>().Profiles;
+        _menu.Rebuild(profiles, _bridgeService.Status, TrayActions.StartupEnabled);
     }
 
     private void LogAppEnvironment()

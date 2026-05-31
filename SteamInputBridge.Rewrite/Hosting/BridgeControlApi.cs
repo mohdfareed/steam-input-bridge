@@ -35,10 +35,14 @@ public partial interface IBridgeClientApi
 
 /// <summary>Current server status snapshot.</summary>
 /// <param name="clients">Connected client snapshots.</param>
-public sealed class BridgeServerStatus(IReadOnlyList<BridgeClientStatus> clients)
+/// <param name="shortcuts">Configured shortcut snapshots.</param>
+public sealed class BridgeServerStatus(IReadOnlyList<BridgeClientStatus> clients, IReadOnlyList<BridgeShortcutStatus> shortcuts)
 {
     /// <summary>Connected client snapshots.</summary>
     public IReadOnlyList<BridgeClientStatus> Clients { get; } = clients;
+
+    /// <summary>Configured shortcut snapshots.</summary>
+    public IReadOnlyList<BridgeShortcutStatus> Shortcuts { get; } = shortcuts;
 
     /// <summary>Number of connected clients.</summary>
     public int ClientsCount => Clients.Count;
@@ -62,4 +66,28 @@ public sealed class BridgeClientStatus(Guid connectionId, int processId, string 
 
     /// <summary>Steam app id reported by the client.</summary>
     public uint? SteamAppId { get; } = steamAppId;
+}
+
+/// <summary>Configured shortcut status snapshot.</summary>
+/// <param name="keys">Shortcut key combination.</param>
+/// <param name="targets">Shortcut target names.</param>
+/// <param name="action">Shortcut action.</param>
+/// <param name="pressed">Whether the shortcut is currently pressed.</param>
+public sealed class BridgeShortcutStatus(
+    string keys,
+    IReadOnlyList<string> targets,
+    string action,
+    bool pressed)
+{
+    /// <summary>Shortcut key combination.</summary>
+    public string Keys { get; } = keys;
+
+    /// <summary>Shortcut target names.</summary>
+    public IReadOnlyList<string> Targets { get; } = targets;
+
+    /// <summary>Shortcut action.</summary>
+    public string Action { get; } = action;
+
+    /// <summary>Whether the shortcut is currently pressed.</summary>
+    public bool Pressed { get; } = pressed;
 }

@@ -2,8 +2,6 @@ using System;
 using System.Globalization;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using SteamInputBridge.Hosting;
-using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.App.Tray.Menu;
 
@@ -59,20 +57,23 @@ internal static class TrayMenuItems
         return value.ToString(CultureInfo.InvariantCulture);
     }
 
+    public static string Number(int? value)
+    {
+        return value?.ToString(CultureInfo.InvariantCulture) ?? "None";
+    }
     public static string Number(uint value)
     {
         return value.ToString(CultureInfo.InvariantCulture);
     }
 
+    public static string Number(uint? value)
+    {
+        return value?.ToString(CultureInfo.InvariantCulture) ?? "None";
+    }
+
     public static string Enabled(bool enabled)
     {
         return enabled ? "Enabled" : "Disabled";
-    }
-
-    public static string SteamAppId(GameProfile profile, BridgeClientStatus? client)
-    {
-        uint? appId = client is null ? profile.SteamAppId : client.SteamAppId;
-        return appId.HasValue ? TrayMenuItems.Number(appId.Value) : "None";
     }
 
     public static string? Output<T>(T? value) where T : struct
