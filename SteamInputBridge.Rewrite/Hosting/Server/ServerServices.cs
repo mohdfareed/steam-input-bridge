@@ -1,7 +1,7 @@
 using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SteamInputBridge.Forwarding;
+using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Inputs.Mouse;
 using SteamInputBridge.Inputs.RawInput;

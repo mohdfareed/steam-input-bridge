@@ -74,8 +74,14 @@ internal sealed class ProfilesMenuSection
         SetProfileCheckMark(menu, profile, lastActive);
 
         ToolStripMenuItem appId = TrayMenuItems.Item("Steam app ID", TrayMenuItems.Number(profile.EffectiveSteamAppId));
-        ToolStripMenuItem active = TrayMenuItems.Item("Last active", TrayMenuItems.Enabled(lastActive));
+        ToolStripMenuItem active = TrayMenuItems.Item("Last active", TrayMenuItems.YesNo(lastActive));
+        TrayMenuItems.SetCheckMark(active, lastActive);
         ToolStripMenuItem client = TrayMenuItems.Item("Client", TrayMenuItems.Number(profile.ClientProcessId));
+        TrayMenuItems.SetCheckMark(client, HasClient(profile));
+        ToolStripMenuItem gameProcesses = TrayMenuItems.Item(
+            "Game processes",
+            TrayMenuItems.Number(profile.GameProcessIds.Count));
+        TrayMenuItems.SetCheckMark(gameProcesses, HasGameProcesses(profile));
 
         _ = menu.DropDownItems.Add(TrayMenuItems.Item("ID", profile.Id));
         _ = menu.DropDownItems.Add(appId);
@@ -83,13 +89,14 @@ internal sealed class ProfilesMenuSection
         _ = menu.DropDownItems.Add(TrayMenuItems.Item("Controller output", TrayMenuItems.Output(profile.ControllerOutput)));
         _ = menu.DropDownItems.Add(active);
         _ = menu.DropDownItems.Add(client);
+        _ = menu.DropDownItems.Add(gameProcesses);
         if (profile.ClientConnectionId is Guid connectionId)
         {
             _ = menu.DropDownItems.Add(new ToolStripSeparator());
             _ = menu.DropDownItems.Add(TrayMenuItems.ActionItem("Stop client", () => stopClient(connectionId)));
         }
 
-        _profiles[profile.Id] = new(menu, appId, active, client);
+        _profiles[profile.Id] = new(menu, appId, active, client, gameProcesses);
         return menu;
     }
 
@@ -103,11 +110,16 @@ internal sealed class ProfilesMenuSection
         return profile.ClientProcessId.HasValue;
     }
 
+    private static bool HasGameProcesses(ProfileStatus profile)
+    {
+        return profile.GameProcessIds.Count > 0;
+    }
+
     private static void SetProfileCheckMark(ToolStripMenuItem menu, ProfileStatus profile, bool lastActive)
     {
         if (lastActive)
         {
-            TrayMenuItems.SetGreenCheckMark(menu, visible: true);
+            TrayMenuItems.SetGreenCheckMark(menu, HasClient(profile));
         }
         else
         {
@@ -119,14 +131,19 @@ internal sealed class ProfilesMenuSection
         ToolStripMenuItem Menu,
         ToolStripMenuItem AppId,
         ToolStripMenuItem Active,
-        ToolStripMenuItem Client)
+        ToolStripMenuItem Client,
+        ToolStripMenuItem GameProcesses)
     {
         public void Update(ProfileStatus profile, bool lastActive)
         {
             SetProfileCheckMark(Menu, profile, lastActive);
             TrayMenuItems.SetValue(AppId, TrayMenuItems.Number(profile.EffectiveSteamAppId));
-            TrayMenuItems.SetValue(Active, TrayMenuItems.Enabled(lastActive));
+            TrayMenuItems.SetValue(Active, TrayMenuItems.YesNo(lastActive));
+            TrayMenuItems.SetCheckMark(Active, lastActive);
             TrayMenuItems.SetValue(Client, TrayMenuItems.Number(profile.ClientProcessId));
+            TrayMenuItems.SetCheckMark(Client, HasClient(profile));
+            TrayMenuItems.SetValue(GameProcesses, TrayMenuItems.Number(profile.GameProcessIds.Count));
+            TrayMenuItems.SetCheckMark(GameProcesses, HasGameProcesses(profile));
         }
     }
 }

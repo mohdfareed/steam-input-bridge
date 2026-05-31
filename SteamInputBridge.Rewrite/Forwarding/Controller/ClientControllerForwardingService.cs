@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SDL3;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Hosting.Client;
 using SteamInputBridge.Inputs.Controller;
 using SteamInputBridge.Inputs.Sdl;
@@ -12,7 +13,7 @@ using SteamInputBridge.Outputs.Controller;
 using SteamInputBridge.Outputs.Viiper.Controller;
 using SteamInputBridge.Settings;
 
-namespace SteamInputBridge.Forwarding;
+namespace SteamInputBridge.Forwarding.Controller;
 
 /// <summary>Client-side Steam Controller to VIIPER Xbox forwarding.</summary>
 public sealed class ClientControllerForwardingService(
@@ -57,6 +58,19 @@ public sealed class ClientControllerForwardingService(
             foreach (IControllerOutput output in clear)
             {
                 output.Clear();
+            }
+        }
+    }
+
+    /// <summary>Current client-side controller forwarding status.</summary>
+    public BridgeClientControllerStatus Status
+    {
+        get
+        {
+            lock (_gate)
+            {
+                int routeCount = _routes.Count;
+                return new(_active, routeCount, routeCount);
             }
         }
     }

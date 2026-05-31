@@ -202,6 +202,7 @@ public sealed class ActiveProfileService(
             profile.MouseOutput,
             profile.ControllerOutput,
             profile.ReceiverProcesses,
+            client?.ReceiverProcessIds ?? [],
             Active: string.Equals(activeProfileId, profile.Id, StringComparison.OrdinalIgnoreCase),
             ClientProcessId: client?.ProcessId,
             ClientConnectionId: client?.ConnectionId);

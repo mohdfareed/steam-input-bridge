@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Profiles;
 
 namespace SteamInputBridge.Steam;
@@ -12,7 +13,15 @@ public sealed class SteamInputConfigService(ActiveProfileService profiles, ILogg
     : IHostedService
 {
     private readonly SteamInputClient _steam = new();
+    private string? _forcedProfileId;
     private uint? _forcedSteamAppId;
+    private string? _lastError;
+
+    // MARK: Publics
+    // ========================================================================
+
+    /// <summary>Current Steam Input config status.</summary>
+    public BridgeSteamInputStatus Status => new(_forcedProfileId, _forcedSteamAppId, _lastError);
 
     // MARK: Lifecycle
     // ========================================================================
@@ -43,22 +52,27 @@ public sealed class SteamInputConfigService(ActiveProfileService profiles, ILogg
 
     private async Task ApplySteamConfigAsync(ProfileStatus? activeProfile, CancellationToken cancellationToken)
     {
+        string? profileId = activeProfile?.Id;
         uint? appId = activeProfile?.EffectiveSteamAppId;
         if (appId == _forcedSteamAppId)
         {
+            _forcedProfileId = profileId;
             return;
         }
 
         try
         {
             await _steam.ForceConfigAsync(appId, cancellationToken).ConfigureAwait(false);
+            _lastError = null;
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
+            _lastError = exception.Message;
             LogSteamConfigFailed(logger, appId, exception.Message, null);
         }
         finally
         {
+            _forcedProfileId = profileId;
             _forcedSteamAppId = appId;
         }
     }

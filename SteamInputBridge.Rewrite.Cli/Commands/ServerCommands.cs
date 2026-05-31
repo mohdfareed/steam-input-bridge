@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.CommandLine;
 using System.IO;
 using System.IO.Pipes;
@@ -75,6 +76,14 @@ internal static class ServerCommands
                 await Console.Out.WriteLineAsync("Server").ConfigureAwait(false);
                 await Console.Out.WriteLineAsync("------").ConfigureAwait(false);
                 await Console.Out.WriteLineAsync($"connectedClients  {status.ClientsCount}").ConfigureAwait(false);
+                await Console.Out.WriteLineAsync($"shortcuts         {status.Shortcuts.Count}").ConfigureAwait(false);
+                await Console.Out.WriteLineAsync().ConfigureAwait(false);
+
+                await WriteProfilesAsync(status).ConfigureAwait(false);
+                await WriteShortcutsAsync(status).ConfigureAwait(false);
+                await WriteMouseAsync(status).ConfigureAwait(false);
+                await WriteControllerAsync(status).ConfigureAwait(false);
+                await WriteSteamInputAsync(status).ConfigureAwait(false);
             }
 
             return 0;
@@ -84,6 +93,120 @@ internal static class ServerCommands
             await CliOutput.WriteErrorAsync($"server status: unavailable ({exception.Message})").ConfigureAwait(false);
             return 1;
         }
+    }
+
+    private static async Task WriteProfilesAsync(BridgeServerStatus status)
+    {
+        await Console.Out.WriteLineAsync("Profiles").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync("--------").ConfigureAwait(false);
+        if (status.Profiles.Count == 0)
+        {
+            await Console.Out.WriteLineAsync("none").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync().ConfigureAwait(false);
+            return;
+        }
+
+        foreach (BridgeProfileStatus profile in status.Profiles)
+        {
+            string state = profile.Active ? "active" : profile.ClientProcessId.HasValue ? "connected" : "idle";
+            await Console.Out.WriteLineAsync($"{profile.Id}  {state}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  title       {profile.Title}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  clientPid   {FormatNumber(profile.ClientProcessId)}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  steamAppId  {FormatNumber(profile.SteamAppId)}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  gamePids    {FormatList(profile.GameProcessIds)}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  mouse       {profile.MouseOutput}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  controller  {profile.ControllerOutput}").ConfigureAwait(false);
+        }
+
+        await Console.Out.WriteLineAsync().ConfigureAwait(false);
+    }
+
+    private static async Task WriteShortcutsAsync(BridgeServerStatus status)
+    {
+        await Console.Out.WriteLineAsync("Shortcuts").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync("---------").ConfigureAwait(false);
+        if (status.Shortcuts.Count == 0)
+        {
+            await Console.Out.WriteLineAsync("none").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync().ConfigureAwait(false);
+            return;
+        }
+
+        foreach (BridgeShortcutStatus shortcut in status.Shortcuts)
+        {
+            string pressed = FormatYesNo(shortcut.Pressed);
+            await Console.Out.WriteLineAsync(
+                    $"{shortcut.Keys}  {pressed}  {string.Join(", ", shortcut.Targets)}  {shortcut.Action}")
+                .ConfigureAwait(false);
+        }
+
+        await Console.Out.WriteLineAsync().ConfigureAwait(false);
+    }
+
+    private static async Task WriteMouseAsync(BridgeServerStatus status)
+    {
+        await Console.Out.WriteLineAsync("Mouse").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync("-----").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"output      {status.Mouse.Output}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"connected   {FormatYesNo(status.Mouse.OutputConnected)}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"pointer     {FormatEnabled(status.Mouse.PointerEnabled)}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"forwarding  {FormatActive(status.Mouse.Forwarding)}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync().ConfigureAwait(false);
+    }
+
+    private static async Task WriteControllerAsync(BridgeServerStatus status)
+    {
+        await Console.Out.WriteLineAsync("Controller").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync("----------").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"client             {status.Controller.Client}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"steamControllers   {status.Controller.SteamControllers}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"virtualControllers {status.Controller.VirtualControllers}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"forwarding         {FormatActive(status.Controller.Forwarding)}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync().ConfigureAwait(false);
+    }
+
+    private static async Task WriteSteamInputAsync(BridgeServerStatus status)
+    {
+        await Console.Out.WriteLineAsync("Steam Input").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync("-----------").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"profile    {FormatText(status.SteamInput.ProfileId)}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"appId      {FormatNumber(status.SteamInput.AppId)}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"lastError  {FormatText(status.SteamInput.LastError)}").ConfigureAwait(false);
+    }
+
+    private static string FormatNumber(int? value)
+    {
+        return value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "None";
+    }
+
+    private static string FormatNumber(uint? value)
+    {
+        return value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "None";
+    }
+
+    private static string FormatEnabled(bool value)
+    {
+        return value ? "Enabled" : "Disabled";
+    }
+
+    private static string FormatYesNo(bool value)
+    {
+        return value ? "Yes" : "No";
+    }
+
+    private static string FormatActive(bool value)
+    {
+        return value ? "Active" : "Inactive";
+    }
+
+    private static string FormatText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "None" : value;
+    }
+
+    private static string FormatList(IReadOnlyList<int> values)
+    {
+        return values.Count == 0 ? "None" : string.Join(", ", values);
     }
 
     private static JsonSerializerOptions CreateJsonOptions()

@@ -32,15 +32,25 @@ public partial interface IBridgeClientApi
     /// <summary>Asks the client to exit.</summary>
     Task StopAsync();
 
+    /// <summary>Gets current client runtime status.</summary>
+    Task<BridgeClientRuntimeStatus> GetStatusAsync();
+
     /// <summary>Sets whether this client is the active forwarding client.</summary>
     Task SetActiveAsync(bool active);
 }
 
 /// <summary>Current server status snapshot.</summary>
-/// <param name="clients">Connected client snapshots.</param>
-/// <param name="shortcuts">Configured shortcut snapshots.</param>
-public sealed class BridgeServerStatus(IReadOnlyList<BridgeClientStatus> clients, IReadOnlyList<BridgeShortcutStatus> shortcuts)
+public sealed class BridgeServerStatus(
+    IReadOnlyList<BridgeProfileStatus> profiles,
+    IReadOnlyList<BridgeClientStatus> clients,
+    IReadOnlyList<BridgeShortcutStatus> shortcuts,
+    BridgeMouseStatus mouse,
+    BridgeControllerStatus controller,
+    BridgeSteamInputStatus steamInput)
 {
+    /// <summary>Resolved profile snapshots.</summary>
+    public IReadOnlyList<BridgeProfileStatus> Profiles { get; } = profiles;
+
     /// <summary>Connected client snapshots.</summary>
     public IReadOnlyList<BridgeClientStatus> Clients { get; } = clients;
 
@@ -49,14 +59,25 @@ public sealed class BridgeServerStatus(IReadOnlyList<BridgeClientStatus> clients
 
     /// <summary>Number of connected clients.</summary>
     public int ClientsCount => Clients.Count;
+
+    /// <summary>Mouse forwarding status.</summary>
+    public BridgeMouseStatus Mouse { get; } = mouse;
+
+    /// <summary>Controller forwarding status.</summary>
+    public BridgeControllerStatus Controller { get; } = controller;
+
+    /// <summary>Steam Input config status.</summary>
+    public BridgeSteamInputStatus SteamInput { get; } = steamInput;
 }
 
 /// <summary>Connected client status snapshot.</summary>
-/// <param name="connectionId">Control connection id.</param>
-/// <param name="processId">Client process id.</param>
-/// <param name="profileId">Client profile id.</param>
-/// <param name="steamAppId">Steam app id reported by the client.</param>
-public sealed class BridgeClientStatus(Guid connectionId, int processId, string profileId, uint? steamAppId)
+public sealed class BridgeClientStatus(
+    Guid connectionId,
+    int processId,
+    string profileId,
+    uint? steamAppId,
+    IReadOnlyList<int> gameProcessIds,
+    BridgeClientControllerStatus controller)
 {
     /// <summary>Control connection id.</summary>
     public Guid ConnectionId { get; } = connectionId;
@@ -69,6 +90,12 @@ public sealed class BridgeClientStatus(Guid connectionId, int processId, string 
 
     /// <summary>Steam app id reported by the client.</summary>
     public uint? SteamAppId { get; } = steamAppId;
+
+    /// <summary>Tracked game process ids for this client.</summary>
+    public IReadOnlyList<int> GameProcessIds { get; } = gameProcessIds;
+
+    /// <summary>Client-side controller forwarding status.</summary>
+    public BridgeClientControllerStatus Controller { get; } = controller;
 }
 
 /// <summary>Configured shortcut status snapshot.</summary>
@@ -93,4 +120,109 @@ public sealed class BridgeShortcutStatus(
 
     /// <summary>Whether the shortcut is currently pressed.</summary>
     public bool Pressed { get; } = pressed;
+}
+
+/// <summary>Resolved profile status snapshot.</summary>
+public sealed class BridgeProfileStatus(
+    string id,
+    string title,
+    bool active,
+    int? clientProcessId,
+    uint? steamAppId,
+    string mouseOutput,
+    string controllerOutput,
+    IReadOnlyList<int> gameProcessIds)
+{
+    /// <summary>Profile id.</summary>
+    public string Id { get; } = id;
+
+    /// <summary>Profile title.</summary>
+    public string Title { get; } = title;
+
+    /// <summary>Whether this profile is active.</summary>
+    public bool Active { get; } = active;
+
+    /// <summary>Connected client process id.</summary>
+    public int? ClientProcessId { get; } = clientProcessId;
+
+    /// <summary>Effective Steam app id.</summary>
+    public uint? SteamAppId { get; } = steamAppId;
+
+    /// <summary>Mouse output setting.</summary>
+    public string MouseOutput { get; } = mouseOutput;
+
+    /// <summary>Controller output setting.</summary>
+    public string ControllerOutput { get; } = controllerOutput;
+
+    /// <summary>Tracked game process ids.</summary>
+    public IReadOnlyList<int> GameProcessIds { get; } = gameProcessIds;
+}
+
+/// <summary>Server-side mouse forwarding status.</summary>
+public sealed class BridgeMouseStatus(string output, bool outputConnected, bool pointerEnabled, bool forwarding)
+{
+    /// <summary>Selected mouse output.</summary>
+    public string Output { get; } = output;
+
+    /// <summary>Whether the selected output is connected.</summary>
+    public bool OutputConnected { get; } = outputConnected;
+
+    /// <summary>Whether the pointer shortcut gate is enabled.</summary>
+    public bool PointerEnabled { get; } = pointerEnabled;
+
+    /// <summary>Whether mouse input is currently forwarded.</summary>
+    public bool Forwarding { get; } = forwarding;
+}
+
+/// <summary>Server-side controller forwarding status.</summary>
+public sealed class BridgeControllerStatus(
+    string client,
+    int steamControllers,
+    int virtualControllers,
+    bool forwarding)
+{
+    /// <summary>Active client state.</summary>
+    public string Client { get; } = client;
+
+    /// <summary>Steam Controller route count.</summary>
+    public int SteamControllers { get; } = steamControllers;
+
+    /// <summary>Virtual controller output count.</summary>
+    public int VirtualControllers { get; } = virtualControllers;
+
+    /// <summary>Whether controller input is currently forwarded.</summary>
+    public bool Forwarding { get; } = forwarding;
+}
+
+/// <summary>Client-side controller forwarding status.</summary>
+public sealed class BridgeClientControllerStatus(bool active, int steamControllers, int virtualControllers)
+{
+    /// <summary>Whether this client is active.</summary>
+    public bool Active { get; } = active;
+
+    /// <summary>Steam Controller route count.</summary>
+    public int SteamControllers { get; } = steamControllers;
+
+    /// <summary>Virtual controller output count.</summary>
+    public int VirtualControllers { get; } = virtualControllers;
+}
+
+/// <summary>Client runtime status snapshot.</summary>
+public sealed class BridgeClientRuntimeStatus(BridgeClientControllerStatus controller)
+{
+    /// <summary>Client-side controller forwarding status.</summary>
+    public BridgeClientControllerStatus Controller { get; } = controller;
+}
+
+/// <summary>Steam Input config status.</summary>
+public sealed class BridgeSteamInputStatus(string? profileId, uint? appId, string? lastError)
+{
+    /// <summary>Profile whose Steam Input config is currently forced.</summary>
+    public string? ProfileId { get; } = profileId;
+
+    /// <summary>Currently forced Steam app id.</summary>
+    public uint? AppId { get; } = appId;
+
+    /// <summary>Last Steam Input config error.</summary>
+    public string? LastError { get; } = lastError;
 }

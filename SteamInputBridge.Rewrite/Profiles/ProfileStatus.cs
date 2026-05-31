@@ -29,6 +29,7 @@ public sealed record ProfileStatus(
     MouseOutput? MouseOutput,
     ControllerOutput? ControllerOutput,
     IReadOnlyList<string> ReceiverProcesses,
+    IReadOnlyList<int> GameProcessIds,
     bool Active,
     int? ClientProcessId,
     Guid? ClientConnectionId);

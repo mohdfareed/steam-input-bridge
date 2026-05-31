@@ -21,7 +21,7 @@ internal sealed class BridgeControlSession(BridgeService service, Guid connectio
     /// <inheritdoc />
     public Task<BridgeServerStatus> GetStatusAsync()
     {
-        return Task.FromResult(service.Status);
+        return service.GetStatusAsync();
     }
 
     /// <inheritdoc />

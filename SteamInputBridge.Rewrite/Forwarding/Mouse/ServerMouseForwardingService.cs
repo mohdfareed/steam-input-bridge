@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Inputs.Mouse;
 using SteamInputBridge.Outputs.Mouse;
 using SteamInputBridge.Profiles;
@@ -32,6 +33,36 @@ public sealed partial class ServerMouseForwardingService(
     private bool _pointerEnabled = true;
     private Task? _inputTask;
     private bool _disposed;
+
+    // MARK: Publics
+    // ========================================================================
+
+    /// <summary>Current mouse forwarding status.</summary>
+    public BridgeMouseStatus Status
+    {
+        get
+        {
+            IMouseOutput? output;
+            MouseOutput outputKind;
+            bool pointerEnabled;
+            lock (_gate)
+            {
+                output = _output;
+                outputKind = _outputKind;
+                pointerEnabled = _pointerEnabled;
+            }
+
+            bool outputConnected = output?.IsConnected == true;
+            bool forwarding = outputConnected &&
+                pointerEnabled &&
+                profiles.ActiveProfile?.MouseOutput == outputKind;
+            return new(
+                outputKind.ToString(),
+                outputConnected,
+                pointerEnabled,
+                forwarding);
+        }
+    }
 
     // MARK: Lifecycle
     // ========================================================================

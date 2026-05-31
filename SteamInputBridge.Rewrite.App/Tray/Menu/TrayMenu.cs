@@ -86,7 +86,7 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
                 state.LastActiveProfileId,
                 connectionId => _ = TrayMenuItems.RunAsync(() => actions.StopClientAsync(connectionId), onError)));
             _ = Menu.Items.Add(_shortcuts.Build(state.ServerStatus.Shortcuts));
-            _ = Menu.Items.Add(_diagnostics.Build(state.Microphone, state.ActionColor));
+            _ = Menu.Items.Add(_diagnostics.Build(state.ServerStatus, state.Microphone, state.ActionColor));
             _ = Menu.Items.Add(new ToolStripSeparator());
             _ = Menu.Items.Add(TrayMenuItems.ActionItem(
                 "Open Steam Controller desktop config",
@@ -114,7 +114,7 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
     {
         _profiles.Update(state.Profiles, state.LastActiveProfileId);
         _shortcuts.Update(state.ServerStatus.Shortcuts);
-        _diagnostics.Update(state.Microphone, state.ActionColor);
+        _diagnostics.Update(state.ServerStatus, state.Microphone, state.ActionColor);
 
         if (_startupItem is not null)
         {

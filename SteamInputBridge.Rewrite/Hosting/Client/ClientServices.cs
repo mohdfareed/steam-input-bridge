@@ -1,6 +1,6 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
-using SteamInputBridge.Forwarding;
+using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Outputs.Viiper.Controller;
 
 namespace SteamInputBridge.Hosting.Client;

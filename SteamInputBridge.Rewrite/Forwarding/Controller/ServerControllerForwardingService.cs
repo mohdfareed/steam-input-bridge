@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Profiles;
 
-namespace SteamInputBridge.Forwarding;
+namespace SteamInputBridge.Forwarding.Controller;
 
 /// <summary>Controls which connected client is allowed to forward controller input.</summary>
 public sealed class ServerControllerForwardingService(

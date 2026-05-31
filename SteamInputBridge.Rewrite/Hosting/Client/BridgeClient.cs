@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Diagnostics;
-using SteamInputBridge.Forwarding;
+using SteamInputBridge.Forwarding.Controller;
 using SteamInputBridge.Steam;
 using StreamJsonRpc;
 
@@ -71,6 +71,12 @@ public sealed class BridgeClient(
         BridgeLog.ClientExitRequested(logger, options.ProfileId);
         lifetime.StopApplication();
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<BridgeClientRuntimeStatus> GetStatusAsync()
+    {
+        return Task.FromResult(new BridgeClientRuntimeStatus(controllers.Status));
     }
 
     /// <inheritdoc />

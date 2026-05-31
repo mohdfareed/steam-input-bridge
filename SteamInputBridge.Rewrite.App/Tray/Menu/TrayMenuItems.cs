@@ -85,6 +85,16 @@ internal static class TrayMenuItems
         return enabled ? "Enabled" : "Disabled";
     }
 
+    public static string Active(bool active)
+    {
+        return active ? "Active" : "Inactive";
+    }
+
+    public static string YesNo(bool value)
+    {
+        return value ? "Yes" : "No";
+    }
+
     public static string Output<T>(T? value) where T : struct
     {
         return value.HasValue ? value.Value.ToString() ?? string.Empty : "None";
@@ -111,14 +121,15 @@ internal static class TrayMenuItems
 
     private static void SetCheckMark(ToolStripMenuItem item, bool visible, Color color)
     {
+        item.Image?.Dispose();
+        item.Image = null;
+
         if (!visible)
         {
-            item.Image?.Dispose();
-            item.Image = null;
             return;
         }
 
-        item.Image ??= CheckMark(color);
+        item.Image = CheckMark(color);
     }
 
     private static Bitmap CheckMark(Color color)

@@ -69,7 +69,8 @@ internal sealed class ShortcutsMenuSection
     {
         ToolStripMenuItem menu = TrayMenuItems.Menu(shortcut.Keys);
         TrayMenuItems.SetCheckMark(menu, shortcut.Pressed);
-        ToolStripMenuItem pressed = TrayMenuItems.Item("Pressed", TrayMenuItems.Enabled(shortcut.Pressed));
+        ToolStripMenuItem pressed = TrayMenuItems.Item("Pressed", TrayMenuItems.YesNo(shortcut.Pressed));
+        TrayMenuItems.SetCheckMark(pressed, shortcut.Pressed);
 
         _ = menu.DropDownItems.Add(TrayMenuItems.Item("Targets", string.Join(", ", shortcut.Targets)));
         _ = menu.DropDownItems.Add(TrayMenuItems.Item("Action", shortcut.Action));
@@ -84,7 +85,8 @@ internal sealed class ShortcutsMenuSection
         public void Update(BridgeShortcutStatus shortcut)
         {
             TrayMenuItems.SetCheckMark(Menu, shortcut.Pressed);
-            TrayMenuItems.SetValue(Pressed, TrayMenuItems.Enabled(shortcut.Pressed));
+            TrayMenuItems.SetValue(Pressed, TrayMenuItems.YesNo(shortcut.Pressed));
+            TrayMenuItems.SetCheckMark(Pressed, shortcut.Pressed);
         }
     }
 }
