@@ -23,4 +23,10 @@ internal sealed class BridgeControlSession(BridgeService service, Guid connectio
     {
         return Task.FromResult(service.Status);
     }
+
+    /// <inheritdoc />
+    public Task StopClientAsync(Guid connectionId)
+    {
+        return service.StopClientAsync(connectionId);
+    }
 }

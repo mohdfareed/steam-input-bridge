@@ -60,7 +60,7 @@ public sealed class BridgeClient(ClientRunOptions options, IHostApplicationLifet
     // ========================================================================
 
     /// <inheritdoc />
-    public Task ExitAsync()
+    public Task StopAsync()
     {
         BridgeLog.ClientExitRequested(logger, options.ProfileId);
         lifetime.StopApplication();

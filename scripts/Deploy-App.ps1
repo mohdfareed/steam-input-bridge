@@ -11,7 +11,7 @@ $appProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Rewrite.App\SteamI
 $cliProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Rewrite.Cli\SteamInputBridge.Cli.csproj"
 
 $outputPath = [System.IO.Path]::GetFullPath($Output)
-$appExePath = Join-Path $outputPath "SteamInputBridge.exe"
+$appExePath = Join-Path $outputPath "SteamInputBridge.App.exe"
 $cliExePath = Join-Path $outputPath "SteamInputBridge.Cli.exe"
 
 # MARK: Functions
@@ -82,7 +82,7 @@ function Stop-DeployedApp {
 
     $targetPath = [System.IO.Path]::GetFullPath($Path)
     $processes = Get-Process `
-        -Name "SteamInputBridge" `
+        -Name "SteamInputBridge.App" `
         -ErrorAction SilentlyContinue | `
         Where-Object {
         try {

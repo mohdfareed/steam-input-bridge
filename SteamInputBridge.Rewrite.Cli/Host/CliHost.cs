@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Settings;
 
-namespace SteamInputBridge.Cli;
+namespace SteamInputBridge.Cli.Host;
 
 // MARK: Dependency Injection
 // ============================================================================

@@ -3,9 +3,6 @@ namespace SteamInputBridge.Shortcuts;
 /// <summary>Named shortcut target.</summary>
 public enum ShortcutTarget
 {
-    /// <summary>Controller motion contribution.</summary>
-    ControllerMotion,
-
     /// <summary>Virtual pointer report forwarding.</summary>
     MousePointer,
 

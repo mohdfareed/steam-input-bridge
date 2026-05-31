@@ -74,7 +74,7 @@ public sealed class ShortcutEntry
     public Collection<ShortcutTargetSetting> Targets { get; } = [];
 
     /// <summary>State applied when the shortcut is pressed.</summary>
-    public ShortcutValue? Value { get; set; }
+    public ShortcutValue Action { get; set; } = ShortcutValue.Enable;
 }
 
 /// <summary>Configuration for one game profile.</summary>

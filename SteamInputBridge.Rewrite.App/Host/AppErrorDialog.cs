@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Forms;
 
-namespace SteamInputBridge.App;
+namespace SteamInputBridge.App.Host;
 
 internal static partial class AppErrorDialog
 {

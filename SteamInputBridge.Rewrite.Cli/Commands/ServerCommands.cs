@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
+using SteamInputBridge.Cli.Host;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Hosting.Server;
 using StreamJsonRpc;
@@ -49,7 +50,7 @@ internal static class ServerCommands
         }
         catch (ServerAlreadyRunningException exception)
         {
-            await ConsoleOutput.WriteErrorAsync(exception.Message).ConfigureAwait(false);
+            await CliOutput.WriteErrorAsync(exception.Message).ConfigureAwait(false);
             return 1;
         }
     }
@@ -73,14 +74,14 @@ internal static class ServerCommands
 
                 await Console.Out.WriteLineAsync("Server").ConfigureAwait(false);
                 await Console.Out.WriteLineAsync("------").ConfigureAwait(false);
-                await Console.Out.WriteLineAsync($"connectedClients  {status.ConnectedClientCount}").ConfigureAwait(false);
+                await Console.Out.WriteLineAsync($"connectedClients  {status.ClientsCount}").ConfigureAwait(false);
             }
 
             return 0;
         }
         catch (Exception exception) when (exception is IOException or TimeoutException or ConnectionLostException)
         {
-            await ConsoleOutput.WriteErrorAsync($"server status: unavailable ({exception.Message})").ConfigureAwait(false);
+            await CliOutput.WriteErrorAsync($"server status: unavailable ({exception.Message})").ConfigureAwait(false);
             return 1;
         }
     }

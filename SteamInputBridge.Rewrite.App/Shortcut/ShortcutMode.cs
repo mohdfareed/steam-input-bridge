@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
+using SteamInputBridge.App.Host;
 using SteamInputBridge.Hosting;
 
 namespace SteamInputBridge.App.Shortcut;

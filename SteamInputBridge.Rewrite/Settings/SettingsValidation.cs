@@ -71,13 +71,9 @@ public static class SettingsValidation
                 failures.Add($"{prefix}:targets is required.");
             }
 
-            if (!shortcut.Value.HasValue)
+            if (!Enum.IsDefined(shortcut.Action))
             {
-                failures.Add($"{prefix}:value is required.");
-            }
-            else if (!Enum.IsDefined(shortcut.Value.Value))
-            {
-                failures.Add($"{prefix}:value is invalid.");
+                failures.Add($"{prefix}:action is invalid.");
             }
         }
     }

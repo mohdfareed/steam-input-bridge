@@ -1,9 +1,9 @@
 using System;
 using System.Threading.Tasks;
 
-namespace SteamInputBridge.Cli;
+namespace SteamInputBridge.Cli.Host;
 
-internal static class ConsoleOutput
+internal static class CliOutput
 {
     public static async Task WriteErrorAsync(string message)
     {

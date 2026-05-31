@@ -41,23 +41,24 @@ public static class SteamRomManagerExport
         return JsonSerializer.Serialize(entries, JsonOptions);
     }
 
-    /// <summary>Writes a Steam ROM Manager manifest and returns the manifest path.</summary>
-    /// <param name="settings">Current application settings.</param>
-    /// <param name="settingsPath">Settings file path used to resolve relative manifest paths.</param>
+    /// <summary>Writes a Steam ROM Manager manifest from the current settings service.</summary>
+    /// <param name="settings">Settings service.</param>
+    /// <param name="settingsFile">Settings file path value.</param>
     /// <param name="appPath">Steam Input Bridge executable used as the shortcut target.</param>
     /// <param name="manifestPathOverride">Optional manifest path override.</param>
     public static string WriteManifest(
-        SteamInputBridgeSettings settings,
-        string settingsPath,
+        SettingsService settings,
+        SettingsFile settingsFile,
         string appPath,
         string? manifestPathOverride = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
+        ArgumentNullException.ThrowIfNull(settingsFile);
         ArgumentException.ThrowIfNullOrWhiteSpace(appPath);
 
-        string manifestPath = ResolveManifestPath(manifestPathOverride ?? settings.Steam.SrmExportPath, settingsPath);
-        string manifest = CreateJson(settings.Games, appPath);
+        string? path = manifestPathOverride ?? settings.Current.Steam.SrmExportPath;
+        string manifestPath = ResolveManifestPath(path, settingsFile.Path);
+        string manifest = CreateJson(settings.Current.Games, appPath);
 
         string? directory = Path.GetDirectoryName(manifestPath);
         if (!string.IsNullOrWhiteSpace(directory))
@@ -74,7 +75,8 @@ public static class SteamRomManagerExport
 
     private static string ResolveManifestPath(string? path, string settingsPath)
     {
-        string filePath = Environment.ExpandEnvironmentVariables(string.IsNullOrWhiteSpace(path) ? "srm-manifest.json" : path);
+        string configuredPath = string.IsNullOrWhiteSpace(path) ? "srm-manifest.json" : path;
+        string filePath = Environment.ExpandEnvironmentVariables(configuredPath);
         return Path.IsPathFullyQualified(filePath)
             ? filePath
             : Path.Combine(Path.GetDirectoryName(settingsPath) ?? AppContext.BaseDirectory, filePath);

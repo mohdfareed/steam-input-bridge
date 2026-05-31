@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using SteamInputBridge.Cli.Host;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Steam;
 
@@ -134,8 +135,8 @@ internal static class SteamCommands
         using IHost host = CliHost.CreateCli();
         SettingsService settings = host.Services.GetRequiredService<SettingsService>();
         SettingsFile settingsFile = host.Services.GetRequiredService<SettingsFile>();
-        string shortcutPath = System.IO.Path.Combine(AppContext.BaseDirectory, "SteamInputBridge.exe");
-        return SteamRomManagerExport.WriteManifest(settings.Current, settingsFile.Path, shortcutPath, manifestPathOverride);
+        string shortcutPath = ProductMetadata.ResolveAppExecutablePath(AppContext.BaseDirectory);
+        return SteamRomManagerExport.WriteManifest(settings, settingsFile, shortcutPath, manifestPathOverride);
     }
 
     private static uint ParseAppId(string? value)

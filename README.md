@@ -10,7 +10,7 @@ Steam Input orchestration and local input forwarding.
 
 ## Usage
 
-- Start profiles through Steam shortcuts: `SteamInputBridge.exe shortcut <profile>`.
+- Start profiles through Steam shortcuts: `SteamInputBridge.App.exe shortcut <profile>`.
 - Controller forwarding is Steam Controller focused; other physical controller
   types are ignored.
 - Profiles may launch an executable or attach to existing processes.
