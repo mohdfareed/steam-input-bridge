@@ -27,8 +27,8 @@ internal sealed class StatusOverlayWindow : Window
     private const string MutedColor = "#FF9F0A";
     private const string ActiveColor = "#32D74B";
 
-    private readonly Ellipse _actionDot;
-    private readonly Ellipse _microphoneDot;
+    private readonly Ellipse _actionDot = CreateDot();
+    private readonly Ellipse _microphoneDot = CreateDot();
 
     // MARK: Lifecycle
     // ========================================================================
@@ -54,11 +54,8 @@ internal sealed class StatusOverlayWindow : Window
             IsHitTestVisible = false,
         };
 
-        _actionDot = CreateDot();
-        _microphoneDot = CreateDot();
         Canvas.SetTop(_actionDot, EdgeMargin);
         Canvas.SetTop(_microphoneDot, EdgeMargin);
-
         _ = canvas.Children.Add(_actionDot);
         _ = canvas.Children.Add(_microphoneDot);
 
@@ -73,19 +70,19 @@ internal sealed class StatusOverlayWindow : Window
     public void SetMicrophoneStatus(MicrophoneStatus status)
     {
         SetDot(_microphoneDot, MicrophoneColor(status));
-        Refresh();
+        RefreshOverlay();
     }
 
     public void SetActionColor(string? color)
     {
         SetDot(_actionDot, color);
-        Refresh();
+        RefreshOverlay();
     }
 
     // MARK: Implementation
     // ========================================================================
 
-    private void Refresh()
+    private void RefreshOverlay()
     {
         LayoutDots();
         bool visible = _actionDot.Visibility == Visibility.Visible || _microphoneDot.Visibility == Visibility.Visible;

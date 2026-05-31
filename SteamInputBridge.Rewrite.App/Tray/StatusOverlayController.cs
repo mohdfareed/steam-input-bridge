@@ -51,6 +51,9 @@ internal sealed class StatusOverlayController : IDisposable
     private void OnMicrophoneStatusChanged(object? sender, MicrophoneStatusChangedEventArgs args)
     {
         _ = sender;
-        _ = _dispatcher.BeginInvoke(new Action(() => _window.SetMicrophoneStatus(args.Status)));
+        if (!_disposed)
+        {
+            _ = _dispatcher.BeginInvoke(new Action(() => _window.SetMicrophoneStatus(args.Status)));
+        }
     }
 }
