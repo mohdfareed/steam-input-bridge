@@ -35,6 +35,17 @@ avoid repeating past mistakes.
 ## Architecture Decisions
 
 - Do not make architecture-scale calls implicitly.
+- Code under `SteamInputBridge.Rewrite*` is final-product code, not
+  scaffolding. Do not add placeholder architecture, temporary ownership, fake
+  implementations, or "good enough for now" structure there. If a requested
+  behavior touches runtime ownership, process lifetime, background tasks,
+  settings, IPC, tray mode, shortcut mode, client management, server
+  management, or command dispatch, implement the final ownership shape for
+  that behavior or stop and ask.
+- Do not add nested placeholder classes for runtime owners, command handlers
+  that re-invoke the app like scripts, temporary state buckets, hidden
+  environment-variable control paths, or "clean this later" architecture under
+  `SteamInputBridge.Rewrite*`.
 - Confirm before changing which process owns an input source, output device,
   route lifecycle, Steam visibility, controller identity, IPC path, hardware
   access, or process ownership.

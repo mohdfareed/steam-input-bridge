@@ -14,7 +14,7 @@ public sealed record MicrophoneStatus(bool Available, bool Muted, bool IsActive)
 
 /// <summary>CoreAudio-backed microphone control.</summary>
 [SupportedOSPlatform("windows")]
-internal sealed class MicrophoneService : IDisposable
+public sealed class MicrophoneService : IDisposable
 {
     private static readonly TimeSpan StatusPollInterval = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
@@ -26,13 +26,14 @@ internal sealed class MicrophoneService : IDisposable
     private MicrophoneConnection? _connection;
     private bool _disposed;
 
+    /// <inheritdoc/>
     public MicrophoneService()
     {
         _monitor = Task.Run(() => MonitorAsync(_stop.Token), CancellationToken.None);
     }
 
     /// <summary>Raised when the observed microphone status changes.</summary>
-    public event Action<MicrophoneStatus>? StatusChanged;
+    public event EventHandler<MicrophoneStatusChangedEventArgs>? StatusChanged;
 
     /// <summary>Reads the current microphone status.</summary>
     public MicrophoneStatus GetStatus()
@@ -149,6 +150,13 @@ internal sealed class MicrophoneService : IDisposable
 
     private void OnStatusChanged(MicrophoneStatus status)
     {
-        StatusChanged?.Invoke(status);
+        StatusChanged?.Invoke(this, new(status));
     }
+}
+
+/// <summary>Microphone status change event data.</summary>
+public sealed class MicrophoneStatusChangedEventArgs(MicrophoneStatus status) : EventArgs
+{
+    /// <summary>Current microphone status.</summary>
+    public MicrophoneStatus Status { get; } = status;
 }

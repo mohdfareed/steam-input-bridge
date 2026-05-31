@@ -12,23 +12,6 @@ using StreamJsonRpc;
 
 namespace SteamInputBridge.Hosting.Server;
 
-internal sealed class BridgeControlSession(BridgeService service, Guid connectionId) : IBridgeControlApi
-{
-    /// <inheritdoc />
-    public Task ConnectAsync(int processId, string profileId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
-        _ = service.RegisterClient(connectionId, processId, profileId);
-        return Task.CompletedTask;
-    }
-
-    /// <inheritdoc />
-    public Task<BridgeServerStatus> GetStatusAsync()
-    {
-        return Task.FromResult(service.Status);
-    }
-}
-
 /// <summary>Host-driven server runtime.</summary>
 public sealed class BridgeServer(SettingsService settings, BridgeService service, ILogger<BridgeServer> logger)
     : BackgroundService
@@ -100,15 +83,15 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
     private async Task RunClientAsync(NamedPipeServerStream pipe)
     {
         Guid connectionId = Guid.NewGuid();
-        BridgeControlSession session = new(service, connectionId);
         await using (pipe.ConfigureAwait(false))
         {
             try
             {
+                BridgeControlSession session = new(service, connectionId);
                 using JsonRpc rpc = JsonRpc.Attach(pipe, session);
                 await rpc.Completion.ConfigureAwait(false);
             }
-            catch (Exception exception) when (IsClientDisconnect(exception))
+            catch (Exception exception) when (IsClientDisconnect(exception) || exception is InvalidOperationException)
             {
                 BridgeLog.ClientControlPipeClosed(logger, exception.Message);
             }

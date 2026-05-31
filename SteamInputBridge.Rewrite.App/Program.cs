@@ -1,5 +1,4 @@
 using System;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using SteamInputBridge.App.Cli;
 
@@ -10,40 +9,30 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        try
-        {
-            return RunAsync(args).GetAwaiter().GetResult();
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            ReportUnhandledException(args, exception);
-            return 1;
-        }
-    }
-
-    private static async Task<int> RunAsync(string[] args)
-    {
         if (args.Length == 0)
         {
             args = ["tray"];
         }
 
-        return await CliMode.RunAsync(args).ConfigureAwait(false);
+        try
+        {
+            return CliMode.RunAsync(args).ConfigureAwait(false).GetAwaiter().GetResult();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            ReportUnhandledException(exception);
+            return 1;
+        }
     }
 
-    private static void ReportUnhandledException(string[] args, Exception exception)
+    private static void ReportUnhandledException(Exception exception)
     {
-        if (args.Length != 0)
-        {
-            Console.Error.WriteLine($"Unhandled exception: {exception}");
-            return;
-        }
-
         Application.EnableVisualStyles();
         Application.SetColorMode(SystemColorMode.System);
 
         try
         {
+            // TODO: Review style
             TaskDialogPage page = new()
             {
                 Heading = "Steam Input Bridge",

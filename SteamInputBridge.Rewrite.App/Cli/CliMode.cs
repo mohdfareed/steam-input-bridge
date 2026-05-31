@@ -13,17 +13,11 @@ internal static class CliMode
     internal static RootCommand CreateRootCommand()
     {
         RootCommand root = new("Steam Input Bridge");
-
-        // Hosting
-        root.Subcommands.Add(Commands.CreateServerCommand());
-        root.Subcommands.Add(Commands.CreateClientCommand());
-        root.Subcommands.Add(Commands.CreateShortcutCommand());
-        root.Subcommands.Add(Commands.CreateTrayCommand());
-
-        // Tooling
+        root.Subcommands.Add(ServerCommands.CreateCommand());
+        root.Subcommands.Add(ClientCommands.CreateCommand());
+        root.Subcommands.Add(TrayCommands.CreateCommand());
+        root.Subcommands.Add(ShortcutCommands.CreateCommand());
         root.Subcommands.Add(SteamCommands.CreateCommand());
-        root.Subcommands.Add(SrmCommands.CreateCommand());
-
         return root;
     }
 }

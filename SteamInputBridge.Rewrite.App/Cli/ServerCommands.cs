@@ -13,15 +13,12 @@ using StreamJsonRpc;
 
 namespace SteamInputBridge.App.Cli;
 
-internal static class Commands
+internal static class ServerCommands
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
 
-    // MARK: Commands
-    // ========================================================================
-
-    public static Command CreateServerCommand()
+    public static Command CreateCommand()
     {
         Command status = new("status", "Print server status.");
         status.Options.Add(new Option<bool>("--json") { Description = "Print status as JSON." });
@@ -36,42 +33,9 @@ internal static class Commands
         return server;
     }
 
-    public static Command CreateClientCommand()
-    {
-        Command run = new("run", "Run a profile from the CLI.");
-        run.Arguments.Add(new Argument<string>("profile") { Description = "Profile id to run." });
-        run.SetAction((parseResult, token) => RunClientAsync(parseResult.GetValue<string>("profile")!, token));
-
-        Command client = new("client", "Run profile clients.");
-        client.Subcommands.Add(run);
-        return client;
-    }
-
-    public static Command CreateShortcutCommand()
-    {
-        Command shortcut = new("shortcut", "Run from a Steam shortcut.");
-        return shortcut;
-    }
-
-    public static Command CreateTrayCommand()
-    {
-        Command tray = new("tray", "Run the tray application.");
-        tray.SetAction((_, _) => Task.FromResult(0));
-        return tray;
-    }
-
-    // MARK: Command Handlers
-    // ========================================================================
-
     private static async Task RunServerAsync(CancellationToken cancellationToken)
     {
         using IHost host = AppHost.CreateServer();
-        await host.RunAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task RunClientAsync(string profileId, CancellationToken cancellationToken)
-    {
-        using IHost host = AppHost.CreateClient(profileId);
         await host.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -84,10 +48,7 @@ internal static class Commands
             {
                 await pipe.ConnectAsync((int)ConnectTimeout.TotalMilliseconds, cancellationToken).ConfigureAwait(false);
                 IBridgeControlApi server = JsonRpc.Attach<IBridgeControlApi>(pipe);
-                BridgeServerStatus status = await server
-                    .GetStatusAsync()
-                    .WaitAsync(ConnectTimeout, cancellationToken)
-                    .ConfigureAwait(false);
+                BridgeServerStatus status = await server.GetStatusAsync().WaitAsync(ConnectTimeout, cancellationToken).ConfigureAwait(false);
 
                 if (json)
                 {
