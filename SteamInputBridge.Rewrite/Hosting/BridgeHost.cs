@@ -34,7 +34,8 @@ public static class BridgeHost
     /// <summary>Creates a client host.</summary>
     public static IHost CreateClient(string basePath, string profileId, Action<ILoggingBuilder, ConfigurationManager> configureLogging)
     {
-        HostApplicationBuilder builder = CreateBuilder(basePath, configureLogging, out _);
+        HostApplicationBuilder builder = CreateBuilder(basePath, configureLogging, out string settingsPath);
+        _ = builder.Services.AddApplicationSettings(builder.Configuration, settingsPath);
         _ = builder.Services.AddBridgeClient(profileId);
         return builder.Build();
     }

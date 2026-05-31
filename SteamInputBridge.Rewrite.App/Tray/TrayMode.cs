@@ -376,7 +376,7 @@ internal sealed class TrayContext : IDisposable
     private sealed record RuntimeServices(
         BridgeService Bridge,
         SettingsService Settings,
-        ProfilesService Profiles,
+        ActiveProfileService Profiles,
         ShortcutService Shortcuts,
         MicrophoneService Microphone,
         ActionColorService ActionColor)
@@ -386,7 +386,7 @@ internal sealed class TrayContext : IDisposable
             return new(
                 services.GetRequiredService<BridgeService>(),
                 services.GetRequiredService<SettingsService>(),
-                services.GetRequiredService<ProfilesService>(),
+                services.GetRequiredService<ActiveProfileService>(),
                 services.GetRequiredService<ShortcutService>(),
                 services.GetRequiredService<MicrophoneService>(),
                 services.GetRequiredService<ActionColorService>());

@@ -1,4 +1,4 @@
-namespace SteamInputBridge.Outputs;
+namespace SteamInputBridge.Outputs.Controller;
 
 /// <summary>Virtual controller output selected by a profile.</summary>
 public enum ControllerOutput
@@ -8,7 +8,4 @@ public enum ControllerOutput
 
     /// <summary>Xbox 360 virtual controller output.</summary>
     Xbox360,
-
-    /// <summary>DualShock 4 virtual controller output.</summary>
-    Ds4,
 }

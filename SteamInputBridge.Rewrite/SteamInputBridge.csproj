@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
@@ -16,6 +17,9 @@
     <PackageReference Include="StreamJsonRpc" Version="2.24.92" />
     <PackageReference Include="Nerdbank.MessagePack" Version="1.2.4" />
     <PackageReference Include="NHotkey.WindowsForms" Version="4.0.0" />
+    <PackageReference Include="SDL3-CS" Version="3.4.2" />
+    <PackageReference Include="SDL3-CS.Native" Version="3.4.2" />
+    <PackageReference Include="Viiper.Client" Version="0.6.0" />
   </ItemGroup>
 
 </Project>

@@ -31,6 +31,9 @@ public partial interface IBridgeClientApi
 {
     /// <summary>Asks the client to exit.</summary>
     Task StopAsync();
+
+    /// <summary>Sets whether this client is the active forwarding client.</summary>
+    Task SetActiveAsync(bool active);
 }
 
 /// <summary>Current server status snapshot.</summary>

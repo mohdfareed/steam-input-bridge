@@ -1,5 +1,7 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using SteamInputBridge.Forwarding;
+using SteamInputBridge.Outputs.Viiper.Controller;
 
 namespace SteamInputBridge.Hosting.Client;
 
@@ -13,6 +15,9 @@ public static class ClientServices
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
 
         _ = services.AddSingleton(new ClientRunOptions(profileId));
+        _ = services.AddSingleton<ViiperControllerOutputFactory>();
+        _ = services.AddSingleton<ClientControllerForwardingService>();
+        _ = services.AddHostedService(static services => services.GetRequiredService<ClientControllerForwardingService>());
         _ = services.AddHostedService<BridgeClient>();
         return services;
     }

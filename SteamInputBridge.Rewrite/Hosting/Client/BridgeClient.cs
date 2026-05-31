@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Diagnostics;
+using SteamInputBridge.Forwarding;
 using SteamInputBridge.Steam;
 using StreamJsonRpc;
 
@@ -15,7 +16,11 @@ namespace SteamInputBridge.Hosting.Client;
 public sealed record ClientRunOptions(string ProfileId);
 
 /// <summary>Host-driven client runtime.</summary>
-public sealed class BridgeClient(ClientRunOptions options, IHostApplicationLifetime lifetime, ILogger<BridgeClient> logger)
+public sealed class BridgeClient(
+    ClientRunOptions options,
+    ClientControllerForwardingService controllers,
+    IHostApplicationLifetime lifetime,
+    ILogger<BridgeClient> logger)
     : BackgroundService, IBridgeClientApi
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
@@ -65,6 +70,13 @@ public sealed class BridgeClient(ClientRunOptions options, IHostApplicationLifet
     {
         BridgeLog.ClientExitRequested(logger, options.ProfileId);
         lifetime.StopApplication();
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task SetActiveAsync(bool active)
+    {
+        controllers.SetActive(active);
         return Task.CompletedTask;
     }
 

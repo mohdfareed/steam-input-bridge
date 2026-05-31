@@ -7,9 +7,7 @@ using SteamInputBridge.Shortcuts;
 namespace SteamInputBridge.Hosting.Server;
 
 /// <summary>Control API facade over server runtime services.</summary>
-public sealed class BridgeService(
-    ShortcutService shortcuts,
-    ProfilesService profiles)
+public sealed class BridgeService(ShortcutService shortcuts, ProfileClientsService clients)
 {
     /// <summary>Raised after the server status snapshot changes.</summary>
     public event EventHandler? StatusChanged;
@@ -20,30 +18,32 @@ public sealed class BridgeService(
     /// <summary>Stops the connected profile session and asks the client to exit.</summary>
     public async Task StopClientAsync(Guid connectionId)
     {
-        await profiles.StopClientAsync(connectionId).ConfigureAwait(false);
+        await clients.StopClientAsync(connectionId).ConfigureAwait(false);
     }
 
     /// <summary>Stops the connected profile session receiver processes.</summary>
     public void StopReceivers(Guid connectionId)
     {
-        profiles.StopReceivers(connectionId);
+        clients.StopReceivers(connectionId);
     }
 
-    internal ProfileClientStatus RegisterClient(
+    internal async Task<ProfileClientStatus> RegisterClientAsync(
         Guid connectionId,
         int processId,
         string profileId,
         uint? steamAppId,
         IBridgeClientApi control)
     {
-        ProfileClientStatus client = profiles.ConnectClient(connectionId, processId, profileId, steamAppId, control);
+        ProfileClientStatus client = await clients
+            .ConnectClientAsync(connectionId, processId, profileId, steamAppId, control)
+            .ConfigureAwait(false);
         StatusChanged?.Invoke(this, EventArgs.Empty);
         return client;
     }
 
     internal ProfileClientStatus? UnregisterClient(Guid connectionId)
     {
-        ProfileClientStatus? client = profiles.DisconnectClient(connectionId);
+        ProfileClientStatus? client = clients.DisconnectClient(connectionId);
         if (client is not null)
         {
             StatusChanged?.Invoke(this, EventArgs.Empty);
@@ -54,17 +54,17 @@ public sealed class BridgeService(
 
     private BridgeServerStatus ServerStatus()
     {
-        IReadOnlyList<ProfileClientStatus> profileClients = profiles.Clients;
-        List<BridgeClientStatus> clients = new(profileClients.Count);
+        IReadOnlyList<ProfileClientStatus> profileClients = clients.Clients;
+        List<BridgeClientStatus> clientStatuses = new(profileClients.Count);
         foreach (ProfileClientStatus client in profileClients)
         {
-            clients.Add(new BridgeClientStatus(
+            clientStatuses.Add(new BridgeClientStatus(
                 client.ConnectionId,
                 client.ProcessId,
                 client.ProfileId,
                 client.SteamAppId));
         }
 
-        return new BridgeServerStatus(clients, shortcuts.Status);
+        return new BridgeServerStatus(clientStatuses, shortcuts.Status);
     }
 }

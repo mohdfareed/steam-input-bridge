@@ -9,13 +9,13 @@ internal sealed class BridgeControlSession(BridgeService service, Guid connectio
     : IBridgeControlApi
 {
     /// <inheritdoc />
-    public Task ConnectAsync(int processId, string profileId, uint? steamAppId)
+    public async Task ConnectAsync(int processId, string profileId, uint? steamAppId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
-        _ = service.RegisterClient(connectionId, processId, profileId, steamAppId, client);
+        _ = await service.RegisterClientAsync(connectionId, processId, profileId, steamAppId, client)
+            .ConfigureAwait(false);
 
         BridgeLog.ClientRegistered(logger, processId, profileId);
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc />

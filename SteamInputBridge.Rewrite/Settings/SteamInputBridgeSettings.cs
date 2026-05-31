@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Microsoft.Extensions.Logging;
-using SteamInputBridge.Outputs;
+using SteamInputBridge.Outputs.Controller;
+using SteamInputBridge.Outputs.Mouse;
 using SteamInputBridge.Shortcuts;
 
 namespace SteamInputBridge.Settings;

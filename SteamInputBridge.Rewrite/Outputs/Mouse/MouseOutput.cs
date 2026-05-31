@@ -1,4 +1,4 @@
-namespace SteamInputBridge.Outputs;
+namespace SteamInputBridge.Outputs.Mouse;
 
 /// <summary>Virtual pointer output selected by a profile.</summary>
 public enum MouseOutput
