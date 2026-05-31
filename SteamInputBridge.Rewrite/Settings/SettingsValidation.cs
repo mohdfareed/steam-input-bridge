@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using SteamInputBridge.Shortcuts.Runtime;
 
 namespace SteamInputBridge.Settings;
 
@@ -66,6 +67,15 @@ public static class SettingsValidation
             }
 
             string prefix = $"shortcuts:{shortcut.Keys.Trim()}";
+            try
+            {
+                _ = KeyboardShortcutParser.Parse(shortcut.Keys.Trim());
+            }
+            catch (FormatException exception)
+            {
+                failures.Add($"{prefix}:keys is invalid: {exception.Message}");
+            }
+
             if (shortcut.Targets.Count == 0)
             {
                 failures.Add($"{prefix}:targets is required.");

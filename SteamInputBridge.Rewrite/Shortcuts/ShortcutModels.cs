@@ -5,6 +5,32 @@ using System.Globalization;
 
 namespace SteamInputBridge.Shortcuts;
 
+/// <summary>Named shortcut target.</summary>
+public enum ShortcutTarget
+{
+    /// <summary>Virtual pointer report forwarding.</summary>
+    MousePointer,
+
+    /// <summary>System microphone mute state.</summary>
+    Microphone,
+
+    /// <summary>Action color target.</summary>
+    ActionColor,
+}
+
+/// <summary>State applied when a shortcut is pressed.</summary>
+public enum ShortcutValue
+{
+    /// <summary>Enable the target.</summary>
+    Enable,
+
+    /// <summary>Disable the target.</summary>
+    Disable,
+
+    /// <summary>Toggle the target between enabled and disabled.</summary>
+    Toggle,
+}
+
 /// <summary>Shortcut target setting value.</summary>
 [TypeConverter(typeof(ShortcutTargetSettingConverter))]
 public readonly record struct ShortcutTargetSetting(ShortcutTarget Target, string? Color)
@@ -19,7 +45,7 @@ public readonly record struct ShortcutTargetSetting(ShortcutTarget Target, strin
         string trimmed = value.Trim();
 
         return TryNormalizeColor(trimmed, out string? color)
-            ? new ShortcutTargetSetting(ShortcutTarget.OverlayColor, color)
+            ? new ShortcutTargetSetting(ShortcutTarget.ActionColor, color)
             : IsValidTarget(trimmed, out ShortcutTarget target)
             ? new ShortcutTargetSetting(target, null)
             : throw new FormatException($"Unsupported shortcut target \"{value}\".");
@@ -28,7 +54,7 @@ public readonly record struct ShortcutTargetSetting(ShortcutTarget Target, strin
     /// <inheritdoc />
     public override string ToString()
     {
-        return Target == ShortcutTarget.OverlayColor
+        return Target == ShortcutTarget.ActionColor
             ? Color ?? ""
             : Target.ToString();
     }
@@ -38,7 +64,7 @@ public readonly record struct ShortcutTargetSetting(ShortcutTarget Target, strin
 
     private static bool IsValidTarget(string value, out ShortcutTarget target)
     {
-        return Enum.TryParse(value, ignoreCase: true, out target) && Enum.IsDefined(target) && target != ShortcutTarget.OverlayColor;
+        return Enum.TryParse(value, ignoreCase: true, out target) && Enum.IsDefined(target) && target != ShortcutTarget.ActionColor;
     }
 
     private static bool TryNormalizeColor(string value, [NotNullWhen(true)] out string? normalized)

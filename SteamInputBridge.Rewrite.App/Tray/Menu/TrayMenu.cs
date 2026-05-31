@@ -22,7 +22,6 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
         try
         {
             Menu.Items.Clear();
-            _ = Menu.Items.Add(CreateConnectedClientsItem(status));
             _ = Menu.Items.Add(CreateProfilesMenu(settings, status));
             _ = Menu.Items.Add(new ToolStripSeparator());
             _ = Menu.Items.Add(TrayMenuItems.ActionItem(
@@ -46,13 +45,6 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
 
     // MARK: Implementation
     // ========================================================================
-
-    private static ToolStripMenuItem CreateConnectedClientsItem(BridgeServerStatus status)
-    {
-        ToolStripMenuItem item = TrayMenuItems.Item("Connected Clients", TrayMenuItems.Number(status.ClientsCount));
-        item.Enabled = false;
-        return item;
-    }
 
     private static ToolStripMenuItem CreateProfilesMenu(SteamInputBridgeSettings settings, BridgeServerStatus status)
     {

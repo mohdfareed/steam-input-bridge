@@ -28,9 +28,13 @@ internal sealed class StatusOverlayController : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         MicrophoneService microphone = _services.GetRequiredService<MicrophoneService>();
+        ActionColorService actionColor = _services.GetRequiredService<ActionColorService>();
+
         microphone.StatusChanged += OnMicrophoneStatusChanged;
+        actionColor.ColorChanged += OnActionColorChanged;
 
         _window.SetMicrophoneStatus(microphone.GetStatus());
+        _window.SetActionColor(actionColor.Color);
     }
 
     public void Dispose()
@@ -42,6 +46,7 @@ internal sealed class StatusOverlayController : IDisposable
 
         _disposed = true;
         _services.GetRequiredService<MicrophoneService>().StatusChanged -= OnMicrophoneStatusChanged;
+        _services.GetRequiredService<ActionColorService>().ColorChanged -= OnActionColorChanged;
         _window.Close();
     }
 
@@ -54,6 +59,15 @@ internal sealed class StatusOverlayController : IDisposable
         if (!_disposed)
         {
             _ = _dispatcher.BeginInvoke(new Action(() => _window.SetMicrophoneStatus(args.Status)));
+        }
+    }
+
+    private void OnActionColorChanged(object? sender, ActionColorChangedEventArgs args)
+    {
+        _ = sender;
+        if (!_disposed)
+        {
+            _ = _dispatcher.BeginInvoke(new Action(() => _window.SetActionColor(args.Color)));
         }
     }
 }
