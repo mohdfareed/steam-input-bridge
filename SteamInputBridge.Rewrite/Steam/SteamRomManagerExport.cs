@@ -14,6 +14,9 @@ public static class SteamRomManagerExport
         WriteIndented = true,
     };
 
+    // MARK: Publics
+    // ========================================================================
+
     /// <summary>Creates the Steam ROM Manager manifest JSON.</summary>
     /// <param name="profiles">Configured game profiles by profile id.</param>
     /// <param name="appPath">Steam Input Bridge executable used as the shortcut target.</param>
@@ -65,6 +68,9 @@ public static class SteamRomManagerExport
         File.WriteAllText(manifestPath, manifest);
         return manifestPath;
     }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private static string ResolveManifestPath(string? path, string settingsPath)
     {

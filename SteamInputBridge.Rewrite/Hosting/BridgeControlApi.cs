@@ -19,6 +19,15 @@ public partial interface IBridgeControlApi
     Task<BridgeServerStatus> GetStatusAsync();
 }
 
+/// <summary>General server/client control API.</summary>
+[JsonRpcContract]
+[GenerateShape(IncludeMethods = MethodShapeFlags.PublicInstance)]
+public partial interface IBridgeClientApi
+{
+    /// <summary>Asks the client to exit.</summary>
+    Task ExitAsync();
+}
+
 /// <summary>Current server status.</summary>
 /// <param name="connectedClientCount">Number of connected clients.</param>
 public sealed class BridgeServerStatus(int connectedClientCount)

@@ -31,6 +31,9 @@ avoid repeating past mistakes.
 - Be concise. Answer the actual question before giving context.
 - Ask when a decision changes architecture, ownership, lifecycle, global state,
   or long-term maintenance cost.
+- If a fix would change ownership, architecture, presentation model, lifecycle,
+  or add a nontrivial implementation, stop and ask before editing. Do not solve
+  it inside the nearest file just because that is where the symptom appears.
 
 ## Architecture Decisions
 
@@ -159,6 +162,8 @@ avoid repeating past mistakes.
   routing constraints. Do not hide intent behind tiny helper methods.
 - Do not add private helpers that only wrap a constructor, null check, simple
   property access, or one obvious call.
+- Do not create custom app error dialogs. The app error dialog must stay on the
+  native dialog path unless the user explicitly approves replacing that model.
 
 ## Verification
 

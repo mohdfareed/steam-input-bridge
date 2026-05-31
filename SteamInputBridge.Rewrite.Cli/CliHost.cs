@@ -7,6 +7,9 @@ using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Cli;
 
+// MARK: Dependency Injection
+// ============================================================================
+
 internal static class CliHost
 {
     public static IHost CreateCli()

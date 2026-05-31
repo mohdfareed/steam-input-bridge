@@ -26,6 +26,9 @@ public sealed class MicrophoneService : IDisposable
     private MicrophoneConnection? _connection;
     private bool _disposed;
 
+    // MARK: Lifecycle
+    // ========================================================================
+
     /// <inheritdoc/>
     public MicrophoneService()
     {
@@ -34,6 +37,9 @@ public sealed class MicrophoneService : IDisposable
 
     /// <summary>Raised when the observed microphone status changes.</summary>
     public event EventHandler<MicrophoneStatusChangedEventArgs>? StatusChanged;
+
+    // MARK: Publics
+    // ========================================================================
 
     /// <summary>Reads the current microphone status.</summary>
     public MicrophoneStatus GetStatus()
@@ -92,6 +98,9 @@ public sealed class MicrophoneService : IDisposable
 
         _stop.Dispose();
     }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private async Task MonitorAsync(CancellationToken cancellationToken)
     {

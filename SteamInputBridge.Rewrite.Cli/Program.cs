@@ -1,4 +1,5 @@
 using System;
+using SteamInputBridge.Cli;
 using SteamInputBridge.Cli.Commands;
 
 try
@@ -7,7 +8,6 @@ try
 }
 catch (Exception exception) when (exception is not OperationCanceledException)
 {
-    await Console.Error.WriteLineAsync(exception.Message).ConfigureAwait(false);
-    await Console.Error.WriteLineAsync(exception.ToString()).ConfigureAwait(false);
+    await ConsoleOutput.WriteErrorAsync(exception.Message).ConfigureAwait(false);
     return 1;
 }

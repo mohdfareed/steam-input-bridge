@@ -12,6 +12,9 @@ namespace SteamInputBridge.Hosting;
 /// <summary>Builds product hosts with shared settings loading.</summary>
 public static class BridgeHost
 {
+    // MARK: Publics
+    // ========================================================================
+
     /// <summary>Creates a host with settings services only.</summary>
     public static IHost CreateSettings(string basePath, Action<ILoggingBuilder, ConfigurationManager> configureLogging)
     {
@@ -35,6 +38,9 @@ public static class BridgeHost
         _ = builder.Services.AddBridgeClient(profileId);
         return builder.Build();
     }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private static HostApplicationBuilder CreateBuilder(
         string basePath,

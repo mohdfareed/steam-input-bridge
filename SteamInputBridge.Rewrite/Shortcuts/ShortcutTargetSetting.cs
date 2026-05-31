@@ -9,6 +9,9 @@ namespace SteamInputBridge.Shortcuts;
 [TypeConverter(typeof(ShortcutTargetSettingConverter))]
 public readonly record struct ShortcutTargetSetting(ShortcutTarget Target, string? Color)
 {
+    // MARK: Publics
+    // ========================================================================
+
     /// <summary>Parses a shortcut target setting value.</summary>
     public static ShortcutTargetSetting Parse(string value)
     {
@@ -29,6 +32,9 @@ public readonly record struct ShortcutTargetSetting(ShortcutTarget Target, strin
             ? Color ?? ""
             : Target.ToString();
     }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private static bool IsValidTarget(string value, out ShortcutTarget target)
     {

@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using SteamInputBridge.Hosting;
+using SteamInputBridge.Hosting.Server;
 using StreamJsonRpc;
 
 namespace SteamInputBridge.Cli.Commands;
@@ -16,6 +17,9 @@ internal static class ServerCommands
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
+
+    // MARK: Commands
+    // ========================================================================
 
     public static Command CreateCommand()
     {
@@ -32,10 +36,22 @@ internal static class ServerCommands
         return server;
     }
 
-    private static async Task RunServerAsync(CancellationToken cancellationToken)
+    // MARK: Implementation
+    // ========================================================================
+
+    private static async Task<int> RunServerAsync(CancellationToken cancellationToken)
     {
-        using IHost host = CliHost.CreateServer();
-        await host.RunAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using IHost host = CliHost.CreateServer();
+            await host.RunAsync(cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+        catch (ServerAlreadyRunningException exception)
+        {
+            await ConsoleOutput.WriteErrorAsync(exception.Message).ConfigureAwait(false);
+            return 1;
+        }
     }
 
     private static async Task<int> PrintServerStatusAsync(bool json, CancellationToken cancellationToken)
@@ -64,7 +80,7 @@ internal static class ServerCommands
         }
         catch (Exception exception) when (exception is IOException or TimeoutException or ConnectionLostException)
         {
-            await Console.Error.WriteLineAsync($"server status: unavailable ({exception.Message})").ConfigureAwait(false);
+            await ConsoleOutput.WriteErrorAsync($"server status: unavailable ({exception.Message})").ConfigureAwait(false);
             return 1;
         }
     }

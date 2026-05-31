@@ -7,6 +7,9 @@ using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.App;
 
+// MARK: Dependency Injection
+// ============================================================================
+
 internal static class AppHost
 {
     public static IHost CreateServer()

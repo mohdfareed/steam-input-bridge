@@ -16,12 +16,18 @@ internal sealed class MicrophoneDevice : IDisposable
     private IAudioEndpointVolume? _volume;
     private IAudioSessionManager2? _sessionManager;
 
+    // MARK: Lifecycle
+    // ========================================================================
+
     private MicrophoneDevice(IMMDevice device, IAudioEndpointVolume volume, IAudioSessionManager2 sessionManager)
     {
         _device = device;
         _volume = volume;
         _sessionManager = sessionManager;
     }
+
+    // MARK: Publics
+    // ========================================================================
 
     public static MicrophoneDevice Open()
     {
@@ -79,6 +85,9 @@ internal sealed class MicrophoneDevice : IDisposable
             _device = null;
         }
     }
+
+    // MARK: CoreAudio
+    // ========================================================================
 
     private static IMMDevice OpenDefaultCaptureDevice()
     {

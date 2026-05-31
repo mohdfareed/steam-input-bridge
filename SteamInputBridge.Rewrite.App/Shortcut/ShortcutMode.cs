@@ -1,5 +1,4 @@
 using System;
-using System.CommandLine;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
@@ -8,27 +7,21 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using SteamInputBridge.Hosting;
 
-namespace SteamInputBridge.App.Commands;
+namespace SteamInputBridge.App.Shortcut;
 
-internal static class ShortcutCommands
+internal static class ShortcutMode
 {
-    private static readonly TimeSpan ServerStartupTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ServerStartupTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PipeProbeTimeout = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan PipeProbeDelay = TimeSpan.FromMilliseconds(100);
 
-    public static Command CreateCommand()
-    {
-        Command shortcut = new("shortcut", "Run from a Steam shortcut.");
-        shortcut.Arguments.Add(new Argument<string>("profile") { Description = "Profile id to run." });
-        shortcut.SetAction(async (parseResult, cancellationToken) =>
-        {
-            string profileId = parseResult.GetValue<string>("profile")!;
-            await StartClient(profileId, cancellationToken).ConfigureAwait(false);
-        });
-        return shortcut;
-    }
+    // MARK: Publics
+    // ========================================================================
 
-    private static async Task StartClient(string profileId, CancellationToken cancellationToken)
+    public static async Task<int> RunAsync(string profileId, CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
+
         if (!await IsServerRunningAsync(cancellationToken).ConfigureAwait(false))
         {
             await StartTrayServer(cancellationToken).ConfigureAwait(false);
@@ -36,13 +29,16 @@ internal static class ShortcutCommands
 
         using IHost host = AppHost.CreateClient(profileId);
         await host.RunAsync(cancellationToken).ConfigureAwait(false);
+        return 0;
     }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private static async Task<bool> IsServerRunningAsync(CancellationToken cancellationToken)
     {
         try
         {
-            // Connect to the server's control pipe to check if it's running.
             using NamedPipeClientStream pipe = new(".", IBridgeControlApi.Name, PipeDirection.InOut, PipeOptions.Asynchronous);
             await pipe.ConnectAsync((int)PipeProbeTimeout.TotalMilliseconds, cancellationToken).ConfigureAwait(false);
             return true;
@@ -55,19 +51,20 @@ internal static class ShortcutCommands
 
     private static async Task StartTrayServer(CancellationToken cancellationToken)
     {
+        string processPath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Cannot start the server because the app path is unknown.");
+
         ProcessStartInfo start = new()
         {
-            FileName = Environment.ProcessPath ?? throw new InvalidOperationException("Application process path is not available."),
-            WorkingDirectory = AppContext.BaseDirectory,
-            UseShellExecute = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
+            FileName = "explorer.exe",
+            UseShellExecute = false,
         };
 
-        // Start the server in tray mode.
-        start.ArgumentList.Add("tray");
-        using Process? process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the tray server.");
+        // Start tray server through explorer to prevent server shutdown on client shutdown.
+        start.ArgumentList.Add(processPath);
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the tray server.");
 
-        // Wait for the server to start and become available.
+        // Wait for the server to start by probing the control API pipe.
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ServerStartupTimeout);
         while (!timeout.IsCancellationRequested)
@@ -76,7 +73,8 @@ internal static class ShortcutCommands
             {
                 return;
             }
-            await Task.Delay(100, timeout.Token).ConfigureAwait(false);
+
+            await Task.Delay(PipeProbeDelay, timeout.Token).ConfigureAwait(false);
         }
 
         cancellationToken.ThrowIfCancellationRequested();

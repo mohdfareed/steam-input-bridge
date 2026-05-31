@@ -13,12 +13,18 @@ internal sealed class MicrophoneConnection : IDisposable
     private readonly MicrophoneDevice _device;
     private MicrophoneStatus _status = MicrophoneStatus.Unavailable;
 
+    // MARK: Lifecycle
+    // ========================================================================
+
     private MicrophoneConnection(MicrophoneDevice device)
     {
         _device = device;
     }
 
     public event Action<MicrophoneStatus>? StatusChanged;
+
+    // MARK: Publics
+    // ========================================================================
 
     public MicrophoneStatus Status
     {
@@ -62,6 +68,9 @@ internal sealed class MicrophoneConnection : IDisposable
     {
         _device.Dispose();
     }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private void Publish(MicrophoneStatus status)
     {

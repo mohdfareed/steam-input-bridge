@@ -14,10 +14,14 @@ namespace SteamInputBridge.Hosting.Client;
 public sealed record ClientRunOptions(string ProfileId);
 
 /// <summary>Host-driven client runtime.</summary>
-public sealed class BridgeClient(ClientRunOptions options, ILogger<BridgeClient> logger) : BackgroundService
+public sealed class BridgeClient(ClientRunOptions options, IHostApplicationLifetime lifetime, ILogger<BridgeClient> logger)
+    : BackgroundService, IBridgeClientApi
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
+
+    // MARK: Lifecycle
+    // ========================================================================
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -52,6 +56,20 @@ public sealed class BridgeClient(ClientRunOptions options, ILogger<BridgeClient>
         }
     }
 
+    // MARK: Control API
+    // ========================================================================
+
+    /// <inheritdoc />
+    public Task ExitAsync()
+    {
+        BridgeLog.ClientExitRequested(logger, options.ProfileId);
+        lifetime.StopApplication();
+        return Task.CompletedTask;
+    }
+
+    // MARK: Implementation
+    // ========================================================================
+
     private async Task RunConnectedAsync(CancellationToken cancellationToken)
     {
         BridgeLog.ClientConnecting(logger, IBridgeControlApi.Name);
@@ -60,8 +78,11 @@ public sealed class BridgeClient(ClientRunOptions options, ILogger<BridgeClient>
         await using (pipe.ConfigureAwait(false))
         {
             await pipe.ConnectAsync((int)ConnectTimeout.TotalMilliseconds, cancellationToken).ConfigureAwait(false);
-            IBridgeControlApi server = JsonRpc.Attach<IBridgeControlApi>(pipe);
-            JsonRpc rpc = ((IJsonRpcClientProxy)server).JsonRpc;
+            using JsonRpc rpc = new(pipe);
+
+            rpc.AddLocalRpcTarget<IBridgeClientApi>(this, null);
+            IBridgeControlApi server = rpc.Attach<IBridgeControlApi>();
+            rpc.StartListening();
 
             await server.ConnectAsync(Environment.ProcessId, options.ProfileId)
                 .WaitAsync(ConnectTimeout, cancellationToken)

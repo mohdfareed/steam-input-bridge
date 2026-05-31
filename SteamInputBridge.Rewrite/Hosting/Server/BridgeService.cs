@@ -12,14 +12,14 @@ public sealed class BridgeService(SettingsService settings)
     /// <summary>Current server status snapshot.</summary>
     public BridgeServerStatus Status => new(_clients.Count);
 
-    internal ConnectedClient RegisterClient(Guid connectionId, int processId, string profileId)
+    internal ConnectedClient RegisterClient(Guid connectionId, int processId, string profileId, IBridgeClientApi control)
     {
         if (!settings.Current.Games.ContainsKey(profileId))
         {
             throw new InvalidOperationException($"Profile '{profileId}' is not configured.");
         }
 
-        ConnectedClient client = new(connectionId, processId, profileId);
+        ConnectedClient client = new(connectionId, processId, profileId, control);
         return _clients.TryAdd(connectionId, client)
             ? client
             : throw new InvalidOperationException($"Control connection '{connectionId}' is already registered.");
@@ -33,4 +33,4 @@ public sealed class BridgeService(SettingsService settings)
     }
 }
 
-internal sealed record ConnectedClient(Guid ConnectionId, int ProcessId, string ProfileId);
+internal sealed record ConnectedClient(Guid ConnectionId, int ProcessId, string ProfileId, IBridgeClientApi Control);

@@ -5,6 +5,9 @@ using Microsoft.Extensions.Logging;
 
 namespace SteamInputBridge.Diagnostics;
 
+// MARK: ILoggerProvider
+// ============================================================================
+
 /// <summary>Simple file logger provider for entrypoint-owned file logging.</summary>
 public sealed class FileLoggerProvider : ILoggerProvider
 {
@@ -60,6 +63,9 @@ public sealed class FileLoggerProvider : ILoggerProvider
         }
     }
 }
+
+// MARK: ILogger
+// ============================================================================
 
 internal sealed class FileLogger(string categoryName, Action<string, LogLevel, string, Exception?> write) : ILogger
 {

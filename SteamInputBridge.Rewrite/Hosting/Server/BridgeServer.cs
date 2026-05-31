@@ -16,7 +16,20 @@ namespace SteamInputBridge.Hosting.Server;
 public sealed class BridgeServer(SettingsService settings, BridgeService service, ILogger<BridgeServer> logger)
     : BackgroundService
 {
+    private const string ServerSemaphoreName = @"Local\SteamInputBridge.Server";
+
     private readonly ConcurrentBag<NamedPipeServerStream> _pipes = [];
+    private Semaphore? _serverInstance;
+
+    // MARK: Lifecycle
+    // ========================================================================
+
+    /// <inheritdoc />
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        _serverInstance = AcquireServerInstance();
+        return base.StartAsync(cancellationToken);
+    }
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -30,6 +43,7 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
             while (!stoppingToken.IsCancellationRequested)
             {
                 NamedPipeServerStream? pipe = null;
+
                 try
                 {
                     pipe = new NamedPipeServerStream(
@@ -38,8 +52,8 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
                         NamedPipeServerStream.MaxAllowedServerInstances,
                         PipeTransmissionMode.Byte,
                         PipeOptions.Asynchronous);
-
                     await pipe.WaitForConnectionAsync(stoppingToken).ConfigureAwait(false);
+
                     _pipes.Add(pipe);
                     _ = RunClientAsync(pipe);
                     pipe = null;
@@ -59,6 +73,11 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
         finally
         {
             settings.Changed -= OnSettingsChanged;
+
+            _ = _serverInstance?.Release();
+            _serverInstance?.Dispose();
+            _serverInstance = null;
+
             BridgeLog.ServerStopped(logger);
         }
     }
@@ -74,6 +93,16 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public override void Dispose()
+    {
+        _serverInstance?.Dispose();
+        base.Dispose();
+    }
+
+    // MARK: Connections
+    // ========================================================================
+
     private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)
     {
         _ = sender;
@@ -87,8 +116,12 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
         {
             try
             {
-                BridgeControlSession session = new(service, connectionId);
-                using JsonRpc rpc = JsonRpc.Attach(pipe, session);
+                using JsonRpc rpc = new(pipe);
+                IBridgeClientApi client = rpc.Attach<IBridgeClientApi>();
+                BridgeControlSession session = new(service, connectionId, client, logger);
+
+                rpc.AddLocalRpcTarget<IBridgeControlApi>(session, null);
+                rpc.StartListening();
                 await rpc.Completion.ConfigureAwait(false);
             }
             catch (Exception exception) when (IsClientDisconnect(exception) || exception is InvalidOperationException)
@@ -109,5 +142,20 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
     private static bool IsClientDisconnect(Exception exception)
     {
         return exception is IOException or ObjectDisposedException or ConnectionLostException;
+    }
+
+    // MARK: Instance Guard
+    // ========================================================================
+
+    private static Semaphore AcquireServerInstance()
+    {
+        Semaphore serverInstance = new(initialCount: 1, maximumCount: 1, ServerSemaphoreName);
+        if (serverInstance.WaitOne(TimeSpan.Zero))
+        {
+            return serverInstance;
+        }
+
+        serverInstance.Dispose();
+        throw new ServerAlreadyRunningException();
     }
 }

@@ -8,6 +8,9 @@ namespace SteamInputBridge.Settings;
 /// <summary>Validates application settings after configuration binding.</summary>
 public static class SettingsValidation
 {
+    // MARK: Publics
+    // ========================================================================
+
     /// <summary>Throws when the supplied settings are invalid.</summary>
     public static void Validate(SteamInputBridgeSettings settings)
     {
@@ -35,6 +38,9 @@ public static class SettingsValidation
         validationErrors = string.Join(Environment.NewLine, failures);
         return failures.Count == 0;
     }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private static void ValidateViiper(ViiperSettings settings, List<string> failures)
     {

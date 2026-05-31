@@ -35,6 +35,9 @@ public sealed class SettingsService : IDisposable
         BridgeLog.SettingsLoaded(_logger, settingsFile);
     }
 
+    // MARK: Publics
+    // ========================================================================
+
     /// <summary>Raised after a valid settings reload is accepted.</summary>
     public event EventHandler<ApplicationSettingsChangedEventArgs>? Changed;
 
@@ -46,6 +49,9 @@ public sealed class SettingsService : IDisposable
     {
         _reloadSubscription?.Dispose();
     }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private void OnSettingsChanged(SteamInputBridgeSettings settings)
     {
