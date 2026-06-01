@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using SteamInputBridge.Hosting;
 
@@ -9,17 +7,11 @@ namespace SteamInputBridge.App.Tray.Menu;
 internal sealed class ShortcutsMenuSection
 {
     private readonly Dictionary<string, ShortcutMenuBinding> _shortcuts = [];
-    private ToolStripMenuItem? _teensy;
-    private ToolStripMenuItem? _teensyStatus;
 
     // MARK: Publics
     // ========================================================================
 
-    public ToolStripMenuItem Build(
-        IReadOnlyList<BridgeShortcutStatus> shortcuts,
-        BridgeTeensyStatus teensy,
-        Func<Task> uploadTeensyFirmware,
-        Action<Exception> onError)
+    public ToolStripMenuItem Build(IReadOnlyList<BridgeShortcutStatus> shortcuts)
     {
         _shortcuts.Clear();
         ToolStripMenuItem menu = TrayMenuItems.Menu("Shortcuts");
@@ -35,12 +27,10 @@ internal sealed class ShortcutsMenuSection
             }
         }
 
-        _ = menu.DropDownItems.Add(new ToolStripSeparator());
-        _ = menu.DropDownItems.Add(CreateTeensyMenu(teensy, uploadTeensyFirmware, onError));
         return menu;
     }
 
-    public void Update(IReadOnlyList<BridgeShortcutStatus> shortcuts, BridgeTeensyStatus teensy)
+    public void Update(IReadOnlyList<BridgeShortcutStatus> shortcuts)
     {
         foreach (BridgeShortcutStatus shortcut in shortcuts)
         {
@@ -49,8 +39,6 @@ internal sealed class ShortcutsMenuSection
                 items.Update(shortcut);
             }
         }
-
-        SetTeensy(teensy);
     }
 
     public static bool ShapeChanged(
@@ -91,41 +79,6 @@ internal sealed class ShortcutsMenuSection
 
         _shortcuts[shortcut.Keys] = new(menu, pressed);
         return menu;
-    }
-
-    private ToolStripMenuItem CreateTeensyMenu(
-        BridgeTeensyStatus teensy,
-        Func<Task> uploadTeensyFirmware,
-        Action<Exception> onError)
-    {
-        _teensy = TrayMenuItems.Menu("Teensy");
-        TrayMenuItems.SetCheckMark(_teensy, teensy.Connected);
-        _teensyStatus = TrayMenuItems.Item("Status", FormatTeensy(teensy));
-        TrayMenuItems.SetCheckMark(_teensyStatus, teensy.Connected);
-        _ = _teensy.DropDownItems.Add(_teensyStatus);
-        _ = _teensy.DropDownItems.Add(TrayMenuItems.ActionItem("Upload firmware...", uploadTeensyFirmware, onError));
-        return _teensy;
-    }
-
-    private void SetTeensy(BridgeTeensyStatus teensy)
-    {
-        if (_teensy is not null)
-        {
-            TrayMenuItems.SetCheckMark(_teensy, teensy.Connected);
-        }
-
-        if (_teensyStatus is not null)
-        {
-            TrayMenuItems.SetValue(_teensyStatus, FormatTeensy(teensy));
-            TrayMenuItems.SetCheckMark(_teensyStatus, teensy.Connected);
-        }
-    }
-
-    private static string FormatTeensy(BridgeTeensyStatus status)
-    {
-        return status.Connected && !string.IsNullOrWhiteSpace(status.ConnectedPort)
-            ? $"Connected: {status.ConnectedPort}"
-            : status.State;
     }
 
     private sealed record ShortcutMenuBinding(ToolStripMenuItem Menu, ToolStripMenuItem Pressed)

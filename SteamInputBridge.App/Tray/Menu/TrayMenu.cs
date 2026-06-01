@@ -19,6 +19,7 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
 {
     private readonly ProfilesMenuSection _profiles = new();
     private readonly ShortcutsMenuSection _shortcuts = new();
+    private readonly TeensyMenuSection _teensy = new();
     private readonly DiagnosticsMenuSection _diagnostics = new();
     private ToolStripMenuItem? _startupItem;
     private TrayMenuState? _state;
@@ -87,8 +88,8 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
                 actions.OpenSteamInputConfigAsync,
                 onError,
                 connectionId => _ = TrayMenuItems.RunAsync(() => actions.StopClientAsync(connectionId), onError)));
-            _ = Menu.Items.Add(_shortcuts.Build(
-                state.ServerStatus.Shortcuts,
+            _ = Menu.Items.Add(_shortcuts.Build(state.ServerStatus.Shortcuts));
+            _ = Menu.Items.Add(_teensy.Build(
                 state.ServerStatus.Teensy,
                 actions.UploadTeensyFirmwareAsync,
                 onError));
@@ -122,7 +123,8 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
     private void UpdateLiveItems(TrayMenuState state)
     {
         _profiles.Update(state.Profiles, state.LastActiveProfileId);
-        _shortcuts.Update(state.ServerStatus.Shortcuts, state.ServerStatus.Teensy);
+        _shortcuts.Update(state.ServerStatus.Shortcuts);
+        _teensy.Update(state.ServerStatus.Teensy);
         _diagnostics.Update(state.ServerStatus, state.Microphone, state.ActionColor);
 
         if (_startupItem is not null)

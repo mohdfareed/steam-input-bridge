@@ -6,18 +6,14 @@ namespace {
 
 constexpr uint32_t BaudRate = 115200;
 constexpr uint32_t InputBlinkDurationMs = 100;
-constexpr uint32_t DiagnosticIntervalMs = 1000;
 
-SteamInputBridge::BridgeApp app(LED_BUILTIN, InputBlinkDurationMs,
-                                DiagnosticIntervalMs);
+SteamInputBridge::BridgeApp app(LED_BUILTIN, InputBlinkDurationMs);
 
 }  // namespace
 
 void setup() {
   Serial.begin(BaudRate);
-  app.begin(millis());
+  app.begin();
 }
 
-void loop() {
-  app.update(millis());
-}
+void loop() { app.update(millis()); }

@@ -211,12 +211,6 @@ internal sealed class TrayActions(
             {
                 return Path.GetFullPath(candidate);
             }
-
-            candidate = Path.Combine(directory, "Firmware", fileName);
-            if (File.Exists(candidate))
-            {
-                return Path.GetFullPath(candidate);
-            }
         }
 
         string? platformIoTool = FindPlatformIoTool(fileName);

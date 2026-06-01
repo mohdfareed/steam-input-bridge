@@ -4,21 +4,16 @@
 
 namespace SteamInputBridge {
 
-BridgeApp::BridgeApp(uint8_t ledPin, uint32_t inputBlinkDurationMs,
-                     uint32_t diagnosticIntervalMs)
-    : _statusLed(ledPin, inputBlinkDurationMs),
-      _diagnostics(inputBlinkDurationMs, diagnosticIntervalMs) {}
+BridgeApp::BridgeApp(uint8_t ledPin, uint32_t inputBlinkDurationMs)
+    : _statusLed(ledPin, inputBlinkDurationMs) {}
 
-void BridgeApp::begin(uint32_t now) {
+void BridgeApp::begin() {
   _mouse.begin();
   _statusLed.begin();
-  _diagnostics.begin(now);
 }
 
 void BridgeApp::update(uint32_t now) {
-  _diagnostics.updateSerialConnection(now);
   readSerialFrames(now);
-  _diagnostics.update(now);
   _statusLed.update(now);
 }
 
@@ -38,12 +33,10 @@ void BridgeApp::handleMessage(const BridgeMessage& message, uint32_t now) {
     const uint8_t bytes = writeHandshakeResponse(
         message.sequence, _handshakeResponse, sizeof(_handshakeResponse));
     Serial.write(_handshakeResponse, bytes);
-    _diagnostics.recordHandshake(message.sequence, now);
     return;
   }
 
   const bool hasInput = message.mouse.hasInput();
-  _diagnostics.recordMouseReport(hasInput, now);
   _mouse.apply(message.mouse);
   _statusLed.showInput(hasInput, now);
 }

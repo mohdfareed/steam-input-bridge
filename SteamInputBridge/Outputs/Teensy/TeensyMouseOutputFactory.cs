@@ -21,11 +21,15 @@ public sealed class TeensyMouseOutputFactory(TeensyMouseOutputService service) :
 
 internal sealed class TeensyMouseOutput(TeensyMouseOutputService service) : IMouseOutput
 {
+    private const string TeensyVendorName = "VID_16C0";
+
     public bool IsConnected => service.IsConnected;
 
     public ValueTask SendAsync(in MouseInput input, CancellationToken cancellationToken = default)
     {
-        return service.SendAsync(in input, cancellationToken);
+        return IsTeensyDeviceName(input.DeviceName)
+            ? ValueTask.CompletedTask
+            : service.SendAsync(in input, cancellationToken);
     }
 
     public ValueTask ClearAsync(CancellationToken cancellationToken = default)
@@ -36,5 +40,12 @@ internal sealed class TeensyMouseOutput(TeensyMouseOutputService service) : IMou
     public ValueTask DisposeAsync()
     {
         return ValueTask.CompletedTask;
+    }
+
+    private static bool IsTeensyDeviceName(string? deviceName)
+    {
+        return !string.IsNullOrWhiteSpace(deviceName) &&
+            (deviceName.Contains(TeensyVendorName, StringComparison.OrdinalIgnoreCase) ||
+             deviceName.Contains("TEENSY", StringComparison.OrdinalIgnoreCase));
     }
 }

@@ -75,32 +75,6 @@ public sealed class TeensyMouseOutputTests
     }
 
     [TestMethod]
-    public void HandshakeReaderSkipsFirmwareDiagnosticText()
-    {
-        byte[] response = HandshakeResponse(sequence: 4);
-        byte[] frame = new byte[TeensyProtocol.HandshakeResponseFrameSize];
-        int offset = 0;
-        bool parsed = false;
-
-        foreach (byte value in "ok uptime_ms=1 reports=0\r\n"u8)
-        {
-            parsed |= TeensyProtocol.TryReadHandshakeResponseByte(value, sequence: 4, frame, ref offset);
-        }
-
-        foreach (byte value in response)
-        {
-            parsed |= TeensyProtocol.TryReadHandshakeResponseByte(value, sequence: 4, frame, ref offset);
-        }
-
-        foreach (byte value in "event=handshake sequence=4\r\n"u8)
-        {
-            parsed |= TeensyProtocol.TryReadHandshakeResponseByte(value, sequence: 4, frame, ref offset);
-        }
-
-        Assert.IsTrue(parsed);
-    }
-
-    [TestMethod]
     public void OrderCandidatePortsPrioritizesLikelyTeensyPorts()
     {
         IReadOnlyList<string> ports = TeensyPortDiscovery.OrderCandidatePorts(
@@ -233,30 +207,6 @@ public sealed class TeensyMouseOutputTests
         {
             await Task.Delay(10, timeout.Token).ConfigureAwait(false);
         }
-    }
-
-    private static byte[] HandshakeResponse(byte sequence)
-    {
-        byte[] response =
-        [
-            (byte)'S',
-            (byte)'I',
-            (byte)'B',
-            1,
-            0x80,
-            sequence,
-            4,
-            (byte)'T',
-            (byte)'N',
-            (byte)'S',
-            (byte)'Y',
-            0,
-            0,
-        ];
-        ushort checksum = TeensyProtocol.ComputeCrc16(
-            response.AsSpan(0, TeensyProtocol.HeaderSize + TeensyProtocol.HandshakeResponsePayloadSize));
-        BinaryPrimitives.WriteUInt16LittleEndian(response.AsSpan(11), checksum);
-        return response;
     }
 
     private sealed class TestContext(

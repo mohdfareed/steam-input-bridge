@@ -116,11 +116,9 @@ function Deploy-Firmware {
         throw "Firmware build did not produce $firmwareSource"
     }
 
-    $firmwareOutput = Join-Path $OutputPath "Firmware"
-    New-Item -ItemType Directory -Path $firmwareOutput -Force | Out-Null
     Copy-Item `
         -LiteralPath $firmwareSource `
-        -Destination (Join-Path $firmwareOutput "SteamInputBridge.Teensy.hex") `
+        -Destination (Join-Path $OutputPath "SteamInputBridge.Teensy.hex") `
         -Force
 }
 
