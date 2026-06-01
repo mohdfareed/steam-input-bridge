@@ -34,6 +34,12 @@ internal sealed class TrayActions(
         await steam.OpenSteamConfigAsync(SteamInputClient.DesktopConfigAppId, cancellationToken).ConfigureAwait(true);
     }
 
+    public async Task OpenSteamInputConfigAsync(uint appId)
+    {
+        SteamInputClient steam = new();
+        await steam.OpenSteamConfigAsync(appId, cancellationToken).ConfigureAwait(true);
+    }
+
     public void ExportSrmManifest()
     {
         SettingsService settings = server.Services.GetRequiredService<SettingsService>();

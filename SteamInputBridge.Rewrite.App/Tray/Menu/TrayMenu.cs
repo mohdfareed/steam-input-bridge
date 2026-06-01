@@ -84,6 +84,8 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
             _ = Menu.Items.Add(_profiles.Build(
                 state.Profiles,
                 state.LastActiveProfileId,
+                actions.OpenSteamInputConfigAsync,
+                onError,
                 connectionId => _ = TrayMenuItems.RunAsync(() => actions.StopClientAsync(connectionId), onError)));
             _ = Menu.Items.Add(_shortcuts.Build(state.ServerStatus.Shortcuts));
             _ = Menu.Items.Add(_diagnostics.Build(state.ServerStatus, state.Microphone, state.ActionColor));

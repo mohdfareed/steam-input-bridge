@@ -15,14 +15,14 @@ Steam Input orchestration and local input forwarding.
   types are ignored.
 - Profiles may launch an executable or attach to existing processes.
 - `ControllerOutput` and `MouseOutput` create VIIPER devices only when configured.
-- Keyboard shortcut `Targets` can include `Motion`, `Pointer`, `Mic`, and `#RRGGBB`.
-  - `Motion` and `Pointer` toggle controller motion and mouse outputs (gyro control toggle).
-  - `Mic` toggles the system microphone, with an always-on-top indicator (mic activity indicator).
+- Keyboard shortcut `Targets` can include `MousePointer`, `Microphone`, and `#RRGGBB`.
+  - `MousePointer` toggle mouse outputs on/off (gyro control toggle).
+  - `Microphone` toggles the system microphone, with an always-on-top indicator (mic activity indicator).
   - `#RRGGBB` adds the color to the stack of active colors (action set/layer indicator).
 - Profile and shortcut edits reload while the app is running.
 - SRM manifest export runs from the tray or CLI.
-- Useful CLI commands: `client run <profile>`, `server status [--json]`, `steam list`,
-  `steam open-config [app-id|desktop]`, `steam export [path]`.
+- Useful CLI commands: `client run <profile>`, `server status [--json]`,
+    `steam list`, `steam open-config [app-id]`, `steam export [path]`.
 
 ## Development
 
@@ -38,7 +38,7 @@ Steam Input orchestration and local input forwarding.
 
 ## TODO
 
-- [ ] Update SDL package when Steam Controller touchpad support lands in the native NuGet package.
+- [ ] Migrate rewrite projects as the main projects.
 - [ ] Teensy mouse output and firmware.
 - [ ] Packaging, versioning, deployment with install script and self-update (auto?).
 - [ ] Update README.md and add usage examples and documentation.

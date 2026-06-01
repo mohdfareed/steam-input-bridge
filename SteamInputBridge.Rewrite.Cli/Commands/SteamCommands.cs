@@ -31,14 +31,15 @@ internal static class SteamCommands
     private static Command CreateExportCommand()
     {
         Command export = new("export", "Export configured profiles to a Steam ROM Manager manifest.");
-        export.Arguments.Add(new Argument<string?>("path")
+        Option<string?> path = new("--path")
         {
-            Arity = ArgumentArity.ZeroOrOne,
             Description = "Manifest path. Overrides Steam:SrmExportPath.",
-        });
+        };
+
+        export.Options.Add(path);
         export.SetAction((parseResult, _) =>
         {
-            string manifestPath = Export(parseResult.GetValue<string?>("path"));
+            string manifestPath = Export(parseResult.GetValue(path));
             Console.WriteLine($"manifest={manifestPath}");
             return Task.CompletedTask;
         });

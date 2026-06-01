@@ -10,10 +10,8 @@ internal sealed class DiagnosticsMenuSection
     private ToolStripMenuItem? _actionColor;
     private ToolStripMenuItem? _mouse;
     private ToolStripMenuItem? _mouseOutput;
-    private ToolStripMenuItem? _mouseForwarding;
     private ToolStripMenuItem? _mousePointer;
     private ToolStripMenuItem? _controller;
-    private ToolStripMenuItem? _controllerClient;
     private ToolStripMenuItem? _controllerSteam;
     private ToolStripMenuItem? _controllerVirtual;
     private ToolStripMenuItem? _steamConfig;
@@ -25,28 +23,22 @@ internal sealed class DiagnosticsMenuSection
     {
         ToolStripMenuItem menu = TrayMenuItems.Menu("Diagnostics");
         _mouse = TrayMenuItems.Menu("Mouse");
-        TrayMenuItems.SetCheckMark(_mouse, status.Mouse.Forwarding);
+        TrayMenuItems.SetCheckMark(_mouse, status.Mouse.OutputConnected);
         _mouseOutput = TrayMenuItems.Item("Output", status.Mouse.Output);
         TrayMenuItems.SetCheckMark(_mouseOutput, status.Mouse.OutputConnected);
-        _mouseForwarding = TrayMenuItems.Item("Forwarding", TrayMenuItems.Active(status.Mouse.Forwarding));
-        TrayMenuItems.SetCheckMark(_mouseForwarding, status.Mouse.Forwarding);
         _mousePointer = TrayMenuItems.Item("Pointer", TrayMenuItems.Enabled(status.Mouse.PointerEnabled));
         TrayMenuItems.SetCheckMark(_mousePointer, status.Mouse.PointerEnabled);
 
         _ = _mouse.DropDownItems.Add(_mouseOutput);
-        _ = _mouse.DropDownItems.Add(_mouseForwarding);
         _ = _mouse.DropDownItems.Add(_mousePointer);
 
         _controller = TrayMenuItems.Menu("Controller");
-        TrayMenuItems.SetCheckMark(_controller, status.Controller.Forwarding);
-        _controllerClient = TrayMenuItems.Item("Client", status.Controller.Client);
-        TrayMenuItems.SetCheckMark(_controllerClient, status.Controller.Client == "Active");
-        _controllerSteam = TrayMenuItems.Item("Steam controllers", TrayMenuItems.Number(status.Controller.SteamControllers));
+        TrayMenuItems.SetCheckMark(_controller, HasControllerRoutes(status.Controller));
+        _controllerSteam = TrayMenuItems.Item("Input controllers", TrayMenuItems.Number(status.Controller.SteamControllers));
         TrayMenuItems.SetCheckMark(_controllerSteam, status.Controller.SteamControllers > 0);
-        _controllerVirtual = TrayMenuItems.Item("Virtual controllers", TrayMenuItems.Number(status.Controller.VirtualControllers));
+        _controllerVirtual = TrayMenuItems.Item("Output controllers", TrayMenuItems.Number(status.Controller.VirtualControllers));
         TrayMenuItems.SetCheckMark(_controllerVirtual, status.Controller.VirtualControllers > 0);
 
-        _ = _controller.DropDownItems.Add(_controllerClient);
         _ = _controller.DropDownItems.Add(_controllerSteam);
         _ = _controller.DropDownItems.Add(_controllerVirtual);
 
@@ -122,19 +114,13 @@ internal sealed class DiagnosticsMenuSection
     {
         if (_mouse is not null)
         {
-            TrayMenuItems.SetCheckMark(_mouse, mouse.Forwarding);
+            TrayMenuItems.SetCheckMark(_mouse, mouse.OutputConnected);
         }
 
         if (_mouseOutput is not null)
         {
             TrayMenuItems.SetValue(_mouseOutput, mouse.Output);
             TrayMenuItems.SetCheckMark(_mouseOutput, mouse.OutputConnected);
-        }
-
-        if (_mouseForwarding is not null)
-        {
-            TrayMenuItems.SetValue(_mouseForwarding, TrayMenuItems.Active(mouse.Forwarding));
-            TrayMenuItems.SetCheckMark(_mouseForwarding, mouse.Forwarding);
         }
 
         if (_mousePointer is not null)
@@ -148,13 +134,7 @@ internal sealed class DiagnosticsMenuSection
     {
         if (_controller is not null)
         {
-            TrayMenuItems.SetCheckMark(_controller, controller.Forwarding);
-        }
-
-        if (_controllerClient is not null)
-        {
-            TrayMenuItems.SetValue(_controllerClient, controller.Client);
-            TrayMenuItems.SetCheckMark(_controllerClient, controller.Client == "Active");
+            TrayMenuItems.SetCheckMark(_controller, HasControllerRoutes(controller));
         }
 
         if (_controllerSteam is not null)
@@ -181,5 +161,10 @@ internal sealed class DiagnosticsMenuSection
     {
         return string.IsNullOrWhiteSpace(status.LastError) &&
             !string.IsNullOrWhiteSpace(status.ProfileId);
+    }
+
+    private static bool HasControllerRoutes(BridgeControllerStatus controller)
+    {
+        return controller.SteamControllers > 0 || controller.VirtualControllers > 0;
     }
 }
