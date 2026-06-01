@@ -67,7 +67,7 @@ public sealed class TeensySettings
     /// <summary>Optional COM port name. When empty, the app searches for a likely Teensy serial port.</summary>
     public string? Port { get; set; }
 
-    /// <summary>Directory used by the tray firmware picker.</summary>
+    /// <summary>Directory searched by the tray firmware upload action.</summary>
     public string? FirmwareDirectory { get; set; } = ".";
 }
 

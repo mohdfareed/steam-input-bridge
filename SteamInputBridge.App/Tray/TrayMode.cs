@@ -13,6 +13,7 @@ using SteamInputBridge.App.Tray.Menu;
 using SteamInputBridge.App.Tray.Overlay;
 using SteamInputBridge.Hosting.Server;
 using SteamInputBridge.Microphone;
+using SteamInputBridge.Outputs.Teensy;
 using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
@@ -66,6 +67,7 @@ internal sealed class TrayContext : IDisposable
     private readonly AppEnvironment _environment;
     private readonly ILogger<TrayContext> _logger;
     private readonly StatusOverlayController _overlay;
+    private readonly TeensyFirmwareUploader _firmwareUploader;
     private readonly NotifyIcon _tray = new();
     private readonly Icon _icon = LoadApplicationIcon();
     private readonly CancellationTokenSource _stop = new();
@@ -86,7 +88,8 @@ internal sealed class TrayContext : IDisposable
         _environment = _server.Services.GetRequiredService<AppEnvironment>();
         _logger = _server.Services.GetRequiredService<ILogger<TrayContext>>();
         _overlay = new(_server.Services);
-        _actions = new(_server, _environment, _settingsFile, _runtime.Bridge, _tray, _stop.Token);
+        _firmwareUploader = new(_environment, _settingsFile, _runtime.Settings, _runtime.Teensy, _stop.Token);
+        _actions = new(_server, _environment, _settingsFile, _runtime.Bridge, _firmwareUploader, _tray, _stop.Token);
         _menu = new(_actions, () => _ = RestartAsync(), () => _ = ShutdownAsync(), AppErrorDialog.Show);
         SubscribeEvents();
     }
@@ -376,6 +379,7 @@ internal sealed class TrayContext : IDisposable
     private sealed record RuntimeServices(
         BridgeService Bridge,
         SettingsService Settings,
+        TeensyMouseOutputService Teensy,
         ActiveProfileService Profiles,
         ShortcutService Shortcuts,
         MicrophoneService Microphone,
@@ -386,6 +390,7 @@ internal sealed class TrayContext : IDisposable
             return new(
                 services.GetRequiredService<BridgeService>(),
                 services.GetRequiredService<SettingsService>(),
+                services.GetRequiredService<TeensyMouseOutputService>(),
                 services.GetRequiredService<ActiveProfileService>(),
                 services.GetRequiredService<ShortcutService>(),
                 services.GetRequiredService<MicrophoneService>(),

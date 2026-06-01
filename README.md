@@ -41,6 +41,7 @@ Steam Input orchestration and local input forwarding.
 
 ## TODO
 
-- [ ] Packaging, versioning, deployment with install script and self-update (auto?).
+- [ ] Optimize and benchmark mouse/controller performance.
+- [ ] Packaging, versioning, deployment with install script and self-update.
 - [ ] Update README.md and add usage examples and documentation.
 - [ ] Machine-readable diagnostics, and richer observability.

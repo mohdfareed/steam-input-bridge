@@ -10,6 +10,9 @@ public static class ProductMetadata
     /// <summary>App executable file name.</summary>
     public const string AppExecutableName = "SteamInputBridge.App.exe";
 
+    /// <summary>Packaged Teensy firmware artifact file name.</summary>
+    public const string TeensyFirmwareFileName = "SteamInputBridge.Teensy.hex";
+
     /// <summary>Resolves the app executable beside a base directory.</summary>
     public static string ResolveAppExecutablePath(string baseDirectory)
     {
