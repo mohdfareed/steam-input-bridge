@@ -1,19 +1,40 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using SteamInputBridge.Inputs.Mouse;
 using SteamInputBridge.Outputs.Mouse;
 
 namespace SteamInputBridge.Outputs.Teensy;
 
 /// <summary>Creates Teensy mouse outputs.</summary>
-public sealed class TeensyMouseOutputFactory : IMouseOutputFactory
+public sealed class TeensyMouseOutputFactory(TeensyMouseOutputService service) : IMouseOutputFactory
 {
     /// <summary>Connects a Teensy mouse output.</summary>
     public ValueTask<IMouseOutput> ConnectAsync(MouseOutput output, CancellationToken cancellationToken = default)
     {
         _ = cancellationToken;
         return output == MouseOutput.Teensy
-            ? throw new NotSupportedException("Teensy mouse output is not implemented yet.")
+            ? ValueTask.FromResult(service.CreateOutput())
             : throw new NotSupportedException($"Teensy does not support {output} mouse output.");
+    }
+}
+
+internal sealed class TeensyMouseOutput(TeensyMouseOutputService service) : IMouseOutput
+{
+    public bool IsConnected => service.IsConnected;
+
+    public ValueTask SendAsync(in MouseInput input, CancellationToken cancellationToken = default)
+    {
+        return service.SendAsync(in input, cancellationToken);
+    }
+
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    {
+        return service.SendReportAsync(MouseReport.Empty, cancellationToken);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
     }
 }

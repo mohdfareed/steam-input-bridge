@@ -6,6 +6,8 @@ Steam Input orchestration and local input forwarding.
 
 - Steam, for Steam Input profiles and game shortcut support
 - VIIPER server/runtime, for virtual controller and mouse output
+- Teensy 4.0 hardware, for Teensy mouse output
+- [PJRC Teensy Loader](https://www.pjrc.com/teensy/loader_win10.html), for tray-driven Teensy firmware uploads.
 - Steam ROM Manager (optional), only if using SRM shortcut export feature
 
 ## Usage
@@ -15,6 +17,7 @@ Steam Input orchestration and local input forwarding.
   types are ignored.
 - Profiles may launch an executable or attach to existing processes.
 - `ControllerOutput` and `MouseOutput` create VIIPER devices only when configured.
+- `MouseOutput` also supports a Teensy board mouse emulator.
 - Keyboard shortcut `Targets` can include `MousePointer`, `Microphone`, and `#RRGGBB`.
   - `MousePointer` toggle mouse outputs on/off (gyro control toggle).
   - `Microphone` toggles the system microphone, with an always-on-top indicator (mic activity indicator).
@@ -26,7 +29,7 @@ Steam Input orchestration and local input forwarding.
 
 ## Development
 
-- `.\Scripts\Build-Solution.ps1` - build and format solution
+- `.\Scripts\Build.ps1` - format/build the solution and build Teensy firmware
 - `.\Scripts\Test-Solution.ps1` - run normal tests (`-Tier Dependency` or `-Tier Manual` for opt-in tests)
 - `.\Scripts\Deploy-App.ps1` - build, package, and deploy the app
 - `.\Scripts\Deploy-App.ps1 -Start` - build and deploy then start the tray app
@@ -35,10 +38,10 @@ Steam Input orchestration and local input forwarding.
 ### Requirements
 
 - .NET 10 SDK
+- PlatformIO CLI or the VS Code PlatformIO extension
 
 ## TODO
 
-- [ ] Teensy mouse output and firmware.
 - [ ] Packaging, versioning, deployment with install script and self-update (auto?).
 - [ ] Update README.md and add usage examples and documentation.
 - [ ] Machine-readable diagnostics, and richer observability.

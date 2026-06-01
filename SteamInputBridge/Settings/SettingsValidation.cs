@@ -32,6 +32,7 @@ public static class SettingsValidation
         else
         {
             ValidateViiper(settings.Viiper, failures);
+            ValidateTeensy(settings.Teensy, failures);
             ValidateShortcuts(settings.Shortcuts, failures);
             ValidateProfiles(settings.Games, failures);
         }
@@ -53,6 +54,14 @@ public static class SettingsValidation
         if (settings.Port is < 1 or > 65_535)
         {
             failures.Add("viiper:port must be between 1 and 65535.");
+        }
+    }
+
+    private static void ValidateTeensy(TeensySettings settings, List<string> failures)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.Port) && !IsComPortName(settings.Port.Trim()))
+        {
+            failures.Add("teensy:port must be a COM port name such as COM5.");
         }
     }
 
@@ -122,5 +131,26 @@ public static class SettingsValidation
                 failures.Add($"games:{profileId}:mouseOutput is invalid.");
             }
         }
+    }
+
+    // MARK: Helpers
+    // ========================================================================
+
+    private static bool IsComPortName(string value)
+    {
+        if (!value.StartsWith("COM", StringComparison.OrdinalIgnoreCase) || value.Length == 3)
+        {
+            return false;
+        }
+
+        for (int i = 3; i < value.Length; i++)
+        {
+            if (!char.IsAsciiDigit(value[i]))
+            {
+                return false;
+            }
+        }
+
+        return int.TryParse(value[3..], out int number) && number > 0;
     }
 }

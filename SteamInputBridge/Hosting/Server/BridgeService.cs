@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using SteamInputBridge.Forwarding.Mouse;
+using SteamInputBridge.Outputs.Teensy;
 using SteamInputBridge.Profiles;
 using SteamInputBridge.Shortcuts;
 using SteamInputBridge.Steam;
@@ -9,14 +10,33 @@ using SteamInputBridge.Steam;
 namespace SteamInputBridge.Hosting.Server;
 
 /// <summary>Control API facade over server runtime services.</summary>
-public sealed class BridgeService(
-    ShortcutService shortcuts,
-    ProfileClientsService clients,
-    ActiveProfileService profiles,
-    ServerMouseForwardingService mouse,
-    SteamInputConfigService steamInput)
+public sealed class BridgeService
 {
     private static readonly TimeSpan ClientStatusTimeout = TimeSpan.FromMilliseconds(250);
+    private readonly ShortcutService _shortcuts;
+    private readonly ProfileClientsService _clients;
+    private readonly ActiveProfileService _profiles;
+    private readonly ServerMouseForwardingService _mouse;
+    private readonly TeensyMouseOutputService _teensy;
+    private readonly SteamInputConfigService _steamInput;
+
+    /// <summary>Creates the control API facade.</summary>
+    public BridgeService(
+        ShortcutService shortcuts,
+        ProfileClientsService clients,
+        ActiveProfileService profiles,
+        ServerMouseForwardingService mouse,
+        TeensyMouseOutputService teensy,
+        SteamInputConfigService steamInput)
+    {
+        _shortcuts = shortcuts;
+        _clients = clients;
+        _profiles = profiles;
+        _mouse = mouse;
+        _teensy = teensy;
+        _steamInput = steamInput;
+        _teensy.StatusChanged += OnTeensyStatusChanged;
+    }
 
     /// <summary>Raised after the server status snapshot changes.</summary>
     public event EventHandler? StatusChanged;
@@ -33,13 +53,13 @@ public sealed class BridgeService(
     /// <summary>Stops the connected profile session and asks the client to exit.</summary>
     public async Task StopClientAsync(Guid connectionId)
     {
-        await clients.StopClientAsync(connectionId).ConfigureAwait(false);
+        await _clients.StopClientAsync(connectionId).ConfigureAwait(false);
     }
 
     /// <summary>Stops the connected profile session receiver processes.</summary>
     public void StopReceivers(Guid connectionId)
     {
-        clients.StopReceivers(connectionId);
+        _clients.StopReceivers(connectionId);
     }
 
     internal async Task<ProfileClientStatus> RegisterClientAsync(
@@ -49,7 +69,7 @@ public sealed class BridgeService(
         uint? steamAppId,
         IBridgeClientApi control)
     {
-        ProfileClientStatus client = await clients
+        ProfileClientStatus client = await _clients
             .ConnectClientAsync(connectionId, processId, profileId, steamAppId, control)
             .ConfigureAwait(false);
         StatusChanged?.Invoke(this, EventArgs.Empty);
@@ -58,7 +78,7 @@ public sealed class BridgeService(
 
     internal ProfileClientStatus? UnregisterClient(Guid connectionId)
     {
-        ProfileClientStatus? client = clients.DisconnectClient(connectionId);
+        ProfileClientStatus? client = _clients.DisconnectClient(connectionId);
         if (client is not null)
         {
             StatusChanged?.Invoke(this, EventArgs.Empty);
@@ -69,7 +89,7 @@ public sealed class BridgeService(
 
     private async Task<BridgeServerStatus> ServerStatusAsync()
     {
-        IReadOnlyList<ProfileClientStatus> profileClients = clients.Clients;
+        IReadOnlyList<ProfileClientStatus> profileClients = _clients.Clients;
         Dictionary<Guid, BridgeClientRuntimeStatus> runtimeStatuses = await ClientRuntimeStatusesAsync().ConfigureAwait(false);
         List<BridgeClientStatus> clientStatuses = new(profileClients.Count);
         foreach (ProfileClientStatus client in profileClients)
@@ -85,19 +105,20 @@ public sealed class BridgeService(
                 runtimeStatus.Controller));
         }
 
-        IReadOnlyList<ProfileStatus> profileStatuses = profiles.Profiles;
+        IReadOnlyList<ProfileStatus> profileStatuses = _profiles.Profiles;
         return new BridgeServerStatus(
             ProfileStatuses(profileStatuses),
             clientStatuses,
-            shortcuts.Status,
-            mouse.Status,
+            _shortcuts.Status,
+            _mouse.Status,
+            TeensyStatus(_teensy.Status),
             ControllerStatus(profileStatuses, clientStatuses),
-            steamInput.Status);
+            _steamInput.Status);
     }
 
     private async Task<Dictionary<Guid, BridgeClientRuntimeStatus>> ClientRuntimeStatusesAsync()
     {
-        IReadOnlyList<ProfileClientsService.BridgeClientConnection> connections = clients.Connections;
+        IReadOnlyList<ProfileClientsService.BridgeClientConnection> connections = _clients.Connections;
         Dictionary<Guid, BridgeClientRuntimeStatus> statuses = new(connections.Count);
         foreach (ProfileClientsService.BridgeClientConnection connection in connections)
         {
@@ -118,6 +139,13 @@ public sealed class BridgeService(
         return statuses;
     }
 
+    private void OnTeensyStatusChanged(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private static List<BridgeProfileStatus> ProfileStatuses(IReadOnlyList<ProfileStatus> profiles)
     {
         List<BridgeProfileStatus> statuses = new(profiles.Count);
@@ -135,6 +163,11 @@ public sealed class BridgeService(
         }
 
         return statuses;
+    }
+
+    private static BridgeTeensyStatus TeensyStatus(TeensyOutputStatus status)
+    {
+        return new(status.State.ToString(), status.ConfiguredPort, status.ConnectedPort);
     }
 
     private static BridgeControllerStatus ControllerStatus(

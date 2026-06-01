@@ -19,6 +19,9 @@ public sealed class SteamInputBridgeSettings
     /// <summary>VIIPER output settings.</summary>
     public ViiperSettings Viiper { get; set; } = new();
 
+    /// <summary>Teensy output settings.</summary>
+    public TeensySettings Teensy { get; set; } = new();
+
     /// <summary>Steam integration settings.</summary>
     public SteamSettings Steam { get; set; } = new();
 
@@ -53,6 +56,19 @@ public sealed class ViiperSettings
 
     /// <summary>VIIPER server port.</summary>
     public int Port { get; set; } = 3242;
+}
+
+/// <summary>Teensy output settings.</summary>
+public sealed class TeensySettings
+{
+    /// <summary>Configuration section name for Teensy output settings.</summary>
+    public const string SectionName = SteamInputBridgeSettings.SectionName + ":Teensy";
+
+    /// <summary>Optional COM port name. When empty, the app searches for a likely Teensy serial port.</summary>
+    public string? Port { get; set; }
+
+    /// <summary>Optional directory used by the tray firmware picker.</summary>
+    public string? FirmwareDirectory { get; set; }
 }
 
 /// <summary>Steam integration settings.</summary>

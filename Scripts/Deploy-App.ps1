@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $appProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.App\SteamInputBridge.App.csproj"
 $cliProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Cli\SteamInputBridge.Cli.csproj"
+$firmwareProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Firmware"
 
 $outputPath = [System.IO.Path]::GetFullPath($Output)
 $appExePath = Join-Path $outputPath "SteamInputBridge.App.exe"
@@ -100,6 +101,29 @@ function Stop-DeployedApp {
     }
 }
 
+function Deploy-Firmware {
+    param(
+        [string] $OutputPath
+    )
+
+    & "$PSScriptRoot\Build.ps1" -SkipDotNet -FirmwareEnvironment teensy40
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+
+    $firmwareSource = Join-Path $firmwareProject ".pio\build\teensy40\firmware.hex"
+    if (-not (Test-Path -LiteralPath $firmwareSource)) {
+        throw "Firmware build did not produce $firmwareSource"
+    }
+
+    $firmwareOutput = Join-Path $OutputPath "Firmware"
+    New-Item -ItemType Directory -Path $firmwareOutput -Force | Out-Null
+    Copy-Item `
+        -LiteralPath $firmwareSource `
+        -Destination (Join-Path $firmwareOutput "SteamInputBridge.Teensy.hex") `
+        -Force
+}
+
 # MARK: Entry Point
 # =============================================================================
 
@@ -117,6 +141,8 @@ Deploy-Project `
     -Runtime $Runtime `
     -ProjectPath $cliProject `
     -OutputPath $outputPath
+
+Deploy-Firmware -OutputPath $outputPath
 
 if ($Start) {
     Start-DeployedApp -Path $appExePath

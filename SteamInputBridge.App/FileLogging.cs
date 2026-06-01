@@ -12,7 +12,7 @@ namespace SteamInputBridge.App;
 /// <summary>File logging registration for application composition.</summary>
 internal static class FileLogging
 {
-    /// <summary>Adds file logging beside the application executable.</summary>
+    /// <summary>Adds file logging under the Generic Host content root.</summary>
     public static ILoggingBuilder AddApplicationFileLogger(this ILoggingBuilder logging, AppEnvironment environment)
     {
         ArgumentNullException.ThrowIfNull(logging);

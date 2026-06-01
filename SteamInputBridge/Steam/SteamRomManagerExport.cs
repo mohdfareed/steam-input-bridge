@@ -77,9 +77,10 @@ public static class SteamRomManagerExport
     {
         string configuredPath = string.IsNullOrWhiteSpace(path) ? "srm-manifest.json" : path;
         string filePath = Environment.ExpandEnvironmentVariables(configuredPath);
-        return Path.IsPathFullyQualified(filePath)
+        string resolvedPath = Path.IsPathFullyQualified(filePath)
             ? filePath
-            : Path.Combine(Path.GetDirectoryName(settingsPath) ?? AppContext.BaseDirectory, filePath);
+            : Path.Combine(Path.GetDirectoryName(settingsPath) ?? Directory.GetCurrentDirectory(), filePath);
+        return Path.GetFullPath(resolvedPath);
     }
 
     private static string QuoteArgument(string value)

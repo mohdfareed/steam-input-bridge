@@ -8,6 +8,7 @@ using SteamInputBridge.Hosting;
 using SteamInputBridge.Hosting.Server;
 using SteamInputBridge.Inputs.Mouse;
 using SteamInputBridge.Outputs.Mouse;
+using SteamInputBridge.Outputs.Teensy;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
 using SteamInputBridge.Shortcuts.Runtime;
@@ -42,7 +43,8 @@ public sealed class BridgeServiceTests
             runtime.ActiveProfiles,
             NullLogger<SteamInputConfigService>.Instance,
             new SteamInputClient((_, _) => ValueTask.CompletedTask));
-        BridgeService service = new(shortcuts, runtime.Clients, runtime.ActiveProfiles, mouse, steamInput);
+        using TeensyMouseOutputService teensy = CreateTeensyService(settings);
+        BridgeService service = new(shortcuts, runtime.Clients, runtime.ActiveProfiles, mouse, teensy, steamInput);
 
         BridgeServerStatus status = await service.GetStatusAsync().ConfigureAwait(false);
 
@@ -50,6 +52,7 @@ public sealed class BridgeServiceTests
         Assert.HasCount(1, status.Profiles);
         Assert.HasCount(1, status.Shortcuts);
         Assert.AreEqual("None", status.Mouse.Output);
+        Assert.AreEqual("Connecting", status.Teensy.State);
         Assert.AreEqual(1, status.Controller.SteamControllers);
         Assert.AreEqual(1, status.Controller.VirtualControllers);
     }
@@ -106,6 +109,54 @@ public sealed class BridgeServiceTests
             _ = output;
             _ = cancellationToken;
             throw new NotSupportedException();
+        }
+    }
+
+    private static TeensyMouseOutputService CreateTeensyService(SettingsService settings)
+    {
+        return new(
+            settings,
+            new TestTeensyPortDiscovery(),
+            new TestTeensySerialConnection(),
+            NullLogger<TeensyMouseOutputService>.Instance,
+            TimeSpan.FromMilliseconds(10));
+    }
+
+    private sealed class TestTeensyPortDiscovery : TeensyPortDiscovery
+    {
+        public override IReadOnlyList<string> GetCandidatePorts(string? configuredPort)
+        {
+            return [];
+        }
+
+        public override bool PortExists(string portName)
+        {
+            _ = portName;
+            return false;
+        }
+    }
+
+    private sealed class TestTeensySerialConnection : TeensySerialConnection
+    {
+        public override bool IsConnected => false;
+
+        public override string? PortName => null;
+
+        public override bool TryConnect(IReadOnlyList<string> candidatePorts)
+        {
+            _ = candidatePorts;
+            return false;
+        }
+
+        public override bool TryWrite(byte[] frame, int bytes)
+        {
+            _ = frame;
+            _ = bytes;
+            return false;
+        }
+
+        public override void Close()
+        {
         }
     }
 }

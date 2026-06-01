@@ -45,6 +45,7 @@ public sealed class BridgeServerStatus(
     IReadOnlyList<BridgeClientStatus> clients,
     IReadOnlyList<BridgeShortcutStatus> shortcuts,
     BridgeMouseStatus mouse,
+    BridgeTeensyStatus teensy,
     BridgeControllerStatus controller,
     BridgeSteamInputStatus steamInput)
 {
@@ -62,6 +63,9 @@ public sealed class BridgeServerStatus(
 
     /// <summary>Mouse forwarding status.</summary>
     public BridgeMouseStatus Mouse { get; } = mouse;
+
+    /// <summary>Teensy board status.</summary>
+    public BridgeTeensyStatus Teensy { get; } = teensy;
 
     /// <summary>Controller forwarding status.</summary>
     public BridgeControllerStatus Controller { get; } = controller;
@@ -172,6 +176,22 @@ public sealed class BridgeMouseStatus(string output, bool outputConnected, bool 
 
     /// <summary>Whether mouse input is currently forwarded.</summary>
     public bool Forwarding { get; } = forwarding;
+}
+
+/// <summary>Server-side Teensy board status.</summary>
+public sealed class BridgeTeensyStatus(string state, string? configuredPort, string? connectedPort)
+{
+    /// <summary>Connection state, either Connecting or Connected.</summary>
+    public string State { get; } = state;
+
+    /// <summary>Configured COM port, or None when auto-discovery is enabled.</summary>
+    public string? ConfiguredPort { get; } = configuredPort;
+
+    /// <summary>Connected COM port when a board is connected.</summary>
+    public string? ConnectedPort { get; } = connectedPort;
+
+    /// <summary>Whether the Teensy board is currently connected.</summary>
+    public bool Connected => string.Equals(State, "Connected", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Server-side controller forwarding status.</summary>

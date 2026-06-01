@@ -67,6 +67,33 @@ internal sealed class TrayActions(
         OpenFile(environment.LogPath);
     }
 
+    public void UploadTeensyFirmware()
+    {
+        SettingsService settings = server.Services.GetRequiredService<SettingsService>();
+        string firmwareDirectory = ResolveFirmwareDirectory(settings.Current.Teensy.FirmwareDirectory);
+#pragma warning disable CA1303
+        using OpenFileDialog dialog = new()
+        {
+            Title = "Upload Teensy firmware",
+            Filter = "Teensy firmware (*.hex)|*.hex|All files (*.*)|*.*",
+            CheckFileExists = true,
+            InitialDirectory = Directory.Exists(firmwareDirectory) ? firmwareDirectory : environment.BaseDirectory,
+        };
+#pragma warning restore CA1303
+
+        if (dialog.ShowDialog() != DialogResult.OK)
+        {
+            return;
+        }
+
+        OpenFile(dialog.FileName);
+        tray.ShowBalloonTip(
+            5000,
+            AppName,
+            "Opened the firmware HEX file. Use Teensy Loader Automatic Mode to flash the board.",
+            ToolTipIcon.Info);
+    }
+
     public static void ToggleStartup()
     {
         StartupRegistration.SetEnabled(!StartupRegistration.IsEnabled());
@@ -89,5 +116,19 @@ internal sealed class TrayActions(
             UseShellExecute = true,
         };
         _ = Process.Start(start) ?? throw new InvalidOperationException($"Could not open {fullPath}.");
+    }
+
+    private string ResolveFirmwareDirectory(string? firmwareDirectory)
+    {
+        string settingsDirectory = Path.GetDirectoryName(settingsFile.Path) ?? environment.BaseDirectory;
+        if (string.IsNullOrWhiteSpace(firmwareDirectory))
+        {
+            return settingsDirectory;
+        }
+
+        string expanded = Environment.ExpandEnvironmentVariables(firmwareDirectory.Trim());
+        return Path.IsPathFullyQualified(expanded)
+            ? Path.GetFullPath(expanded)
+            : Path.GetFullPath(expanded, settingsDirectory);
     }
 }

@@ -82,6 +82,7 @@ internal static class ServerCommands
                 await WriteProfilesAsync(status).ConfigureAwait(false);
                 await WriteShortcutsAsync(status).ConfigureAwait(false);
                 await WriteMouseAsync(status).ConfigureAwait(false);
+                await WriteTeensyAsync(status).ConfigureAwait(false);
                 await WriteControllerAsync(status).ConfigureAwait(false);
                 await WriteSteamInputAsync(status).ConfigureAwait(false);
             }
@@ -151,6 +152,16 @@ internal static class ServerCommands
         await Console.Out.WriteLineAsync($"connected   {FormatYesNo(status.Mouse.OutputConnected)}").ConfigureAwait(false);
         await Console.Out.WriteLineAsync($"pointer     {FormatEnabled(status.Mouse.PointerEnabled)}").ConfigureAwait(false);
         await Console.Out.WriteLineAsync($"forwarding  {FormatActive(status.Mouse.Forwarding)}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync().ConfigureAwait(false);
+    }
+
+    private static async Task WriteTeensyAsync(BridgeServerStatus status)
+    {
+        await Console.Out.WriteLineAsync("Teensy").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync("------").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"state       {status.Teensy.State}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"configured  {FormatText(status.Teensy.ConfiguredPort)}").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync($"connected   {FormatText(status.Teensy.ConnectedPort)}").ConfigureAwait(false);
         await Console.Out.WriteLineAsync().ConfigureAwait(false);
     }
 

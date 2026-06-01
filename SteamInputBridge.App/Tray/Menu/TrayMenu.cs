@@ -88,10 +88,15 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
                 onError,
                 connectionId => _ = TrayMenuItems.RunAsync(() => actions.StopClientAsync(connectionId), onError)));
             _ = Menu.Items.Add(_shortcuts.Build(state.ServerStatus.Shortcuts));
-            _ = Menu.Items.Add(_diagnostics.Build(state.ServerStatus, state.Microphone, state.ActionColor));
+            _ = Menu.Items.Add(_diagnostics.Build(
+                state.ServerStatus,
+                state.Microphone,
+                state.ActionColor,
+                actions.UploadTeensyFirmware,
+                onError));
             _ = Menu.Items.Add(new ToolStripSeparator());
             _ = Menu.Items.Add(TrayMenuItems.ActionItem(
-                "Open Steam Controller desktop config",
+                "Open Steam Input desktop config",
                 actions.OpenDesktopSteamInputConfigAsync,
                 onError));
             _ = Menu.Items.Add(TrayMenuItems.ActionItem("Export SRM manifest", actions.ExportSrmManifest, onError));

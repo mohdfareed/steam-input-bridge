@@ -15,6 +15,7 @@ public sealed class SettingsValidationTests
         SteamInputBridgeSettings settings = new();
         settings.Viiper.Host = "";
         settings.Viiper.Port = 70_000;
+        settings.Teensy.Port = "USB1";
         settings.Shortcuts.Add(new ShortcutEntry
         {
             Keys = "Ctrl+Alt",
@@ -31,6 +32,7 @@ public sealed class SettingsValidationTests
         Assert.IsFalse(valid);
         StringAssert.Contains(errors, "viiper:host is required.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "viiper:port must be between 1 and 65535.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "teensy:port must be a COM port name such as COM5.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:keys is invalid", StringComparison.Ordinal);
         StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:targets is required.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:action is invalid.", StringComparison.Ordinal);

@@ -1,4 +1,3 @@
-using System;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -14,27 +13,30 @@ internal static class CliHost
 {
     public static IHost CreateCli()
     {
-        return BridgeHost.CreateSettings(AppContext.BaseDirectory, ConfigureLogging);
+        return BridgeHost.CreateSettings(ConfigureLogging);
     }
 
     public static IHost CreateServer()
     {
-        return BridgeHost.CreateServer(AppContext.BaseDirectory, ConfigureLogging);
+        return BridgeHost.CreateServer(ConfigureLogging);
     }
 
     public static IHost CreateClient(string profileId)
     {
-        return BridgeHost.CreateClient(AppContext.BaseDirectory, profileId, ConfigureLogging);
+        return BridgeHost.CreateClient(profileId, ConfigureLogging);
     }
 
-    private static void ConfigureLogging(ILoggingBuilder logging, ConfigurationManager configuration)
+    private static void ConfigureLogging(
+        ILoggingBuilder logging,
+        ConfigurationManager configuration,
+        IHostEnvironment environment)
     {
         LoggingSettings settings = new();
         configuration.GetSection(LoggingSettings.SectionName).Bind(settings);
 
         _ = logging.ClearProviders();
         _ = logging.AddConsole();
-        _ = logging.AddCliFileLogger();
+        _ = logging.AddCliFileLogger(environment.ContentRootPath);
         _ = logging.SetMinimumLevel(settings.Level);
     }
 }

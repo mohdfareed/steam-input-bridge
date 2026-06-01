@@ -53,6 +53,8 @@ public static class ServerServices
         // Mouse forwarding
         _ = services.AddSingleton<IMouseInputSourceFactory, RawInputMouseSourceFactory>();
         _ = services.AddSingleton<ViiperMouseOutputFactory>();
+        _ = services.AddSingleton<TeensyMouseOutputService>();
+        _ = services.AddHostedService(static services => services.GetRequiredService<TeensyMouseOutputService>());
         _ = services.AddSingleton<TeensyMouseOutputFactory>();
         _ = services.AddSingleton<IMouseOutputFactory, MouseOutputFactory>();
         _ = services.AddSingleton<ServerMouseForwardingService>();

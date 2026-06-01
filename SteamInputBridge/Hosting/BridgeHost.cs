@@ -16,25 +16,27 @@ public static class BridgeHost
     // ========================================================================
 
     /// <summary>Creates a host with settings services only.</summary>
-    public static IHost CreateSettings(string basePath, Action<ILoggingBuilder, ConfigurationManager> configureLogging)
+    public static IHost CreateSettings(Action<ILoggingBuilder, ConfigurationManager, IHostEnvironment> configureLogging)
     {
-        HostApplicationBuilder builder = CreateBuilder(basePath, configureLogging, out string settingsPath);
+        HostApplicationBuilder builder = CreateBuilder(configureLogging, out string settingsPath);
         _ = builder.Services.AddApplicationSettings(builder.Configuration, settingsPath);
         return builder.Build();
     }
 
     /// <summary>Creates a server host.</summary>
-    public static IHost CreateServer(string basePath, Action<ILoggingBuilder, ConfigurationManager> configureLogging)
+    public static IHost CreateServer(Action<ILoggingBuilder, ConfigurationManager, IHostEnvironment> configureLogging)
     {
-        HostApplicationBuilder builder = CreateBuilder(basePath, configureLogging, out string settingsPath);
+        HostApplicationBuilder builder = CreateBuilder(configureLogging, out string settingsPath);
         _ = builder.Services.AddBridgeServer(builder.Configuration, settingsPath);
         return builder.Build();
     }
 
     /// <summary>Creates a client host.</summary>
-    public static IHost CreateClient(string basePath, string profileId, Action<ILoggingBuilder, ConfigurationManager> configureLogging)
+    public static IHost CreateClient(
+        string profileId,
+        Action<ILoggingBuilder, ConfigurationManager, IHostEnvironment> configureLogging)
     {
-        HostApplicationBuilder builder = CreateBuilder(basePath, configureLogging, out string settingsPath);
+        HostApplicationBuilder builder = CreateBuilder(configureLogging, out string settingsPath);
         _ = builder.Services.AddApplicationSettings(builder.Configuration, settingsPath);
         _ = builder.Services.AddBridgeClient(profileId);
         return builder.Build();
@@ -44,21 +46,15 @@ public static class BridgeHost
     // ========================================================================
 
     private static HostApplicationBuilder CreateBuilder(
-        string basePath,
-        Action<ILoggingBuilder, ConfigurationManager> configureLogging,
+        Action<ILoggingBuilder, ConfigurationManager, IHostEnvironment> configureLogging,
         out string settingsPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(basePath);
         ArgumentNullException.ThrowIfNull(configureLogging);
 
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
-        settingsPath = Path.Combine(basePath, "appsettings.json");
+        settingsPath = Path.Combine(builder.Environment.ContentRootPath, "appsettings.json");
 
-        _ = builder.Configuration
-            .SetBasePath(basePath)
-            .AddJsonFile(settingsPath, optional: true, reloadOnChange: true);
-
-        configureLogging(builder.Logging, builder.Configuration);
+        configureLogging(builder.Logging, builder.Configuration, builder.Environment);
 
         return builder;
     }
