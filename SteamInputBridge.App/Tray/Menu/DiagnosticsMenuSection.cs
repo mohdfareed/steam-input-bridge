@@ -14,7 +14,6 @@ internal sealed class DiagnosticsMenuSection
     private ToolStripMenuItem? _controller;
     private ToolStripMenuItem? _controllerSteam;
     private ToolStripMenuItem? _controllerVirtual;
-    private ToolStripMenuItem? _steamConfig;
 
     // MARK: Publics
     // ========================================================================
@@ -49,15 +48,12 @@ internal sealed class DiagnosticsMenuSection
         TrayMenuItems.SetCheckMark(_microphone, IsMicrophoneActive(microphone));
         _actionColor = TrayMenuItems.Item("Action color", FormatActionColor(actionColor));
         TrayMenuItems.SetCheckMark(_actionColor, HasActionColor(actionColor));
-        _steamConfig = TrayMenuItems.Item("Steam config", FormatSteamConfig(status.SteamInput));
-        TrayMenuItems.SetCheckMark(_steamConfig, HasSteamConfig(status.SteamInput));
 
         _ = menu.DropDownItems.Add(_mouse);
         _ = menu.DropDownItems.Add(_controller);
         _ = menu.DropDownItems.Add(new ToolStripSeparator());
         _ = menu.DropDownItems.Add(_microphone);
         _ = menu.DropDownItems.Add(_actionColor);
-        _ = menu.DropDownItems.Add(_steamConfig);
         return menu;
     }
 
@@ -76,12 +72,6 @@ internal sealed class DiagnosticsMenuSection
         {
             TrayMenuItems.SetValue(_actionColor, FormatActionColor(actionColor));
             TrayMenuItems.SetCheckMark(_actionColor, HasActionColor(actionColor));
-        }
-
-        if (_steamConfig is not null)
-        {
-            TrayMenuItems.SetValue(_steamConfig, FormatSteamConfig(status.SteamInput));
-            TrayMenuItems.SetCheckMark(_steamConfig, HasSteamConfig(status.SteamInput));
         }
     }
 
@@ -152,19 +142,6 @@ internal sealed class DiagnosticsMenuSection
             TrayMenuItems.SetValue(_controllerVirtual, TrayMenuItems.Number(controller.VirtualControllers));
             TrayMenuItems.SetCheckMark(_controllerVirtual, controller.VirtualControllers > 0);
         }
-    }
-
-    private static string FormatSteamConfig(BridgeSteamInputStatus status)
-    {
-        return !string.IsNullOrWhiteSpace(status.LastError)
-            ? "Error"
-            : string.IsNullOrWhiteSpace(status.ProfileId) ? "None" : status.ProfileId;
-    }
-
-    private static bool HasSteamConfig(BridgeSteamInputStatus status)
-    {
-        return string.IsNullOrWhiteSpace(status.LastError) &&
-            !string.IsNullOrWhiteSpace(status.ProfileId);
     }
 
     private static bool HasControllerRoutes(BridgeControllerStatus controller)
