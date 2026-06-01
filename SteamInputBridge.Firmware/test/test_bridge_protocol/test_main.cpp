@@ -6,6 +6,8 @@
 #include <Arduino.h>
 #endif
 
+using SteamInputBridge::BridgeMessage;
+using SteamInputBridge::BridgeMessageType;
 using SteamInputBridge::BridgeProtocolReader;
 using SteamInputBridge::MouseReport;
 
@@ -41,23 +43,37 @@ void writeMouseFrame(uint8_t* frame, uint8_t sequence,
   frame[3] = 1;
   frame[4] = 1;
   frame[5] = sequence;
-  frame[6] = BridgeProtocolReader::PayloadSize;
+  frame[6] = BridgeProtocolReader::MousePayloadSize;
 
   writeUInt16LittleEndian(frame + 7, report.buttons);
   writeInt16LittleEndian(frame + 9, report.deltaX);
   writeInt16LittleEndian(frame + 11, report.deltaY);
   writeInt16LittleEndian(frame + 13, report.wheel);
 
-  const uint16_t checksum = crc16(frame, BridgeProtocolReader::HeaderSize +
-                                             BridgeProtocolReader::PayloadSize);
+  const uint16_t checksum =
+      crc16(frame, BridgeProtocolReader::HeaderSize +
+                       BridgeProtocolReader::MousePayloadSize);
   writeUInt16LittleEndian(frame + 15, checksum);
 }
 
+void writeHandshakeProbe(uint8_t* frame, uint8_t sequence) {
+  frame[0] = 'S';
+  frame[1] = 'I';
+  frame[2] = 'B';
+  frame[3] = 1;
+  frame[4] = 0;
+  frame[5] = sequence;
+  frame[6] = 0;
+
+  const uint16_t checksum = crc16(frame, BridgeProtocolReader::HeaderSize);
+  writeUInt16LittleEndian(frame + 7, checksum);
+}
+
 bool readFrame(BridgeProtocolReader& reader, const uint8_t* frame,
-               MouseReport& report) {
+               uint8_t length, BridgeMessage& message) {
   bool parsed = false;
-  for (uint8_t i = 0; i < BridgeProtocolReader::FrameSize; i++) {
-    parsed = reader.read(frame[i], report);
+  for (uint8_t i = 0; i < length; i++) {
+    parsed = reader.read(frame[i], message);
   }
 
   return parsed;
@@ -68,43 +84,82 @@ bool readFrame(BridgeProtocolReader& reader, const uint8_t* frame,
 void parses_valid_mouse_frame() {
   BridgeProtocolReader reader;
   MouseReport input{0x0005, -42, 256, 120};
-  MouseReport output;
-  uint8_t frame[BridgeProtocolReader::FrameSize] = {};
+  BridgeMessage output;
+  uint8_t frame[BridgeProtocolReader::MouseFrameSize] = {};
   writeMouseFrame(frame, 7, input);
 
-  TEST_ASSERT_TRUE(readFrame(reader, frame, output));
-  TEST_ASSERT_EQUAL_UINT16(input.buttons, output.buttons);
-  TEST_ASSERT_EQUAL_INT16(input.deltaX, output.deltaX);
-  TEST_ASSERT_EQUAL_INT16(input.deltaY, output.deltaY);
-  TEST_ASSERT_EQUAL_INT16(input.wheel, output.wheel);
-  TEST_ASSERT_TRUE(output.hasInput());
+  TEST_ASSERT_TRUE(
+      readFrame(reader, frame, BridgeProtocolReader::MouseFrameSize, output));
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(BridgeMessageType::MouseReport),
+                          static_cast<uint8_t>(output.type));
+  TEST_ASSERT_EQUAL_UINT8(7, output.sequence);
+  TEST_ASSERT_EQUAL_UINT16(input.buttons, output.mouse.buttons);
+  TEST_ASSERT_EQUAL_INT16(input.deltaX, output.mouse.deltaX);
+  TEST_ASSERT_EQUAL_INT16(input.deltaY, output.mouse.deltaY);
+  TEST_ASSERT_EQUAL_INT16(input.wheel, output.mouse.wheel);
+  TEST_ASSERT_TRUE(output.mouse.hasInput());
 }
 
 void rejects_bad_checksum_and_resynchronizes() {
   BridgeProtocolReader reader;
-  MouseReport report;
-  uint8_t badFrame[BridgeProtocolReader::FrameSize] = {};
+  BridgeMessage message;
+  uint8_t badFrame[BridgeProtocolReader::MouseFrameSize] = {};
   writeMouseFrame(badFrame, 1, MouseReport{0x0001, 2, 3, 4});
   badFrame[15] ^= 0x7F;
 
-  TEST_ASSERT_FALSE(readFrame(reader, badFrame, report));
+  TEST_ASSERT_FALSE(readFrame(reader, badFrame,
+                              BridgeProtocolReader::MouseFrameSize, message));
 
-  uint8_t goodFrame[BridgeProtocolReader::FrameSize] = {};
+  uint8_t goodFrame[BridgeProtocolReader::MouseFrameSize] = {};
   writeMouseFrame(goodFrame, 2, MouseReport{0, 0, 0, 0});
-  TEST_ASSERT_TRUE(readFrame(reader, goodFrame, report));
-  TEST_ASSERT_FALSE(report.hasInput());
+  TEST_ASSERT_TRUE(readFrame(reader, goodFrame,
+                             BridgeProtocolReader::MouseFrameSize, message));
+  TEST_ASSERT_FALSE(message.mouse.hasInput());
 }
 
 void ignores_noise_before_magic() {
   BridgeProtocolReader reader;
-  MouseReport report;
-  TEST_ASSERT_FALSE(reader.read(0x00, report));
-  TEST_ASSERT_FALSE(reader.read('X', report));
+  BridgeMessage message;
+  TEST_ASSERT_FALSE(reader.read(0x00, message));
+  TEST_ASSERT_FALSE(reader.read('X', message));
 
-  uint8_t frame[BridgeProtocolReader::FrameSize] = {};
+  uint8_t frame[BridgeProtocolReader::MouseFrameSize] = {};
   writeMouseFrame(frame, 3, MouseReport{0x0002, 0, 0, 0});
-  TEST_ASSERT_TRUE(readFrame(reader, frame, report));
-  TEST_ASSERT_EQUAL_UINT16(0x0002, report.buttons);
+  TEST_ASSERT_TRUE(
+      readFrame(reader, frame, BridgeProtocolReader::MouseFrameSize, message));
+  TEST_ASSERT_EQUAL_UINT16(0x0002, message.mouse.buttons);
+}
+
+void parses_handshake_probe_and_writes_response() {
+  BridgeProtocolReader reader;
+  BridgeMessage message;
+  uint8_t probe[BridgeProtocolReader::HandshakeProbeFrameSize] = {};
+  writeHandshakeProbe(probe, 9);
+
+  TEST_ASSERT_TRUE(readFrame(
+      reader, probe, BridgeProtocolReader::HandshakeProbeFrameSize, message));
+  TEST_ASSERT_EQUAL_UINT8(
+      static_cast<uint8_t>(BridgeMessageType::HandshakeProbe),
+      static_cast<uint8_t>(message.type));
+  TEST_ASSERT_EQUAL_UINT8(9, message.sequence);
+
+  uint8_t response[BridgeProtocolReader::HandshakeResponseFrameSize] = {};
+  const uint8_t bytes =
+      SteamInputBridge::writeHandshakeResponse(9, response, sizeof(response));
+  TEST_ASSERT_EQUAL_UINT8(BridgeProtocolReader::HandshakeResponseFrameSize,
+                          bytes);
+  TEST_ASSERT_EQUAL_UINT8('S', response[0]);
+  TEST_ASSERT_EQUAL_UINT8('I', response[1]);
+  TEST_ASSERT_EQUAL_UINT8('B', response[2]);
+  TEST_ASSERT_EQUAL_UINT8(1, response[3]);
+  TEST_ASSERT_EQUAL_UINT8(0x80, response[4]);
+  TEST_ASSERT_EQUAL_UINT8(9, response[5]);
+  TEST_ASSERT_EQUAL_UINT8(BridgeProtocolReader::HandshakeResponsePayloadSize,
+                          response[6]);
+  TEST_ASSERT_EQUAL_UINT8('T', response[7]);
+  TEST_ASSERT_EQUAL_UINT8('N', response[8]);
+  TEST_ASSERT_EQUAL_UINT8('S', response[9]);
+  TEST_ASSERT_EQUAL_UINT8('Y', response[10]);
 }
 
 int runTests() {
@@ -112,6 +167,7 @@ int runTests() {
   RUN_TEST(parses_valid_mouse_frame);
   RUN_TEST(rejects_bad_checksum_and_resynchronizes);
   RUN_TEST(ignores_noise_before_magic);
+  RUN_TEST(parses_handshake_probe_and_writes_response);
   return UNITY_END();
 }
 

@@ -168,6 +168,15 @@ avoid repeating past mistakes.
 ## Verification
 
 - Add or update tests for changed behavior.
+- Do not add tests for every small implementation change. Add or update tests
+  only when they protect meaningful behavior or real risk: behavior changes,
+  bug-prone ownership/lifecycle paths, protocol/serialization boundaries,
+  observed regressions, or production-risk code.
+- Avoid duplicate coverage that exercises the same path repeatedly,
+  implementation-shape tests, and ceremonial tests. For narrow UI wiring, docs,
+  comments, naming, simple argument passing, or obvious plumbing already covered
+  by build/compile checks, prefer no new test unless there is a concrete failure
+  mode worth preserving.
 - Tests that only preserve implementation shape should be deleted, rewritten,
   or moved out of the normal tier.
 - Use targeted tests while developing. Run broader suites when the changed code

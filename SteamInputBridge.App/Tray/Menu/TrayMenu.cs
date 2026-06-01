@@ -87,13 +87,15 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
                 actions.OpenSteamInputConfigAsync,
                 onError,
                 connectionId => _ = TrayMenuItems.RunAsync(() => actions.StopClientAsync(connectionId), onError)));
-            _ = Menu.Items.Add(_shortcuts.Build(state.ServerStatus.Shortcuts));
+            _ = Menu.Items.Add(_shortcuts.Build(
+                state.ServerStatus.Shortcuts,
+                state.ServerStatus.Teensy,
+                actions.UploadTeensyFirmwareAsync,
+                onError));
             _ = Menu.Items.Add(_diagnostics.Build(
                 state.ServerStatus,
                 state.Microphone,
-                state.ActionColor,
-                actions.UploadTeensyFirmware,
-                onError));
+                state.ActionColor));
             _ = Menu.Items.Add(new ToolStripSeparator());
             _ = Menu.Items.Add(TrayMenuItems.ActionItem(
                 "Open Steam Input desktop config",
@@ -120,7 +122,7 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
     private void UpdateLiveItems(TrayMenuState state)
     {
         _profiles.Update(state.Profiles, state.LastActiveProfileId);
-        _shortcuts.Update(state.ServerStatus.Shortcuts);
+        _shortcuts.Update(state.ServerStatus.Shortcuts, state.ServerStatus.Teensy);
         _diagnostics.Update(state.ServerStatus, state.Microphone, state.ActionColor);
 
         if (_startupItem is not null)

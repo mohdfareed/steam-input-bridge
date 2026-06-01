@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -12,7 +13,9 @@ namespace SteamInputBridge.Outputs.Teensy;
 /// <summary>Maintains the Teensy board connection used by mouse output.</summary>
 public sealed class TeensyMouseOutputService : BackgroundService
 {
+    private const int PendingReportCapacity = 256;
     private static readonly TimeSpan DefaultSearchInterval = TimeSpan.FromSeconds(1);
+
     private static readonly Action<ILogger, TeensyConnectionState, string, string, Exception?> LogTeensyStatus =
         LoggerMessage.Define<TeensyConnectionState, string, string>(
             LogLevel.Information,
@@ -24,13 +27,22 @@ public sealed class TeensyMouseOutputService : BackgroundService
     private readonly TeensySerialConnection _connection;
     private readonly ILogger<TeensyMouseOutputService> _logger;
     private readonly TimeSpan _searchInterval;
+    private readonly Channel<MouseReport> _reports = Channel.CreateBounded<MouseReport>(
+        new BoundedChannelOptions(PendingReportCapacity)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false,
+        });
     private readonly Lock _gate = new();
     private readonly byte[] _frame = new byte[TeensyProtocol.FrameSize];
 
     private string? _configuredPort;
     private string? _connectedPort;
     private TeensyConnectionState _state = TeensyConnectionState.Connecting;
+    private int _connectionPauseCount;
     private byte _sequence;
+    private volatile bool _acceptReports;
 
     /// <summary>Creates the Teensy mouse output service.</summary>
     public TeensyMouseOutputService(SettingsService settings, ILogger<TeensyMouseOutputService> logger)
@@ -96,6 +108,20 @@ public sealed class TeensyMouseOutputService : BackgroundService
         return new TeensyMouseOutput(this);
     }
 
+    /// <summary>Closes the serial connection until the returned pause is disposed.</summary>
+    public IDisposable PauseConnection()
+    {
+        bool changed;
+        lock (_gate)
+        {
+            _connectionPauseCount++;
+            changed = SetConnectingLocked();
+        }
+
+        RaiseStatusChanged(changed);
+        return new ConnectionPause(this);
+    }
+
     internal ValueTask SendAsync(in MouseInput input, CancellationToken cancellationToken = default)
     {
         return SendReportAsync(input.Report, cancellationToken);
@@ -104,22 +130,12 @@ public sealed class TeensyMouseOutputService : BackgroundService
     internal ValueTask SendReportAsync(MouseReport report, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        bool changed = false;
-        lock (_gate)
-        {
-            if (!_connection.IsConnected)
-            {
-                return ValueTask.CompletedTask;
-            }
 
-            int bytes = TeensyProtocol.WriteMouseReport(_frame, _sequence++, report);
-            if (!_connection.TryWrite(_frame, bytes))
-            {
-                changed = SetConnectingLocked();
-            }
+        if (_acceptReports)
+        {
+            _ = _reports.Writer.TryWrite(report);
         }
 
-        RaiseStatusChanged(changed);
         return ValueTask.CompletedTask;
     }
 
@@ -127,6 +143,7 @@ public sealed class TeensyMouseOutputService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _settings.Changed += OnSettingsChanged;
+        Task writerTask = RunWriteLoopAsync(stoppingToken);
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -141,10 +158,20 @@ public sealed class TeensyMouseOutputService : BackgroundService
         }
         finally
         {
+            try
+            {
+                await writerTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+            }
+
             _settings.Changed -= OnSettingsChanged;
             lock (_gate)
             {
                 _connection.Close();
+                _acceptReports = false;
+                DropPendingReports();
                 _connectedPort = null;
                 _state = TeensyConnectionState.Connecting;
             }
@@ -156,6 +183,8 @@ public sealed class TeensyMouseOutputService : BackgroundService
     {
         lock (_gate)
         {
+            _acceptReports = false;
+            DropPendingReports();
             _connection.Dispose();
         }
 
@@ -181,10 +210,33 @@ public sealed class TeensyMouseOutputService : BackgroundService
         RaiseStatusChanged(changed);
     }
 
+    private async Task RunWriteLoopAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            while (await _reports.Reader.WaitToReadAsync(stoppingToken).ConfigureAwait(false))
+            {
+                while (_reports.Reader.TryRead(out MouseReport report))
+                {
+                    bool changed = WriteReport(report);
+                    RaiseStatusChanged(changed);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+    }
+
     private bool RefreshConnection()
     {
         lock (_gate)
         {
+            if (_connectionPauseCount > 0)
+            {
+                return SetConnectingLocked();
+            }
+
             if (_connection.IsConnected)
             {
                 string? connectedPort = _connection.PortName;
@@ -199,6 +251,20 @@ public sealed class TeensyMouseOutputService : BackgroundService
         }
     }
 
+    private bool WriteReport(MouseReport report)
+    {
+        lock (_gate)
+        {
+            if (!_connection.IsConnected)
+            {
+                return false;
+            }
+
+            int bytes = TeensyProtocol.WriteMouseReport(_frame, _sequence++, report);
+            return !_connection.TryWrite(_frame, bytes) && SetConnectingLocked();
+        }
+    }
+
     private bool SetConnectedLocked(string? connectedPort)
     {
         connectedPort = string.IsNullOrWhiteSpace(connectedPort) ? null : connectedPort;
@@ -206,16 +272,37 @@ public sealed class TeensyMouseOutputService : BackgroundService
             !string.Equals(_connectedPort, connectedPort, StringComparison.OrdinalIgnoreCase);
         _state = TeensyConnectionState.Connected;
         _connectedPort = connectedPort;
+        _acceptReports = true;
         return changed;
     }
 
     private bool SetConnectingLocked()
     {
         bool changed = _state != TeensyConnectionState.Connecting || _connectedPort is not null;
+        _acceptReports = false;
         _connection.Close();
+        DropPendingReports();
         _state = TeensyConnectionState.Connecting;
         _connectedPort = null;
         return changed;
+    }
+
+    private void DropPendingReports()
+    {
+        while (_reports.Reader.TryRead(out _))
+        {
+        }
+    }
+
+    private void ReleaseConnectionPause()
+    {
+        lock (_gate)
+        {
+            if (_connectionPauseCount > 0)
+            {
+                _connectionPauseCount--;
+            }
+        }
     }
 
     private void RaiseStatusChanged(bool changed)
@@ -236,6 +323,22 @@ public sealed class TeensyMouseOutputService : BackgroundService
             status.ConfiguredPort ?? "Auto",
             status.ConnectedPort ?? "None",
             null);
+    }
+
+    private sealed class ConnectionPause(TeensyMouseOutputService service) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            service.ReleaseConnectionPause();
+        }
     }
 }
 

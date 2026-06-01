@@ -33,8 +33,71 @@ public sealed class TeensyMouseOutputTests
         Assert.AreEqual(short.MinValue, BinaryPrimitives.ReadInt16LittleEndian(frame.AsSpan(11)));
         Assert.AreEqual((short)120, BinaryPrimitives.ReadInt16LittleEndian(frame.AsSpan(13)));
         Assert.AreEqual(
-            TeensyProtocol.ComputeCrc16(frame.AsSpan(0, TeensyProtocol.HeaderSize + TeensyProtocol.PayloadSize)),
+            TeensyProtocol.ComputeCrc16(frame.AsSpan(0, TeensyProtocol.HeaderSize + TeensyProtocol.MousePayloadSize)),
             BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(15)));
+    }
+
+    [TestMethod]
+    public void HandshakeProbeEncodesFrameAndValidatesResponse()
+    {
+        byte[] probe = new byte[TeensyProtocol.HandshakeProbeFrameSize];
+
+        int bytes = TeensyProtocol.WriteHandshakeProbe(probe, sequence: 4);
+
+        Assert.AreEqual(TeensyProtocol.HandshakeProbeFrameSize, bytes);
+        CollectionAssert.AreEqual(new byte[] { (byte)'S', (byte)'I', (byte)'B', 1, 0, 4, 0 }, probe[..7]);
+        Assert.AreEqual(
+            TeensyProtocol.ComputeCrc16(probe.AsSpan(0, TeensyProtocol.HeaderSize)),
+            BinaryPrimitives.ReadUInt16LittleEndian(probe.AsSpan(7)));
+
+        byte[] response =
+        [
+            (byte)'S',
+            (byte)'I',
+            (byte)'B',
+            1,
+            0x80,
+            4,
+            4,
+            (byte)'T',
+            (byte)'N',
+            (byte)'S',
+            (byte)'Y',
+            0,
+            0,
+        ];
+        ushort checksum = TeensyProtocol.ComputeCrc16(
+            response.AsSpan(0, TeensyProtocol.HeaderSize + TeensyProtocol.HandshakeResponsePayloadSize));
+        BinaryPrimitives.WriteUInt16LittleEndian(response.AsSpan(11), checksum);
+
+        Assert.IsTrue(TeensyProtocol.IsHandshakeResponse(response, sequence: 4));
+        Assert.IsFalse(TeensyProtocol.IsHandshakeResponse(response, sequence: 5));
+    }
+
+    [TestMethod]
+    public void HandshakeReaderSkipsFirmwareDiagnosticText()
+    {
+        byte[] response = HandshakeResponse(sequence: 4);
+        byte[] frame = new byte[TeensyProtocol.HandshakeResponseFrameSize];
+        int offset = 0;
+        bool parsed = false;
+
+        foreach (byte value in "ok uptime_ms=1 reports=0\r\n"u8)
+        {
+            parsed |= TeensyProtocol.TryReadHandshakeResponseByte(value, sequence: 4, frame, ref offset);
+        }
+
+        foreach (byte value in response)
+        {
+            parsed |= TeensyProtocol.TryReadHandshakeResponseByte(value, sequence: 4, frame, ref offset);
+        }
+
+        foreach (byte value in "event=handshake sequence=4\r\n"u8)
+        {
+            parsed |= TeensyProtocol.TryReadHandshakeResponseByte(value, sequence: 4, frame, ref offset);
+        }
+
+        Assert.IsTrue(parsed);
     }
 
     [TestMethod]
@@ -109,12 +172,36 @@ public sealed class TeensyMouseOutputTests
         await using IMouseOutput output = context.Service.CreateOutput();
         await output.ClearAsync().ConfigureAwait(false);
 
+        await WaitUntilAsync(() => context.Connection.LastWrite.Length == TeensyProtocol.FrameSize).ConfigureAwait(false);
+
         Assert.AreEqual(TeensyProtocol.FrameSize, context.Connection.LastWrite.Length);
         Assert.AreEqual(0, BinaryPrimitives.ReadUInt16LittleEndian(context.Connection.LastWrite.AsSpan(7)));
         Assert.AreEqual(0, BinaryPrimitives.ReadInt16LittleEndian(context.Connection.LastWrite.AsSpan(9)));
         Assert.AreEqual(0, BinaryPrimitives.ReadInt16LittleEndian(context.Connection.LastWrite.AsSpan(11)));
         Assert.AreEqual(0, BinaryPrimitives.ReadInt16LittleEndian(context.Connection.LastWrite.AsSpan(13)));
 
+        await context.Service.StopAsync(default).ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    public async Task MouseOutputSendDoesNotWaitForSerialWrite()
+    {
+        using TestContext context = CreateService(port: null);
+        context.Discovery.Ports.Add("COM7");
+        context.Connection.ConnectAllowed = true;
+        await context.Service.StartAsync(default).ConfigureAwait(false);
+        await WaitUntilAsync(() => context.Service.IsConnected).ConfigureAwait(false);
+
+        context.Connection.BlockWrites = true;
+        await using IMouseOutput output = context.Service.CreateOutput();
+
+        ValueTask send = output.SendAsync(
+            new MouseInput(new(MouseButtons.Left, 1, 0, 0), DeviceName: null));
+
+        Assert.IsTrue(send.IsCompletedSuccessfully);
+        await WaitUntilAsync(() => context.Connection.WriteStarted).ConfigureAwait(false);
+
+        context.Connection.ReleaseWrites();
         await context.Service.StopAsync(default).ConfigureAwait(false);
     }
 
@@ -148,6 +235,30 @@ public sealed class TeensyMouseOutputTests
         }
     }
 
+    private static byte[] HandshakeResponse(byte sequence)
+    {
+        byte[] response =
+        [
+            (byte)'S',
+            (byte)'I',
+            (byte)'B',
+            1,
+            0x80,
+            sequence,
+            4,
+            (byte)'T',
+            (byte)'N',
+            (byte)'S',
+            (byte)'Y',
+            0,
+            0,
+        ];
+        ushort checksum = TeensyProtocol.ComputeCrc16(
+            response.AsSpan(0, TeensyProtocol.HeaderSize + TeensyProtocol.HandshakeResponsePayloadSize));
+        BinaryPrimitives.WriteUInt16LittleEndian(response.AsSpan(11), checksum);
+        return response;
+    }
+
     private sealed class TestContext(
         TestOptionsMonitor<SteamInputBridgeSettings> monitor,
         SettingsService settings,
@@ -166,6 +277,7 @@ public sealed class TeensyMouseOutputTests
         public void Dispose()
         {
             Service.Dispose();
+            Connection.Dispose();
             settings.Dispose();
         }
     }
@@ -187,10 +299,16 @@ public sealed class TeensyMouseOutputTests
 
     private sealed class TestSerialConnection : TeensySerialConnection
     {
+        private readonly TaskCompletionSource _writeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseWrites = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private bool _isConnected;
         private string? _portName;
 
         public bool ConnectAllowed { get; set; }
+
+        public bool BlockWrites { get; set; }
+
+        public bool WriteStarted => _writeStarted.Task.IsCompleted;
 
         public override bool IsConnected => _isConnected;
 
@@ -217,12 +335,24 @@ public sealed class TeensyMouseOutputTests
                 return false;
             }
 
+            if (BlockWrites)
+            {
+                _ = _writeStarted.TrySetResult();
+                _ = _releaseWrites.Task.Wait(TimeSpan.FromSeconds(3));
+            }
+
             LastWrite = frame[..bytes];
             return true;
         }
 
+        public void ReleaseWrites()
+        {
+            _ = _releaseWrites.TrySetResult();
+        }
+
         public override void Close()
         {
+            ReleaseWrites();
             _isConnected = false;
             _portName = null;
         }

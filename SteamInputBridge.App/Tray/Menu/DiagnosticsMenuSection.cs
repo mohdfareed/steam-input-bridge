@@ -11,8 +11,6 @@ internal sealed class DiagnosticsMenuSection
     private ToolStripMenuItem? _mouse;
     private ToolStripMenuItem? _mouseOutput;
     private ToolStripMenuItem? _mousePointer;
-    private ToolStripMenuItem? _teensy;
-    private ToolStripMenuItem? _teensyStatus;
     private ToolStripMenuItem? _controller;
     private ToolStripMenuItem? _controllerSteam;
     private ToolStripMenuItem? _controllerVirtual;
@@ -24,9 +22,7 @@ internal sealed class DiagnosticsMenuSection
     public ToolStripMenuItem Build(
         BridgeServerStatus status,
         MicrophoneStatus microphone,
-        string? actionColor,
-        System.Action uploadTeensyFirmware,
-        System.Action<System.Exception> onError)
+        string? actionColor)
     {
         ToolStripMenuItem menu = TrayMenuItems.Menu("Diagnostics");
         _mouse = TrayMenuItems.Menu("Mouse");
@@ -38,13 +34,6 @@ internal sealed class DiagnosticsMenuSection
 
         _ = _mouse.DropDownItems.Add(_mouseOutput);
         _ = _mouse.DropDownItems.Add(_mousePointer);
-
-        _teensy = TrayMenuItems.Menu("Teensy");
-        TrayMenuItems.SetCheckMark(_teensy, status.Teensy.Connected);
-        _teensyStatus = TrayMenuItems.Item("Status", FormatTeensy(status.Teensy));
-        TrayMenuItems.SetCheckMark(_teensyStatus, status.Teensy.Connected);
-        _ = _teensy.DropDownItems.Add(_teensyStatus);
-        _ = _teensy.DropDownItems.Add(TrayMenuItems.ActionItem("Upload firmware...", uploadTeensyFirmware, onError));
 
         _controller = TrayMenuItems.Menu("Controller");
         TrayMenuItems.SetCheckMark(_controller, HasControllerRoutes(status.Controller));
@@ -64,8 +53,8 @@ internal sealed class DiagnosticsMenuSection
         TrayMenuItems.SetCheckMark(_steamConfig, HasSteamConfig(status.SteamInput));
 
         _ = menu.DropDownItems.Add(_mouse);
-        _ = menu.DropDownItems.Add(_teensy);
         _ = menu.DropDownItems.Add(_controller);
+        _ = menu.DropDownItems.Add(new ToolStripSeparator());
         _ = menu.DropDownItems.Add(_microphone);
         _ = menu.DropDownItems.Add(_actionColor);
         _ = menu.DropDownItems.Add(_steamConfig);
@@ -75,7 +64,6 @@ internal sealed class DiagnosticsMenuSection
     public void Update(BridgeServerStatus status, MicrophoneStatus microphone, string? actionColor)
     {
         SetMouse(status.Mouse);
-        SetTeensy(status.Teensy);
         SetController(status.Controller);
 
         if (_microphone is not null)
@@ -126,13 +114,6 @@ internal sealed class DiagnosticsMenuSection
         return !string.IsNullOrWhiteSpace(color);
     }
 
-    private static string FormatTeensy(BridgeTeensyStatus status)
-    {
-        return status.Connected && !string.IsNullOrWhiteSpace(status.ConnectedPort)
-            ? $"Connected: {status.ConnectedPort}"
-            : status.State;
-    }
-
     private void SetMouse(BridgeMouseStatus mouse)
     {
         if (_mouse is not null)
@@ -150,20 +131,6 @@ internal sealed class DiagnosticsMenuSection
         {
             TrayMenuItems.SetValue(_mousePointer, TrayMenuItems.Enabled(mouse.PointerEnabled));
             TrayMenuItems.SetCheckMark(_mousePointer, mouse.PointerEnabled);
-        }
-    }
-
-    private void SetTeensy(BridgeTeensyStatus teensy)
-    {
-        if (_teensy is not null)
-        {
-            TrayMenuItems.SetCheckMark(_teensy, teensy.Connected);
-        }
-
-        if (_teensyStatus is not null)
-        {
-            TrayMenuItems.SetValue(_teensyStatus, FormatTeensy(teensy));
-            TrayMenuItems.SetCheckMark(_teensyStatus, teensy.Connected);
         }
     }
 

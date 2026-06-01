@@ -7,7 +7,6 @@ Steam Input orchestration and local input forwarding.
 - Steam, for Steam Input profiles and game shortcut support
 - VIIPER server/runtime, for virtual controller and mouse output
 - Teensy 4.0 hardware, for Teensy mouse output
-- [PJRC Teensy Loader](https://www.pjrc.com/teensy/loader_win10.html), for tray-driven Teensy firmware uploads.
 - Steam ROM Manager (optional), only if using SRM shortcut export feature
 
 ## Usage
