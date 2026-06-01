@@ -2,7 +2,7 @@ using System;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
-using SteamInputBridge.Forwarding.Mouse;
+using SteamInputBridge.Inputs.Mouse;
 
 namespace SteamInputBridge.Inputs.RawInput;
 
@@ -22,13 +22,11 @@ public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
     }
 
     /// <summary>Creates a Raw Input mouse source.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Connected input source.</returns>
-    public static Task<RawInputMouseSource> ConnectAsync(CancellationToken cancellationToken = default)
+    public static ValueTask<RawInputMouseSource> ConnectAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 #pragma warning disable CA2000 // Ownership transfers to the caller.
-        return Task.FromResult(new RawInputMouseSource());
+        return ValueTask.FromResult(new RawInputMouseSource());
 #pragma warning restore CA2000
     }
 
@@ -87,5 +85,16 @@ public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
     {
         _ = Interlocked.Exchange(ref _isConnected, 0);
         return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>Creates Raw Input mouse sources.</summary>
+[SupportedOSPlatform("windows")]
+public sealed class RawInputMouseSourceFactory : IMouseInputSourceFactory
+{
+    /// <inheritdoc />
+    public async ValueTask<IMouseInputSource> ConnectAsync(CancellationToken cancellationToken = default)
+    {
+        return await RawInputMouseSource.ConnectAsync(cancellationToken).ConfigureAwait(false);
     }
 }

@@ -1,99 +1,112 @@
 using System;
-using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
 namespace SteamInputBridge.Shortcuts;
 
-/// <summary>Keyboard shortcut modifiers.</summary>
-[Flags]
-internal enum KeyboardShortcutModifiers
+/// <summary>Named shortcut target.</summary>
+public enum ShortcutTarget
 {
-    /// <summary>No modifier.</summary>
-    None = 0,
+    /// <summary>Virtual pointer report forwarding.</summary>
+    MousePointer,
 
-    /// <summary>Alt key.</summary>
-    Alt = 0x0001,
+    /// <summary>System microphone mute state.</summary>
+    Microphone,
 
-    /// <summary>Control key.</summary>
-    Control = 0x0002,
-
-    /// <summary>Shift key.</summary>
-    Shift = 0x0004,
-
-    /// <summary>Windows key.</summary>
-    Windows = 0x0008,
+    /// <summary>Action color target.</summary>
+    ActionColor,
 }
 
-/// <summary>Parsed keyboard shortcut combination.</summary>
-internal readonly record struct KeyboardShortcutCombination(
-    KeyboardShortcutModifiers Modifiers,
-    ushort VirtualKey)
+/// <summary>State applied when a shortcut is pressed.</summary>
+public enum ShortcutValue
 {
+    /// <summary>Enable the target.</summary>
+    Enable,
+
+    /// <summary>Disable the target.</summary>
+    Disable,
+
+    /// <summary>Toggle the target between enabled and disabled.</summary>
+    Toggle,
+}
+
+/// <summary>Shortcut target setting value.</summary>
+[TypeConverter(typeof(ShortcutTargetSettingConverter))]
+public readonly record struct ShortcutTargetSetting(ShortcutTarget Target, string? Color)
+{
+    // MARK: Publics
+    // ========================================================================
+
+    /// <summary>Parses a shortcut target setting value.</summary>
+    public static ShortcutTargetSetting Parse(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        string trimmed = value.Trim();
+
+        return TryNormalizeColor(trimmed, out string? color)
+            ? new ShortcutTargetSetting(ShortcutTarget.ActionColor, color)
+            : IsValidTarget(trimmed, out ShortcutTarget target)
+            ? new ShortcutTargetSetting(target, null)
+            : throw new FormatException($"Unsupported shortcut target \"{value}\".");
+    }
+
     /// <inheritdoc />
     public override string ToString()
     {
-        List<string> parts = [];
-        if ((Modifiers & KeyboardShortcutModifiers.Control) != 0)
-        {
-            parts.Add("Ctrl");
-        }
-
-        if ((Modifiers & KeyboardShortcutModifiers.Alt) != 0)
-        {
-            parts.Add("Alt");
-        }
-
-        if ((Modifiers & KeyboardShortcutModifiers.Shift) != 0)
-        {
-            parts.Add("Shift");
-        }
-
-        if ((Modifiers & KeyboardShortcutModifiers.Windows) != 0)
-        {
-            parts.Add("Win");
-        }
-
-        parts.Add(FormatVirtualKey(VirtualKey));
-        return string.Join("+", parts);
+        return Target == ShortcutTarget.ActionColor
+            ? Color ?? ""
+            : Target.ToString();
     }
 
-    private static string FormatVirtualKey(ushort virtualKey)
+    // MARK: Implementation
+    // ========================================================================
+
+    private static bool IsValidTarget(string value, out ShortcutTarget target)
     {
-        return virtualKey is >= 0x70 and <= 0x87
-            ? $"F{virtualKey - 0x70 + 1}"
-            : virtualKey is >= 0x60 and <= 0x69
-            ? $"Num{virtualKey - 0x60}"
-            : virtualKey is >= 'A' and <= 'Z'
-            ? ((char)virtualKey).ToString()
-            : virtualKey is >= '0' and <= '9'
-            ? ((char)virtualKey).ToString()
-            : virtualKey switch
+        return Enum.TryParse(value, ignoreCase: true, out target) && Enum.IsDefined(target) && target != ShortcutTarget.ActionColor;
+    }
+
+    private static bool TryNormalizeColor(string value, [NotNullWhen(true)] out string? normalized)
+    {
+        normalized = null;
+        if (value.Length != 7 || value[0] != '#')
+        {
+            return false;
+        }
+
+        for (int i = 1; i < value.Length; i++)
+        {
+            char c = value[i];
+            bool hex = c is (>= '0' and <= '9') or
+                (>= 'a' and <= 'f') or
+                (>= 'A' and <= 'F');
+
+            if (!hex)
             {
-                0x6A => "Num*",
-                0x6B => "Num+",
-                0x6D => "Num-",
-                0x6E => "Num.",
-                0x6F => "Num/",
-                0x0D => "Enter",
-                0x1B => "Esc",
-                0x20 => "Space",
-                0x09 => "Tab",
-                0x08 => "Backspace",
-                _ => $"0x{virtualKey:x2}",
-            };
+                return false;
+            }
+        }
+
+        normalized = value.ToUpperInvariant();
+        return true;
     }
 }
 
-/// <summary>Registered keyboard shortcut.</summary>
-internal sealed record KeyboardShortcutRegistration(
-    int Id,
-    KeyboardShortcutCombination Combination);
-
-/// <summary>Receives global keyboard shortcut presses and releases.</summary>
-internal interface IKeyboardShortcutListener : IDisposable
+/// <summary>Converts JSON shortcut target strings to shortcut target settings.</summary>
+public sealed class ShortcutTargetSettingConverter : TypeConverter
 {
-    /// <summary>Replaces the active shortcut registrations.</summary>
-    void Update(
-        IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-        Action<int> pressed,
-        Action<int> released);
+    /// <inheritdoc />
+    public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
+    {
+        return sourceType == typeof(string) || base.CanConvertFrom(context, sourceType);
+    }
+
+    /// <inheritdoc />
+    public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object value)
+    {
+        return value is string text
+            ? ShortcutTargetSetting.Parse(text)
+            : base.ConvertFrom(context, culture, value);
+    }
 }

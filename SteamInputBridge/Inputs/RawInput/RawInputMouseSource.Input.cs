@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using SteamInputBridge.Forwarding.Mouse;
+using SteamInputBridge.Inputs.Mouse;
 
 namespace SteamInputBridge.Inputs.RawInput;
 
@@ -32,9 +32,7 @@ public sealed partial class RawInputMouseSource
 
     private static MouseButtons ApplyButton(
         MouseButtons buttons,
-        ushort flags,
-        ushort downFlag,
-        ushort upFlag,
+        ushort flags, ushort downFlag, ushort upFlag,
         MouseButtons button)
     {
         return (flags & downFlag) != 0

@@ -2,27 +2,46 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using SteamInputBridge.Settings.Profiles;
-using SteamInputBridge.Shortcuts;
+using SteamInputBridge.Shortcuts.Runtime;
 
 namespace SteamInputBridge.Settings;
 
-internal static class SettingsValidation
+/// <summary>Validates application settings after configuration binding.</summary>
+public static class SettingsValidation
 {
+    // MARK: Publics
+    // ========================================================================
+
+    /// <summary>Throws when the supplied settings are invalid.</summary>
     public static void Validate(SteamInputBridgeSettings settings)
     {
-        ArgumentNullException.ThrowIfNull(settings);
-
-        List<string> failures = [];
-        ValidateViiper(settings.Viiper, failures);
-        ValidateShortcuts(settings.Shortcuts, failures);
-        ValidateProfiles(settings.Games, failures);
-
-        if (failures.Count > 0)
+        if (!TryValidate(settings, out string validationErrors))
         {
-            throw new InvalidOperationException(string.Join(Environment.NewLine, failures));
+            throw new InvalidOperationException(validationErrors);
         }
     }
+
+    /// <summary>Validates settings and returns formatted validation failures.</summary>
+    public static bool TryValidate(SteamInputBridgeSettings? settings, out string validationErrors)
+    {
+        List<string> failures = [];
+        if (settings is null)
+        {
+            failures.Add("settings are required.");
+        }
+        else
+        {
+            ValidateViiper(settings.Viiper, failures);
+            ValidateShortcuts(settings.Shortcuts, failures);
+            ValidateProfiles(settings.Games, failures);
+        }
+
+        validationErrors = string.Join(Environment.NewLine, failures);
+        return failures.Count == 0;
+    }
+
+    // MARK: Implementation
+    // ========================================================================
 
     private static void ValidateViiper(ViiperSettings settings, List<string> failures)
     {
@@ -37,30 +56,24 @@ internal static class SettingsValidation
         }
     }
 
-    private static void ValidateShortcuts(
-        Collection<ShortcutEntry> shortcuts,
-        List<string> failures)
+    private static void ValidateShortcuts(Collection<ShortcutEntry> shortcuts, List<string> failures)
     {
-        HashSet<string> targetsByKey = new(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < shortcuts.Count; i++)
+        foreach (ShortcutEntry shortcut in shortcuts)
         {
-            ShortcutEntry shortcut = shortcuts[i];
-            string prefix = $"shortcuts:{i}";
-            KeyboardShortcutCombination? combination = null;
             if (string.IsNullOrWhiteSpace(shortcut.Keys))
             {
-                failures.Add($"{prefix}:keys is required.");
+                failures.Add("shortcuts:keys is required.");
+                continue;
             }
-            else
+
+            string prefix = $"shortcuts:{shortcut.Keys.Trim()}";
+            try
             {
-                try
-                {
-                    combination = KeyboardShortcutParser.Parse(shortcut.Keys.Trim());
-                }
-                catch (FormatException exception)
-                {
-                    failures.Add($"{prefix}:keys is invalid: {exception.Message}");
-                }
+                _ = KeyboardShortcutParser.Parse(shortcut.Keys.Trim());
+            }
+            catch (FormatException exception)
+            {
+                failures.Add($"{prefix}:keys is invalid: {exception.Message}");
             }
 
             if (shortcut.Targets.Count == 0)
@@ -68,29 +81,14 @@ internal static class SettingsValidation
                 failures.Add($"{prefix}:targets is required.");
             }
 
-            HashSet<ShortcutTargetSpec> entryTargets = [];
-            foreach (ShortcutTargetSpec target in shortcut.Targets)
+            if (!Enum.IsDefined(shortcut.Action))
             {
-                if (!entryTargets.Add(target))
-                {
-                    failures.Add($"{prefix}:targets duplicates {target}.");
-                }
-                else if (combination.HasValue && !targetsByKey.Add($"{combination.Value}\0{target}"))
-                {
-                    failures.Add($"{prefix}:targets duplicates another shortcut target for the same keys.");
-                }
-            }
-
-            if (!shortcut.Value.HasValue)
-            {
-                failures.Add($"{prefix}:value is required.");
+                failures.Add($"{prefix}:action is invalid.");
             }
         }
     }
 
-    private static void ValidateProfiles(
-        IReadOnlyDictionary<string, GameProfile> profiles,
-        List<string> failures)
+    private static void ValidateProfiles(IReadOnlyDictionary<string, GameProfile> profiles, List<string> failures)
     {
         foreach ((string profileId, GameProfile profile) in profiles)
         {
@@ -101,22 +99,25 @@ internal static class SettingsValidation
             }
 
             bool hasExecutable = !string.IsNullOrWhiteSpace(profile.Executable);
-            bool hasReceivers = profile.ReceiverProcesses.Any(static receiver =>
-                !string.IsNullOrWhiteSpace(receiver));
+            bool hasReceivers = profile.ReceiverProcesses.Any(
+                static receiver => !string.IsNullOrWhiteSpace(receiver));
+
             if (!hasExecutable && !hasReceivers)
             {
-                failures.Add(
-                    $"games:{profileId}:receiverProcesses is required when executable is missing.");
+                failures.Add($"games:{profileId}:receiverProcesses is required when executable is missing.");
             }
 
-            if (profile.ControllerOutput.HasValue &&
-                !Enum.IsDefined(profile.ControllerOutput.Value))
+            if (profile.ReceiverProcesses.Any(string.IsNullOrWhiteSpace))
+            {
+                failures.Add($"games:{profileId}:receiverProcesses cannot contain empty values.");
+            }
+
+            if (profile.ControllerOutput.HasValue && !Enum.IsDefined(profile.ControllerOutput.Value))
             {
                 failures.Add($"games:{profileId}:controllerOutput is invalid.");
             }
 
-            if (profile.MouseOutput.HasValue &&
-                !Enum.IsDefined(profile.MouseOutput.Value))
+            if (profile.MouseOutput.HasValue && !Enum.IsDefined(profile.MouseOutput.Value))
             {
                 failures.Add($"games:{profileId}:mouseOutput is invalid.");
             }

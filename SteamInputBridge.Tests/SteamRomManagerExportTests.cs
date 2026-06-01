@@ -1,79 +1,33 @@
-using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Text.Json;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using SteamInputBridge.Settings;
-using SteamInputBridge.Settings.Profiles;
 using SteamInputBridge.Steam;
 
 namespace SteamInputBridge.Tests;
 
-/// <summary>Tests Steam ROM Manager manifest export.</summary>
 [TestClass]
 public sealed class SteamRomManagerExportTests
 {
-    /// <summary>Checks SRM entries launch the shortcut mode.</summary>
     [TestMethod]
-    public void CreateJsonUsesClientRunLaunchOptions()
+    public void CreateJsonWritesShortcutEntriesForProfiles()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
+        Dictionary<string, GameProfile> profiles = new()
         {
-            File.WriteAllText(settingsPath, SettingsJson());
-            using ServiceProvider services = CreateServices(settingsPath);
-            ProfilesService profiles = services.GetRequiredService<ProfilesService>();
+            ["simple"] = new() { Title = "Simple Game" },
+            ["space profile"] = new() { Title = "Space Game" },
+        };
 
-            string json = SteamRomManagerExport.CreateJson(
-                profiles,
-                @"C:\Tools\vm\SteamInputBridge.exe");
+        string json = SteamRomManagerExport.CreateJson(profiles, @"C:\Tools\SteamInputBridge.exe");
 
-            using JsonDocument document = JsonDocument.Parse(json);
-            JsonElement entry = document.RootElement[0];
-            Assert.AreEqual("Frag Punk", entry.GetProperty("title").GetString());
-            Assert.AreEqual(
-                @"C:\Tools\vm\SteamInputBridge.exe",
-                entry.GetProperty("target").GetString());
-            Assert.AreEqual(@"shortcut ""frag punk""", entry.GetProperty("launchOptions").GetString());
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    private static ServiceProvider CreateServices(string settingsPath)
-    {
-        IConfigurationRoot configuration = new ConfigurationBuilder()
-            .AddJsonFile(settingsPath, optional: false, reloadOnChange: true)
-            .Build();
-
-        ServiceCollection services = new();
-        _ = services.AddSingleton<ILogger<ApplicationSettingsService>>(NullLogger<ApplicationSettingsService>.Instance);
-        _ = services.AddSingleton<ILogger<ProfilesService>>(NullLogger<ProfilesService>.Instance);
-        _ = services.AddApplicationSettings(configuration, settingsPath);
-        _ = services.AddProfiles();
-        return services.BuildServiceProvider();
-    }
-
-    private static string SettingsJson()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Games": {
-              "frag punk": {
-                "Title": "Frag Punk",
-                "Executable": "C:\\Games\\FragPunk\\FragPunk.exe"
-              }
-            }
-          }
-        }
-        """;
+        using JsonDocument document = JsonDocument.Parse(json);
+        Assert.AreEqual(2, document.RootElement.GetArrayLength());
+        JsonElement first = document.RootElement[0];
+        JsonElement second = document.RootElement[1];
+        Assert.AreEqual("Simple Game", first.GetProperty("title").GetString());
+        Assert.AreEqual(@"C:\Tools\SteamInputBridge.exe", first.GetProperty("target").GetString());
+        Assert.AreEqual(@"C:\Tools", first.GetProperty("startIn").GetString());
+        Assert.AreEqual("shortcut simple", first.GetProperty("launchOptions").GetString());
+        Assert.IsFalse(first.GetProperty("appendArgsToExecutable").GetBoolean());
+        Assert.AreEqual(@"shortcut ""space profile""", second.GetProperty("launchOptions").GetString());
     }
 }

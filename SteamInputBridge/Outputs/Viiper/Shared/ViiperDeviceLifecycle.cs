@@ -61,6 +61,7 @@ internal static class ViiperDeviceLifecycle
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
+
                 throw;
             }
         }
@@ -92,7 +93,7 @@ internal static class ViiperDeviceLifecycle
         }
     }
 
-    // MARK: Privates
+    // MARK: Creation
     // ========================================================================
 
     private static async Task<Device> CreateDeviceAsync(
@@ -107,13 +108,7 @@ internal static class ViiperDeviceLifecycle
 
             try
             {
-                Device device = await AddDeviceAsync(
-                        client,
-                        busId,
-                        definition,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-
+                Device device = await AddDeviceAsync(client, busId, definition, cancellationToken).ConfigureAwait(false);
                 ViiperOutputLog.CreatedDevice(logger, definition.DisplayName, device.BusID);
                 return device;
             }
@@ -153,39 +148,6 @@ internal static class ViiperDeviceLifecycle
         return client.BusDeviceAddAsync(busId, request, cancellationToken);
     }
 
-    private static async Task RemoveBusIfPresentAsync(
-        ViiperClient client,
-        uint busId,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _ = await client.BusRemoveAsync(busId, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (
-            exception is IOException or InvalidOperationException or ObjectDisposedException)
-        {
-        }
-    }
-
-    private static bool IsTransientCreateFailure(InvalidOperationException exception)
-    {
-        return IsAutoAttachConflict(exception) || IsBusNotFound(exception);
-    }
-
-    private static bool IsAutoAttachConflict(InvalidOperationException exception)
-    {
-        return exception.Message.Contains("\"status\":409", StringComparison.Ordinal) &&
-            exception.Message.Contains("Failed to auto-attach device", StringComparison.Ordinal);
-    }
-
-    private static bool IsBusNotFound(InvalidOperationException exception)
-    {
-        return exception.Message.Contains("\"status\":404", StringComparison.Ordinal) &&
-            exception.Message.Contains("bus ", StringComparison.Ordinal) &&
-            exception.Message.Contains(" not found", StringComparison.Ordinal);
-    }
-
     private static async Task<TOutput> ConnectDeviceAsync<TOutput>(
         ViiperClient client,
         Device createdDevice,
@@ -219,6 +181,9 @@ internal static class ViiperDeviceLifecycle
         return createOutput(outputDevice);
     }
 
+    // MARK: Cleanup
+    // ========================================================================
+
     private static async Task ReclaimOwnedDevicesAsync(
         ViiperClient client,
         ViiperDeviceDefinition definition,
@@ -249,6 +214,17 @@ internal static class ViiperDeviceLifecycle
         }
     }
 
+    private static async Task RemoveBusIfPresentAsync(ViiperClient client, uint busId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await client.BusRemoveAsync(busId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+        }
+    }
+
     private static async Task RemoveCreatedDeviceAsync(
         ViiperClient client,
         uint busId,
@@ -264,5 +240,26 @@ internal static class ViiperDeviceLifecycle
         {
             _ = await client.BusRemoveAsync(busId, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    // MARK: Error Handling
+    // ========================================================================
+
+    private static bool IsTransientCreateFailure(InvalidOperationException exception)
+    {
+        return IsAutoAttachConflict(exception) || IsBusNotFound(exception);
+    }
+
+    private static bool IsAutoAttachConflict(InvalidOperationException exception)
+    {
+        return exception.Message.Contains("\"status\":409", StringComparison.Ordinal) &&
+            exception.Message.Contains("Failed to auto-attach device", StringComparison.Ordinal);
+    }
+
+    private static bool IsBusNotFound(InvalidOperationException exception)
+    {
+        return exception.Message.Contains("\"status\":404", StringComparison.Ordinal) &&
+            exception.Message.Contains("bus ", StringComparison.Ordinal) &&
+            exception.Message.Contains(" not found", StringComparison.Ordinal);
     }
 }

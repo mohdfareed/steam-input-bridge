@@ -11,17 +11,12 @@ namespace SteamInputBridge.Steam;
 
 /// <summary>Reads local Steam state and controls Steam Input through Steam URLs.</summary>
 /// <param name="openUrl">Steam URL opener. Defaults to the OS URL handler.</param>
-/// <param name="openControllerConfig">Steam controller configurator opener. Defaults to Steam CEF.</param>
-public sealed class SteamInputClient(
-    Func<Uri, CancellationToken, ValueTask>? openUrl = null,
-    Func<uint, CancellationToken, ValueTask>? openControllerConfig = null)
+public sealed class SteamInputClient(Func<Uri, CancellationToken, ValueTask>? openUrl = null)
 {
     /// <summary>Steam's desktop controller configuration app id.</summary>
     public const uint DesktopConfigAppId = 413080;
 
     private readonly Func<Uri, CancellationToken, ValueTask> _openUrl = openUrl ?? OpenSteamUrlAsync;
-    private readonly Func<uint, CancellationToken, ValueTask> _openControllerConfig =
-        openControllerConfig ?? SteamControllerConfigurator.OpenAsync;
 
     // MARK: Publics
     // ========================================================================
@@ -61,18 +56,10 @@ public sealed class SteamInputClient(
     /// <summary>Opens Steam's controller configurator for an app.</summary>
     /// <param name="appId">Steam app id or non-Steam shortcut app id.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public ValueTask OpenControllerConfigAsync(uint appId, CancellationToken cancellationToken = default)
+    public ValueTask OpenSteamConfigAsync(uint appId, CancellationToken cancellationToken = default)
     {
         ValidateAppId(appId);
-        cancellationToken.ThrowIfCancellationRequested();
-        return _openControllerConfig(appId, cancellationToken);
-    }
-
-    /// <summary>Opens Steam's desktop controller configurator.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    public ValueTask OpenSteamControllerDesktopConfigAsync(CancellationToken cancellationToken = default)
-    {
-        return OpenControllerConfigAsync(DesktopConfigAppId, cancellationToken);
+        return OpenAsync(CreateControllerConfigUri(appId), cancellationToken);
     }
 
     // MARK: Privates
@@ -87,6 +74,11 @@ public sealed class SteamInputClient(
     private static Uri CreateForceInputUri(uint appId)
     {
         return new Uri($"steam://forceinputappid/{appId.ToString(CultureInfo.InvariantCulture)}");
+    }
+
+    private static Uri CreateControllerConfigUri(uint appId)
+    {
+        return new Uri($"steam://controllerconfig/{appId.ToString(CultureInfo.InvariantCulture)}");
     }
 
     private static void ValidateAppId(uint appId)
@@ -121,7 +113,6 @@ public sealed class SteamInputClient(
         cancellationToken.ThrowIfCancellationRequested();
 
         ValidateSteamUrl(url);
-
         ProcessStartInfo start = new()
         {
             FileName = url.AbsoluteUri,

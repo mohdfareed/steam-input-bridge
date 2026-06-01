@@ -6,7 +6,7 @@ using global::Viiper.Client;
 
 namespace SteamInputBridge.Outputs.Viiper.Shared;
 
-internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
+internal sealed class ViiperCreatedDevice : IAsyncDisposable
 {
     private static readonly TimeSpan DisposeStreamTimeout = TimeSpan.FromSeconds(1);
 
@@ -84,11 +84,6 @@ internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
         });
     }
 
-    public void Dispose()
-    {
-        DisposeAsync().AsTask().GetAwaiter().GetResult();
-    }
-
     public async ValueTask DisposeAsync()
     {
         _ = Interlocked.Exchange(ref _isConnected, 0);
@@ -107,13 +102,7 @@ internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
                     .ConfigureAwait(false);
                 _removed?.Invoke(BusId, DeviceId);
             }
-            catch (IOException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            catch (InvalidOperationException)
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException or InvalidOperationException)
             {
             }
             finally
@@ -121,7 +110,7 @@ internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
                 await RemoveBusAsync().ConfigureAwait(false);
             }
 
-            _ = ObserveDeviceStreamDisposeAsync(device);
+            _ = ObserveDeviceDisposeAsync(device);
         }
         finally
         {
@@ -139,30 +128,18 @@ internal sealed class ViiperCreatedDevice : IDisposable, IAsyncDisposable
             _ = await _client.BusRemoveAsync(BusId, CancellationToken.None)
                 .ConfigureAwait(false);
         }
-        catch (IOException)
-        {
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException or InvalidOperationException)
         {
         }
     }
 
-    private static async Task ObserveDeviceStreamDisposeAsync(ViiperDevice device)
+    private static async Task ObserveDeviceDisposeAsync(ViiperDevice device)
     {
         try
         {
             await device.DisposeAsync().AsTask().WaitAsync(DisposeStreamTimeout).ConfigureAwait(false);
         }
-        catch (IOException)
-        {
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (TimeoutException)
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException or TimeoutException)
         {
         }
     }

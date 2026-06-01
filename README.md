@@ -22,7 +22,7 @@ Steam Input orchestration and local input forwarding.
 - Profile and shortcut edits reload while the app is running.
 - SRM manifest export runs from the tray or CLI.
 - Useful CLI commands: `client run <profile>`, `server status [--json]`,
-    `steam list`, `steam open-config [app-id]`, `steam export [path]`.
+    `steam list`, `steam open-config [app-id]`, `steam export [--path <path>]`.
 
 ## Development
 
@@ -30,7 +30,7 @@ Steam Input orchestration and local input forwarding.
 - `.\Scripts\Test-Solution.ps1` - run normal tests (`-Tier Dependency` or `-Tier Manual` for opt-in tests)
 - `.\Scripts\Deploy-App.ps1` - build, package, and deploy the app
 - `.\Scripts\Deploy-App.ps1 -Start` - build and deploy then start the tray app
-- `.\Scripts\CLI.ps1` - build app and run CLI commands
+- `.\Scripts\CLI.ps1` - run CLI commands
 
 ### Requirements
 
@@ -38,7 +38,6 @@ Steam Input orchestration and local input forwarding.
 
 ## TODO
 
-- [ ] Migrate rewrite projects as the main projects.
 - [ ] Teensy mouse output and firmware.
 - [ ] Packaging, versioning, deployment with install script and self-update (auto?).
 - [ ] Update README.md and add usage examples and documentation.

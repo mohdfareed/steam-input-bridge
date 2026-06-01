@@ -7,8 +7,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$appProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Rewrite.App\SteamInputBridge.App.csproj"
-$cliProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Rewrite.Cli\SteamInputBridge.Cli.csproj"
+$appProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.App\SteamInputBridge.App.csproj"
+$cliProject = Resolve-Path "$PSScriptRoot\..\SteamInputBridge.Cli\SteamInputBridge.Cli.csproj"
 
 $outputPath = [System.IO.Path]::GetFullPath($Output)
 $appExePath = Join-Path $outputPath "SteamInputBridge.App.exe"

@@ -1,574 +1,70 @@
 using System;
-using System.IO;
-using System.Linq;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
+using SteamInputBridge.Outputs.Controller;
+using SteamInputBridge.Outputs.Mouse;
 using SteamInputBridge.Settings;
-using SteamInputBridge.Settings.Profiles;
+using SteamInputBridge.Shortcuts;
 
 namespace SteamInputBridge.Tests;
 
-/// <summary>Tests minimal application settings validation.</summary>
 [TestClass]
 public sealed class SettingsValidationTests
 {
-    private static readonly string[] FragPunkReceiverProcess = ["FragPunk.exe"];
-
-    /// <summary>Checks that clearly invalid settings fail when read.</summary>
     [TestMethod]
-    public void InvalidSettingsFailWhenLoaded()
+    public void TryValidateReportsGroupedFailures()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
+        SteamInputBridgeSettings settings = new();
+        settings.Viiper.Host = "";
+        settings.Viiper.Port = 70_000;
+        settings.Shortcuts.Add(new ShortcutEntry
         {
-            File.WriteAllText(settingsPath, InvalidSettings());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
-                services.GetRequiredService<ApplicationSettingsService>);
-
-            StringAssert.Contains(exception.Message, "viiper:port", StringComparison.Ordinal);
-            StringAssert.Contains(exception.Message, "games:bad:receiverProcesses", StringComparison.Ordinal);
-        }
-        finally
+            Keys = "Ctrl+Alt",
+            Action = (ShortcutValue)99,
+        });
+        settings.Games["bad"] = new GameProfile
         {
-            Directory.Delete(directory, recursive: true);
-        }
+            ControllerOutput = (ControllerOutput)99,
+            MouseOutput = (MouseOutput)99,
+        };
+
+        bool valid = SettingsValidation.TryValidate(settings, out string errors);
+
+        Assert.IsFalse(valid);
+        StringAssert.Contains(errors, "viiper:host is required.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "viiper:port must be between 1 and 65535.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:keys is invalid", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:targets is required.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:action is invalid.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "games:bad:receiverProcesses is required when executable is missing.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "games:bad:controllerOutput is invalid.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "games:bad:mouseOutput is invalid.", StringComparison.Ordinal);
     }
 
-    /// <summary>Checks that title and receiver process defaults are allowed.</summary>
     [TestMethod]
-    public void ProfileDefaultsAreAllowed()
+    public void TryValidateAllowsExecutableProfileAndReceiverOnlyProfile()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
+        SteamInputBridgeSettings settings = new();
+        settings.Games["launched"] = new GameProfile
         {
-            File.WriteAllText(settingsPath, SettingsWithProfileDefaults());
-            using ServiceProvider services = CreateServices(settingsPath);
+            Executable = @"C:\Games\Game\game.exe",
+        };
+        settings.Games["attach"] = new GameProfile();
+        settings.Games["attach"].ReceiverProcesses.Add("Game.exe");
 
-            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
+        bool valid = SettingsValidation.TryValidate(settings, out string errors);
 
-            Assert.IsTrue(settings.Current.Games.ContainsKey("defaults"));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        Assert.IsTrue(valid, errors);
     }
 
-    /// <summary>Checks that JSON null profile outputs mean no output.</summary>
     [TestMethod]
-    public void NullProfileOutputsResolveToNone()
+    public void ShortcutTargetSettingParsesNamedTargetsAndColors()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
+        Assert.AreEqual(
+            new ShortcutTargetSetting(ShortcutTarget.Microphone, null),
+            ShortcutTargetSetting.Parse("microphone"));
+        Assert.AreEqual(
+            new ShortcutTargetSetting(ShortcutTarget.ActionColor, "#80A0FF"),
+            ShortcutTargetSetting.Parse(" #80a0ff "));
 
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithNullOutputs());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
-            GameProfile profile = settings.Current.Games["nulls"];
-            ResolvedGameProfile resolved = ProfileResolver.Resolve("nulls", profile);
-
-            Assert.IsNull(profile.ControllerOutput);
-            Assert.IsNull(profile.MouseOutput);
-            Assert.AreEqual(ControllerOutput.None, resolved.ControllerOutput);
-            Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);
-            Assert.AreEqual("C:\\Games\\Nulls", resolved.WorkingDirectory);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that explicit None profile outputs mean no output.</summary>
-    [TestMethod]
-    public void NoneProfileOutputsResolveToNone()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithNoneOutputs());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
-            GameProfile profile = settings.Current.Games["none"];
-            ResolvedGameProfile resolved = ProfileResolver.Resolve("none", profile);
-
-            Assert.AreEqual(ControllerOutput.None, profile.ControllerOutput);
-            Assert.AreEqual(MouseOutput.None, profile.MouseOutput);
-            Assert.AreEqual(ControllerOutput.None, resolved.ControllerOutput);
-            Assert.AreEqual(MouseOutput.None, resolved.MouseOutput);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that enum-like JSON values are case-insensitive.</summary>
-    [TestMethod]
-    public void EnumSettingsValuesAreCaseInsensitive()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithMixedCaseEnumValues());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
-            GameProfile profile = settings.Current.Games["case"];
-
-            Assert.AreEqual(LogLevel.Debug, settings.Current.Logging.Level);
-            Assert.AreEqual(ControllerOutput.Ds4, profile.ControllerOutput);
-            Assert.AreEqual(MouseOutput.Viiper, profile.MouseOutput);
-            CollectionAssert.AreEqual(
-                new[]
-                {
-                    ShortcutTargetSpec.Named(ShortcutTarget.Motion),
-                    ShortcutTargetSpec.Named(ShortcutTarget.Pointer),
-                    ShortcutTargetSpec.Named(ShortcutTarget.Mic),
-                    ShortcutTargetSpec.OverlayColor("#808080"),
-                },
-                settings.Current.Shortcuts[0].Targets.ToArray());
-            Assert.AreEqual(ShortcutValue.Toggle, settings.Current.Shortcuts[0].Value);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that receiver-only profiles are valid.</summary>
-    [TestMethod]
-    public void AttachOnlyProfileIsAllowed()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithAttachOnlyProfile());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
-            GameProfile profile = settings.Current.Games["attach"];
-            ResolvedGameProfile resolved = ProfileResolver.Resolve("attach", profile);
-
-            Assert.IsNull(resolved.Executable);
-            CollectionAssert.AreEqual(FragPunkReceiverProcess, resolved.ReceiverProcesses.ToArray());
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that one key combination can apply multiple shortcut targets.</summary>
-    [TestMethod]
-    public void ShortcutKeysCanBeSharedAcrossTargets()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithGroupedShortcuts());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            ApplicationSettingsService settings = services.GetRequiredService<ApplicationSettingsService>();
-
-            Assert.HasCount(1, settings.Current.Shortcuts);
-            Assert.IsNull(settings.Current.Shortcuts[0].Name);
-            CollectionAssert.AreEqual(
-                new[]
-                {
-                    ShortcutTargetSpec.Named(ShortcutTarget.Motion),
-                    ShortcutTargetSpec.Named(ShortcutTarget.Pointer),
-                    ShortcutTargetSpec.OverlayColor("#808080"),
-                },
-                settings.Current.Shortcuts[0].Targets.ToArray());
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that repeated target actions on the same keys are rejected.</summary>
-    [TestMethod]
-    public void ShortcutKeysCannotRepeatTheSameTarget()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithDuplicateShortcutTarget());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
-                services.GetRequiredService<ApplicationSettingsService>);
-
-            StringAssert.Contains(exception.Message, "shortcuts:1:targets", StringComparison.Ordinal);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that key aliases are validated as the same shortcut.</summary>
-    [TestMethod]
-    public void ShortcutKeyAliasesCannotRepeatTheSameTarget()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithDuplicateShortcutAliasTarget());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
-                services.GetRequiredService<ApplicationSettingsService>);
-
-            StringAssert.Contains(exception.Message, "shortcuts:1:targets", StringComparison.Ordinal);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that numeric out-of-range profile outputs are rejected.</summary>
-    [TestMethod]
-    public void InvalidProfileOutputEnumValuesFailSettingsLoad()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithInvalidProfileOutputEnums());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
-                services.GetRequiredService<ApplicationSettingsService>);
-
-            StringAssert.Contains(exception.Message, "games:game:controllerOutput", StringComparison.Ordinal);
-            StringAssert.Contains(exception.Message, "games:game:mouseOutput", StringComparison.Ordinal);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    /// <summary>Checks that invalid shortcut key syntax fails settings load.</summary>
-    [TestMethod]
-    public void ShortcutKeysMustBeValid()
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "SteamInputBridge.Tests", Guid.NewGuid().ToString("N"));
-        _ = Directory.CreateDirectory(directory);
-        string settingsPath = Path.Combine(directory, "appsettings.json");
-
-        try
-        {
-            File.WriteAllText(settingsPath, SettingsWithInvalidShortcutKey());
-            using ServiceProvider services = CreateServices(settingsPath);
-
-            InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
-                services.GetRequiredService<ApplicationSettingsService>);
-
-            StringAssert.Contains(exception.Message, "shortcuts:0:keys is invalid", StringComparison.Ordinal);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    private static ServiceProvider CreateServices(string settingsPath)
-    {
-        IConfigurationRoot configuration = new ConfigurationBuilder()
-            .AddJsonFile(settingsPath, optional: false, reloadOnChange: true)
-            .Build();
-
-        ServiceCollection services = new();
-        _ = services.AddSingleton<ILogger<ApplicationSettingsService>>(NullLogger<ApplicationSettingsService>.Instance);
-        _ = services.AddApplicationSettings(configuration, settingsPath);
-        return services.BuildServiceProvider();
-    }
-
-    private static string InvalidSettings()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Viiper": {
-              "Host": "localhost",
-              "Port": 70000
-            },
-            "Games": {
-              "bad": {
-                "Title": "Bad"
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithProfileDefaults()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Games": {
-              "defaults": {
-                "Executable": "C:\\Games\\Default\\game.exe"
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithNullOutputs()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Games": {
-              "nulls": {
-                "Executable": "C:\\Games\\Nulls\\game.exe",
-                "ControllerOutput": null,
-                "MouseOutput": null
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithNoneOutputs()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Games": {
-              "none": {
-                "Executable": "C:\\Games\\None\\game.exe",
-                "ControllerOutput": "None",
-                "MouseOutput": "None"
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithMixedCaseEnumValues()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Logging": {
-              "Level": "debug"
-            },
-            "Shortcuts": [
-              {
-                "Keys": "Num1",
-                "Targets": [
-                "motion",
-                  "POINTER",
-                  "voice",
-                  "#808080"
-                ],
-                "Value": "toggle"
-              }
-            ],
-            "Games": {
-              "case": {
-                "Executable": "C:\\Games\\Case\\game.exe",
-                "ControllerOutput": "ds4",
-                "MouseOutput": "vIIPer"
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithAttachOnlyProfile()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Games": {
-              "attach": {
-                "ReceiverProcesses": [
-                  "FragPunk.exe"
-                ]
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithGroupedShortcuts()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Shortcuts": [
-              {
-                "Keys": "Ctrl+Alt+F15",
-                "Targets": [
-                  "Motion",
-                  "Pointer",
-                  "#808080"
-                ],
-                "Value": "Enabled"
-              }
-            ],
-            "Games": {
-              "game": {
-                "Executable": "C:\\Games\\Game\\game.exe"
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithDuplicateShortcutTarget()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Shortcuts": [
-              {
-                "Name": "motion-on",
-                "Keys": "Ctrl+Alt+F15",
-                "Targets": [
-                  "Motion"
-                ],
-                "Value": "Enabled"
-              },
-              {
-                "Name": "motion-on-again",
-                "Keys": "Ctrl+Alt+F15",
-                "Targets": [
-                  "Motion"
-                ],
-                "Value": "Enabled"
-              }
-            ],
-            "Games": {
-              "game": {
-                "Executable": "C:\\Games\\Game\\game.exe"
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithDuplicateShortcutAliasTarget()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Shortcuts": [
-              {
-                "Keys": "Num1",
-                "Targets": [
-                  "Motion"
-                ],
-                "Value": "Enabled"
-              },
-              {
-                "Keys": "Numpad1",
-                "Targets": [
-                  "Motion"
-                ],
-                "Value": "Disabled"
-              }
-            ],
-            "Games": {
-              "game": {
-                "Executable": "C:\\Games\\Game\\game.exe"
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithInvalidProfileOutputEnums()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Games": {
-              "game": {
-                "Executable": "C:\\Games\\Game\\game.exe",
-                "ControllerOutput": 99,
-                "MouseOutput": 99
-              }
-            }
-          }
-        }
-        """;
-    }
-
-    private static string SettingsWithInvalidShortcutKey()
-    {
-        return """
-        {
-          "SteamInputBridge": {
-            "Shortcuts": [
-              {
-                "Keys": "Ctrl+Alt",
-                "Targets": [
-                  "Motion"
-                ],
-                "Value": "Enabled"
-              }
-            ],
-            "Games": {
-              "game": {
-                "Executable": "C:\\Games\\Game\\game.exe"
-              }
-            }
-          }
-        }
-        """;
+        _ = Assert.ThrowsExactly<FormatException>(() => ShortcutTargetSetting.Parse("ActionColor"));
     }
 }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
-using SteamInputBridge.Forwarding.Mouse;
+using SteamInputBridge.Inputs.Mouse;
 
 namespace SteamInputBridge.Inputs.RawInput;
 
@@ -15,10 +15,10 @@ public sealed partial class RawInputMouseSource
 
     private sealed class RunState(MouseInputHandler handler, CancellationToken cancellationToken) : IDisposable
     {
-        private readonly Dictionary<nint, string> deviceNames = [];
-        private MouseButtons currentButtons;
-        private nint inputBuffer;
-        private uint inputBufferSize;
+        private readonly Dictionary<nint, string> _deviceNames = [];
+        private MouseButtons _currentButtons;
+        private nint _inputBuffer;
+        private uint _inputBufferSize;
 
         // MARK: Publics
         // ====================================================================
@@ -27,11 +27,8 @@ public sealed partial class RawInputMouseSource
 
         internal void HandleWindowInput(nint rawInputHandle)
         {
-            // Microsoft's buffered Raw Input pattern:
-            // read the current WM_INPUT lParam with GetRawInputData, then drain
-            // accumulated high-frequency mouse events with GetRawInputBuffer.
-            // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-raw-input#reading-raw-input
-            // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getrawinputbuffer
+            // Microsoft's buffered Raw Input pattern reads the current WM_INPUT
+            // lParam, then drains accumulated high-frequency mouse events.
             CancellationToken.ThrowIfCancellationRequested();
 
             if (TryReadRawInputData(rawInputHandle, out RawInput rawInput))
@@ -44,11 +41,11 @@ public sealed partial class RawInputMouseSource
 
         public void Dispose()
         {
-            if (inputBuffer != nint.Zero)
+            if (_inputBuffer != nint.Zero)
             {
-                Marshal.FreeHGlobal(inputBuffer);
-                inputBuffer = nint.Zero;
-                inputBufferSize = 0;
+                Marshal.FreeHGlobal(_inputBuffer);
+                _inputBuffer = nint.Zero;
+                _inputBufferSize = 0;
             }
         }
 
@@ -88,9 +85,9 @@ public sealed partial class RawInputMouseSource
         {
             EnsureInputBuffer(RawInputBufferInitialCapacity);
 
-            uint size = inputBufferSize;
+            uint size = _inputBufferSize;
             count = NativeMethods.GetRawInputBuffer(
-                inputBuffer,
+                _inputBuffer,
                 ref size,
                 RawInputHeaderSize);
 
@@ -102,16 +99,16 @@ public sealed partial class RawInputMouseSource
                     ref requiredSize,
                     RawInputHeaderSize);
 
-                if (requiredSize == 0 || requiredSize <= inputBufferSize)
+                if (requiredSize == 0 || requiredSize <= _inputBufferSize)
                 {
                     count = 0;
                     return false;
                 }
 
                 EnsureInputBuffer(requiredSize);
-                size = inputBufferSize;
+                size = _inputBufferSize;
                 count = NativeMethods.GetRawInputBuffer(
-                    inputBuffer,
+                    _inputBuffer,
                     ref size,
                     RawInputHeaderSize);
             }
@@ -129,11 +126,11 @@ public sealed partial class RawInputMouseSource
         {
             EnsureInputBuffer((uint)RawInputBufferInitialSize);
 
-            uint size = inputBufferSize;
+            uint size = _inputBufferSize;
             uint read = NativeMethods.GetRawInputData(
                 rawInputHandle,
                 Input,
-                inputBuffer,
+                _inputBuffer,
                 ref size,
                 RawInputHeaderSize);
 
@@ -154,11 +151,11 @@ public sealed partial class RawInputMouseSource
                 }
 
                 EnsureInputBuffer(requiredSize);
-                size = inputBufferSize;
+                size = _inputBufferSize;
                 read = NativeMethods.GetRawInputData(
                     rawInputHandle,
                     Input,
-                    inputBuffer,
+                    _inputBuffer,
                     ref size,
                     RawInputHeaderSize);
             }
@@ -169,7 +166,7 @@ public sealed partial class RawInputMouseSource
                 return false;
             }
 
-            rawInput = Marshal.PtrToStructure<RawInput>(inputBuffer);
+            rawInput = Marshal.PtrToStructure<RawInput>(_inputBuffer);
             return true;
         }
 
@@ -177,7 +174,7 @@ public sealed partial class RawInputMouseSource
         {
             while (TryReadRawInputBuffer(out uint count))
             {
-                nint current = inputBuffer;
+                nint current = _inputBuffer;
                 for (uint i = 0; i < count; i++)
                 {
                     CancellationToken.ThrowIfCancellationRequested();
@@ -193,18 +190,18 @@ public sealed partial class RawInputMouseSource
 
         private void EnsureInputBuffer(uint size)
         {
-            if (inputBuffer != nint.Zero && inputBufferSize >= size)
+            if (_inputBuffer != nint.Zero && _inputBufferSize >= size)
             {
                 return;
             }
 
-            if (inputBuffer != nint.Zero)
+            if (_inputBuffer != nint.Zero)
             {
-                Marshal.FreeHGlobal(inputBuffer);
+                Marshal.FreeHGlobal(_inputBuffer);
             }
 
-            inputBufferSize = Math.Max(size, (uint)RawInputBufferInitialSize);
-            inputBuffer = Marshal.AllocHGlobal((int)inputBufferSize);
+            _inputBufferSize = Math.Max(size, (uint)RawInputBufferInitialSize);
+            _inputBuffer = Marshal.AllocHGlobal((int)_inputBufferSize);
         }
 
         private string GetCachedDeviceName(nint device)
@@ -214,10 +211,10 @@ public sealed partial class RawInputMouseSource
                 return string.Empty;
             }
 
-            if (!deviceNames.TryGetValue(device, out string? deviceName))
+            if (!_deviceNames.TryGetValue(device, out string? deviceName))
             {
                 deviceName = GetDeviceName(device);
-                deviceNames[device] = deviceName;
+                _deviceNames[device] = deviceName;
             }
 
             return deviceName;
@@ -227,14 +224,14 @@ public sealed partial class RawInputMouseSource
         {
             if (buttonFlags != 0)
             {
-                currentButtons = ApplyButton(currentButtons, buttonFlags, 0x0001, 0x0002, MouseButtons.Left);
-                currentButtons = ApplyButton(currentButtons, buttonFlags, 0x0004, 0x0008, MouseButtons.Right);
-                currentButtons = ApplyButton(currentButtons, buttonFlags, 0x0010, 0x0020, MouseButtons.Middle);
-                currentButtons = ApplyButton(currentButtons, buttonFlags, 0x0040, 0x0080, MouseButtons.Back);
-                currentButtons = ApplyButton(currentButtons, buttonFlags, 0x0100, 0x0200, MouseButtons.Forward);
+                _currentButtons = ApplyButton(_currentButtons, buttonFlags, 0x0001, 0x0002, MouseButtons.Left);
+                _currentButtons = ApplyButton(_currentButtons, buttonFlags, 0x0004, 0x0008, MouseButtons.Right);
+                _currentButtons = ApplyButton(_currentButtons, buttonFlags, 0x0010, 0x0020, MouseButtons.Middle);
+                _currentButtons = ApplyButton(_currentButtons, buttonFlags, 0x0040, 0x0080, MouseButtons.Back);
+                _currentButtons = ApplyButton(_currentButtons, buttonFlags, 0x0100, 0x0200, MouseButtons.Forward);
             }
 
-            return new MouseReport(currentButtons, deltaX, deltaY, wheelDelta);
+            return new MouseReport(_currentButtons, deltaX, deltaY, wheelDelta);
         }
     }
 }

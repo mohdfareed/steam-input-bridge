@@ -17,8 +17,8 @@ public sealed partial class RawInputMouseSource
     private const int WmInput = 0x00FF;
 
     private static readonly nint MessageOnlyWindow = new(-3);
-    private const string WindowClassName = "Inputs.RawInput";
-    private const string WindowName = "Raw Input mouse source";
+    private const string WindowClassName = "SteamInputBridge.RawInput";
+    private const string WindowName = "Steam Input Bridge Raw Input";
 
     // MARK: Methods
     // ========================================================================
