@@ -5,9 +5,9 @@ Steam Input profile management of non-Steam games with controller/mouse emulatio
 ## Requirements
 
 - Steam, for Steam Input profiles and game shortcut support
-- VIIPER server/runtime, for virtual controller and mouse emulation
+- [VIIPER](https://github.com/Alia5/VIIPER) server/runtime, for virtual controller and mouse emulation
 - Teensy 4.0 board (optional), for physical mouse emulation
-- Steam ROM Manager (optional), only if export SRM manifest
+- [Steam ROM Manager](https://github.com/SteamGridDB/steam-rom-manager) (optional), only if export SRM manifest
 
 ## Usage
 
@@ -55,7 +55,8 @@ The app can be built and deployed locally for development personal usage.
 **Requirements:**
 
 - .NET 10 SDK
-- PlatformIO CLI or the VS Code PlatformIO extension
+- PlatformIO CLI or the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide)
+- clang-format, available on PATH
 
 Run the following to build and deploy the app locally.
 
@@ -67,7 +68,7 @@ cd "steam-input-bridge"
 
 The following scripts are available for development:
 
-- `.\Scripts\Build-Solution.ps1` - format/build the solution and build Teensy firmware
+- `.\Scripts\Build-Solution.ps1` - format/build the solution and Teensy firmware
 - `.\Scripts\Test-Solution.ps1` - run unit tests and firmware tests
 - `.\Scripts\CLI.ps1` - run CLI commands
 
@@ -75,4 +76,5 @@ The following scripts are available for development:
 
 - [ ] Benchmark and optimize mouse/controller emulation performance.
 - [ ] Packaging, versioning, deployment, and installation/update.
+  - Bundle the PlatformIO Teensy board uploader with the app.
 - [ ] Machine-readable diagnostics, and richer observability/logging.

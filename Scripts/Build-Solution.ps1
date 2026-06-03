@@ -10,28 +10,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. "$PSScriptRoot\Script-Helpers.ps1"
+
 $root = Resolve-Path "$PSScriptRoot\.."
 $solution = Join-Path $root "SteamInputBridge.slnx"
 $firmwareDirectory = Join-Path $root "SteamInputBridge.Firmware"
 
-function Find-PlatformIO {
-    $command = Get-Command "pio" -ErrorAction SilentlyContinue
-    if ($command) {
-        return $command.Source
-    }
-
-    $extensionPath = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\platformio.exe"
-    if (Test-Path -LiteralPath $extensionPath) {
-        return $extensionPath
-    }
-
-    throw "PlatformIO CLI was not found. Install PlatformIO or run the VS Code PlatformIO extension once."
-}
-
 Push-Location $root
 try {
-    if (-not $SkipDotNet) {
-        if (-not $SkipFormat) {
+    if (-not $SkipFormat) {
+        if (-not $SkipDotNet) {
             Write-Host "Formatting solution"
             dotnet format $solution
             if ($LASTEXITCODE -ne 0) {
@@ -39,6 +27,13 @@ try {
             }
         }
 
+        if (-not $SkipFirmware) {
+            $clangFormat = Find-ClangFormat
+            Format-Firmware -ClangFormat $clangFormat -FirmwareDirectory $firmwareDirectory
+        }
+    }
+
+    if (-not $SkipDotNet) {
         $buildArgs = @("build", $solution, "--configuration", $Configuration)
         if ($DotNetBuildArgs) {
             $buildArgs += $DotNetBuildArgs

@@ -1,1 +1,1 @@
-Placeholder for unit tests.
+Placeholder for firmware tests.

@@ -13,6 +13,9 @@ public static class ProductMetadata
     /// <summary>Packaged Teensy firmware artifact file name.</summary>
     public const string TeensyFirmwareFileName = "SteamInputBridge.Teensy.hex";
 
+    /// <summary>App-local Teensy upload tools directory name.</summary>
+    public const string TeensyToolsDirectoryName = "teensy";
+
     /// <summary>Resolves the app executable beside a base directory.</summary>
     public static string ResolveAppExecutablePath(string baseDirectory)
     {

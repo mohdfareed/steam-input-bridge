@@ -9,31 +9,20 @@ This file is the maintainer operating contract: how to work, communicate, and
 avoid repeating past mistakes.
 
 - User-facing usage belongs in `README.md`.
-- Durable technical quirks belong in `NOTES.md`.
 - Do not create extra ledger/review/map docs unless the user explicitly asks.
 
 ## Communication
 
-- Do not turn a user question into a command. If the user asks "why" or "should
-  we", answer first; do not edit unless implementation is requested.
+- Be concise. Answer the actual question before giving context.
 - Do not present architecture reasoning, memory, or prior assumptions as facts
   about the current codebase.
 - If saying "the code does X", first read the current owning file, log, or test.
-  Cite that evidence in the reply. If it has not been audited, say so.
-- Separate current-code facts, prior observed logs/tests, architecture
-  requirements, and unverified assumptions when they could be confused.
-- The phrase "source-backed answer" is a hard stop: answer only from current
-  files, logs, tests, or explicitly say the answer is not known yet.
-- Do not convert a preference, complaint, example, or one-off correction into a
-  durable rule unless the user confirms it as a rule.
 - If a remembered convention affects implementation and is not in this file or
   explicitly stated in the current thread, verify it before enforcing it.
-- Be concise. Answer the actual question before giving context.
 - Ask when a decision changes architecture, ownership, lifecycle, global state,
   or long-term maintenance cost.
 - If a fix would change ownership, architecture, presentation model, lifecycle,
-  or add a nontrivial implementation, stop and ask before editing. Do not solve
-  it inside the nearest file just because that is where the symptom appears.
+  or add a nontrivial implementation, stop and ask before editing.
 
 ## Architecture Decisions
 
@@ -47,8 +36,7 @@ avoid repeating past mistakes.
   ask.
 - Do not add nested placeholder classes for runtime owners, command handlers
   that re-invoke the app like scripts, temporary state buckets, hidden
-  environment-variable control paths, or "clean this later" architecture under
-  `SteamInputBridge*`.
+  environment-variable control paths, or "clean this later" architecture.
 - Confirm before changing which process owns an input source, output device,
   route lifecycle, Steam visibility, controller identity, IPC path, hardware
   access, or process ownership.
@@ -215,8 +203,8 @@ Use section markers consistently in files that need sections.
 
 ```csharp
 // MARK: Section Name
-// ========================================================================
+// ============================================================================
 ```
 
-The full separator line, including the leading `// `, must be exactly 79
-characters wide.
+The full separator line, including the leading `// ` and tabs/padding, must be
+exactly 79 characters wide.

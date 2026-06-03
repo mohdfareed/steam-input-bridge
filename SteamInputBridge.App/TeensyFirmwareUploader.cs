@@ -17,6 +17,7 @@ internal sealed class TeensyFirmwareUploader(
     CancellationToken cancellationToken)
 {
     private const string TeensyBoard = "TEENSY40";
+    private const string TeensyUploaderExecutableName = "teensy_post_compile.exe";
 
     // MARK: Publics
     // ========================================================================
@@ -25,20 +26,25 @@ internal sealed class TeensyFirmwareUploader(
     {
         string firmwareDirectory = ResolveFirmwareDirectory(settings.Current.Teensy.FirmwareDirectory);
         string firmwarePath = ResolveFirmwarePath(firmwareDirectory);
-        TeensyUploadTool tool = FindUploadTool(firmwareDirectory) ??
+        string toolsDirectory = ResolveToolsDirectory();
+        string uploaderPath = Path.Combine(toolsDirectory, TeensyUploaderExecutableName);
+        if (!File.Exists(uploaderPath))
+        {
             throw new FileNotFoundException(
-                "Teensy uploader was not found. Put teensy_post_compile.exe or teensy_loader_cli.exe in the firmware directory, or install PlatformIO's Teensy tools.",
-                Path.Combine(firmwareDirectory, "teensy_post_compile.exe"));
+                "Bundled Teensy uploader was not found. Run Scripts\\Deploy-App.ps1 to copy PlatformIO's Teensy tools beside the app.",
+                uploaderPath);
+        }
 
         using IDisposable pause = teensy.PauseConnection();
-        await RunUploadToolAsync(tool, firmwarePath, cancellationToken).ConfigureAwait(false);
+        await RunUploadToolAsync(uploaderPath, toolsDirectory, firmwarePath, cancellationToken).ConfigureAwait(false);
     }
 
     // MARK: Implementation
     // ========================================================================
 
     private static async Task RunUploadToolAsync(
-        TeensyUploadTool tool,
+        string uploaderPath,
+        string toolsDirectory,
         string firmwarePath,
         CancellationToken cancellationToken)
     {
@@ -55,8 +61,8 @@ internal sealed class TeensyFirmwareUploader(
 
         ProcessStartInfo start = new()
         {
-            FileName = tool.ExecutablePath,
-            WorkingDirectory = tool.WorkingDirectory,
+            FileName = uploaderPath,
+            WorkingDirectory = toolsDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardError = true,
@@ -64,24 +70,13 @@ internal sealed class TeensyFirmwareUploader(
             WindowStyle = ProcessWindowStyle.Hidden,
         };
 
-        if (tool.Kind == TeensyUploadToolKind.PostCompile)
-        {
-            string firmwareName = Path.GetFileNameWithoutExtension(firmwarePath);
-            string firmwareDirectory = Path.GetDirectoryName(firmwarePath) ?? Environment.CurrentDirectory;
-            start.ArgumentList.Add($"-file={firmwareName}");
-            start.ArgumentList.Add($"-path={firmwareDirectory}");
-            start.ArgumentList.Add($"-tools={tool.WorkingDirectory}");
-            start.ArgumentList.Add($"-board={TeensyBoard}");
-            start.ArgumentList.Add("-reboot");
-        }
-        else
-        {
-            start.ArgumentList.Add($"--mcu={TeensyBoard}");
-            start.ArgumentList.Add("-w");
-            start.ArgumentList.Add("-s");
-            start.ArgumentList.Add("-v");
-            start.ArgumentList.Add(firmwarePath);
-        }
+        string firmwareName = Path.GetFileNameWithoutExtension(firmwarePath);
+        string firmwareDirectory = Path.GetDirectoryName(firmwarePath) ?? Environment.CurrentDirectory;
+        start.ArgumentList.Add($"-file={firmwareName}");
+        start.ArgumentList.Add($"-path={firmwareDirectory}");
+        start.ArgumentList.Add($"-tools={toolsDirectory}");
+        start.ArgumentList.Add($"-board={TeensyBoard}");
+        start.ArgumentList.Add("-reboot");
 
         using Process process = new()
         {
@@ -89,7 +84,7 @@ internal sealed class TeensyFirmwareUploader(
         };
         if (!process.Start())
         {
-            throw new InvalidOperationException($"Could not start {tool.ExecutablePath}.");
+            throw new InvalidOperationException($"Could not start {uploaderPath}.");
         }
 
         Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
@@ -105,67 +100,6 @@ internal sealed class TeensyFirmwareUploader(
         }
     }
 
-    private TeensyUploadTool? FindUploadTool(string firmwareDirectory)
-    {
-        return FindExecutable("teensy_post_compile.exe", firmwareDirectory, environment.BaseDirectory) is string postCompilePath
-            ? new(postCompilePath, TeensyUploadToolKind.PostCompile)
-            : FindExecutable("teensy_loader_cli.exe", firmwareDirectory, environment.BaseDirectory) is string cliPath
-                ? new(cliPath, TeensyUploadToolKind.LoaderCli)
-                : null;
-    }
-
-    private static string? FindExecutable(string fileName, params string[] preferredDirectories)
-    {
-        foreach (string directory in preferredDirectories)
-        {
-            if (string.IsNullOrWhiteSpace(directory))
-            {
-                continue;
-            }
-
-            string candidate = Path.Combine(directory, fileName);
-            if (File.Exists(candidate))
-            {
-                return Path.GetFullPath(candidate);
-            }
-        }
-
-        string? platformIoTool = FindPlatformIoTool(fileName);
-        if (platformIoTool is not null)
-        {
-            return platformIoTool;
-        }
-
-        string? path = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
-
-        foreach (string directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            string candidate = Path.Combine(directory.Trim(), fileName);
-            if (File.Exists(candidate))
-            {
-                return Path.GetFullPath(candidate);
-            }
-        }
-
-        return null;
-    }
-
-    private static string? FindPlatformIoTool(string fileName)
-    {
-        string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (string.IsNullOrWhiteSpace(profile))
-        {
-            return null;
-        }
-
-        string candidate = Path.Combine(profile, ".platformio", "packages", "tool-teensy", fileName);
-        return File.Exists(candidate) ? Path.GetFullPath(candidate) : null;
-    }
-
     private string ResolveFirmwareDirectory(string? firmwareDirectory)
     {
         string settingsDirectory = Path.GetDirectoryName(settingsFile.Path) ?? environment.BaseDirectory;
@@ -178,6 +112,11 @@ internal sealed class TeensyFirmwareUploader(
         return Path.IsPathFullyQualified(expanded)
             ? Path.GetFullPath(expanded)
             : Path.GetFullPath(expanded, settingsDirectory);
+    }
+
+    private string ResolveToolsDirectory()
+    {
+        return Path.GetFullPath(Path.Combine(environment.BaseDirectory, ProductMetadata.TeensyToolsDirectoryName));
     }
 
     private string ResolveFirmwarePath(string firmwareDirectory)
@@ -200,17 +139,5 @@ internal sealed class TeensyFirmwareUploader(
         throw new FileNotFoundException(
             $"Teensy firmware was not found. Expected {ProductMetadata.TeensyFirmwareFileName} beside the app or in the firmware directory.",
             Path.Combine(firmwareDirectory, ProductMetadata.TeensyFirmwareFileName));
-    }
-
-    private readonly record struct TeensyUploadTool(string ExecutablePath, TeensyUploadToolKind Kind)
-    {
-        public string WorkingDirectory { get; } =
-            Path.GetDirectoryName(ExecutablePath) ?? Environment.CurrentDirectory;
-    }
-
-    private enum TeensyUploadToolKind
-    {
-        PostCompile,
-        LoaderCli,
     }
 }
