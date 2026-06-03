@@ -106,7 +106,7 @@ function Deploy-Firmware {
         [string] $OutputPath
     )
 
-    & "$PSScriptRoot\Build.ps1" -SkipDotNet -FirmwareEnvironment teensy40
+    & "$PSScriptRoot\Build-Solution.ps1" -SkipDotNet -FirmwareEnvironment teensy40
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }

@@ -2,20 +2,6 @@
 
 Steam Input profile management of non-Steam games with controller/mouse emulation support.
 
-The project provides support for two extra features that mimic functionality on the DualSense controller that I really liked:
-
-- **Action colors:** the ability to set always-on commands in Steam Input action sets/layers.
-  - This allows the controller to visually indicate the active action set/layer to know which controls are active.
-  - The app provides the ability to define assign keyboard shortcuts to different colors.
-  - The app provides an always-on-top indicator of the colors of the active keyboard shortcuts
-  - The shortcuts can be mapped to always-on commands for action sets/layers in Steam Input.
-  - This visually indicates the active Steam Input action set/layer and the active controls.
-- **Microphone toggle:** the ability to toggle the microphone on a system level with a visual mute indicator.
-  - This is a privacy feature to avoid accidentally talking in voice chat when not intended.
-  - Also, Steam Input and Windows don't provide a universal mute shortcut that can be mapped natively.
-  - The app provide an always-on-top indicator of mute and mic activity status.
-  - It also provides a configurable mute keyboard shortcut that can be mapped to any controller button in Steam Input.
-
 ## Requirements
 
 - Steam, for Steam Input profiles and game shortcut support
@@ -45,24 +31,48 @@ The project provides support for two extra features that mimic functionality on 
   - `client run <profile>` - runs a profile and registers it with the server,
   - `server status [--json]` - shows the status of the server and its clients,
   - `steam list` - list installed Steam games and their app-ids,
-  - `steam open-config [app-id]` - opens the Steam Input configuration for the given app-id,
-  - `steam export [--path <path>]` - exports the SRM manifest for the configured games.
+  - `steam open-config [app-id]` - opens a Steam Input configuration, defaulting to the desktop configuration
+  - `steam export [--path <path>]` - exports the SRM manifest for the configured game profiles.
+
+The project provides support for two extra features/functionalities on DualSense controllers that I really liked:
+
+- **Action colors:** the ability to set always-on commands in Steam Input action sets/layers.
+  - This allows the controller to visually indicate the active action set/layer to know which controls are active.
+  - The app provides the ability to define assign keyboard shortcuts to different colors.
+  - The app provides an always-on-top indicator of the colors of the active keyboard shortcuts
+  - The shortcuts can be mapped to always-on commands for action sets/layers in Steam Input.
+  - This visually indicates the active Steam Input action set/layer and the active controls.
+- **Microphone toggle:** the ability to toggle the microphone on a system level with a visual mute indicator.
+  - This is a privacy feature to avoid accidentally talking in voice chat when not intended.
+  - Also, Steam Input and Windows don't provide a universal mute shortcut that can be mapped natively.
+  - The app provide an always-on-top indicator of mute and mic activity status.
+  - It also provides a configurable mute keyboard shortcut that can be mapped to any controller button in Steam Input.
 
 ## Development
 
-- `.\Scripts\Build.ps1` - format/build the solution and build Teensy firmware
-- `.\Scripts\Test-Solution.ps1` - run dotnet unit tests
-- `.\Scripts\Deploy-App.ps [-Start]` - build, package, and deploy the app
-- `.\Scripts\CLI.ps1` - run CLI commands
+The app can be built and deployed locally for development personal usage.
 
-### Requirements
+**Requirements:**
 
 - .NET 10 SDK
 - PlatformIO CLI or the VS Code PlatformIO extension
 
+Run the following to build and deploy the app locally.
+
+```powershell
+git clone "https://github.com/mohdfareed/steam-input-bridge.git"
+cd "steam-input-bridge"
+.\Scripts\Deploy-App.ps1 -Start
+```
+
+The following scripts are available for development:
+
+- `.\Scripts\Build-Solution.ps1` - format/build the solution and build Teensy firmware
+- `.\Scripts\Test-Solution.ps1` - run unit tests and firmware tests
+- `.\Scripts\CLI.ps1` - run CLI commands
+
 ## TODO
 
-- [ ] Benchmark and optimize mouse/controller performance.
-- [ ] Packaging, versioning, deployment with install script and self-update.
-- [ ] Documentation, README.md, and usage examples.
-- [ ] Machine-readable diagnostics, and richer observability.
+- [ ] Benchmark and optimize mouse/controller emulation performance.
+- [ ] Packaging, versioning, deployment, and installation/update.
+- [ ] Machine-readable diagnostics, and richer observability/logging.
