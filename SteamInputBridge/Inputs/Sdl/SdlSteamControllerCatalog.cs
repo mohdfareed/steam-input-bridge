@@ -3,7 +3,7 @@ using SDL3;
 
 namespace SteamInputBridge.Inputs.Sdl;
 
-/// <summary>Steam Controller stream reported by SDL through Steam Input.</summary>
+/// <summary>Supported controller stream reported by SDL through Steam Input.</summary>
 public sealed record SdlSteamControllerInfo(
     uint InstanceId,
     string Name,
@@ -11,13 +11,15 @@ public sealed record SdlSteamControllerInfo(
     ushort VendorId,
     ushort ProductId);
 
-/// <summary>Lists Steam Controller streams visible to the current process.</summary>
+/// <summary>Lists supported Steam Input controller streams visible to the current process.</summary>
 public static class SdlSteamControllerCatalog
 {
     private const ushort SteamVendorId = 0x28DE;
     private const ushort SteamControllerProductId = 0x1302;
+    private const ushort EightBitDoVendorId = 0x2DC8;
+    private const ushort EightBitDoUltimate2WirelessProductId = 0x6012;
 
-    /// <summary>Lists Steam Controller streams reported through Steam Input.</summary>
+    /// <summary>Lists supported controller streams reported through Steam Input.</summary>
     public static IReadOnlyList<SdlSteamControllerInfo> GetControllers()
     {
         SdlGamepadRuntime.EnsureInitialized();
@@ -38,9 +40,7 @@ public static class SdlSteamControllerCatalog
                 ulong steamHandle = SDL.GetGamepadSteamHandle(gamepad);
                 ushort vendorId = SDL.GetGamepadVendor(gamepad);
                 ushort productId = SDL.GetGamepadProduct(gamepad);
-                if (steamHandle == 0 ||
-                    vendorId != SteamVendorId ||
-                    productId != SteamControllerProductId)
+                if (!IsSupportedSteamInputController(steamHandle, vendorId, productId))
                 {
                     continue;
                 }
@@ -59,5 +59,12 @@ public static class SdlSteamControllerCatalog
         }
 
         return controllers;
+    }
+
+    internal static bool IsSupportedSteamInputController(ulong steamHandle, ushort vendorId, ushort productId)
+    {
+        return steamHandle != 0 &&
+            ((vendorId == SteamVendorId && productId == SteamControllerProductId) ||
+             (vendorId == EightBitDoVendorId && productId == EightBitDoUltimate2WirelessProductId));
     }
 }
