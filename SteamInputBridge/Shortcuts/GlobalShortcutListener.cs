@@ -18,13 +18,10 @@ public sealed class GlobalShortcutListener : IGlobalShortcutListener
     private const int ReleasePollMilliseconds = 25;
 
     private readonly MessageThread _messageThread = new();
-    private readonly Dictionary<int, KeyboardShortcut> _shortcuts = [];
-    private readonly HashSet<int> _pressed = [];
+    private readonly ShortcutPressTracker _tracker = new(IsKeyDown);
     private readonly List<string> _registeredNames = [];
 
     private Timer? _timer;
-    private Action<int>? _pressedCallback;
-    private Action<int>? _releasedCallback;
     private bool _disposed;
 
     // MARK: Publics
@@ -43,8 +40,7 @@ public sealed class GlobalShortcutListener : IGlobalShortcutListener
         _messageThread.Invoke(() =>
         {
             ClearRegistrations();
-            _pressedCallback = pressed;
-            _releasedCallback = released;
+            _tracker.Update(shortcuts, pressed, released);
             foreach (KeyboardShortcutRegistration shortcut in shortcuts)
             {
                 Register(shortcut);
@@ -81,14 +77,12 @@ public sealed class GlobalShortcutListener : IGlobalShortcutListener
         string name = shortcut.Id.ToString(CultureInfo.InvariantCulture);
         HotkeyManager.Current.AddOrReplace(name, shortcut.Shortcut.ToKeys(), noRepeat: true, OnHotkeyPressed);
         _registeredNames.Add(name);
-        _shortcuts[shortcut.Id] = shortcut.Shortcut;
     }
 
     private void ClearRegistrations()
     {
         StopTimer();
-        _pressed.Clear();
-        _shortcuts.Clear();
+        _tracker.Update([], static _ => { }, static _ => { });
 
         foreach (string name in _registeredNames)
         {
@@ -105,15 +99,14 @@ public sealed class GlobalShortcutListener : IGlobalShortcutListener
     {
         _ = sender;
         args.Handled = true;
-        if (!int.TryParse(args.Name, NumberStyles.None, CultureInfo.InvariantCulture, out int id) || !_shortcuts.ContainsKey(id))
+        if (!int.TryParse(args.Name, NumberStyles.None, CultureInfo.InvariantCulture, out int id))
         {
             return;
         }
 
-        StartTimer();
-        if (_pressed.Add(id))
+        if (_tracker.HotkeyPressed(id))
         {
-            _pressedCallback?.Invoke(id);
+            StartTimer();
         }
     }
 
@@ -122,23 +115,9 @@ public sealed class GlobalShortcutListener : IGlobalShortcutListener
         _ = sender;
         _ = args;
 
-        foreach ((int id, KeyboardShortcut shortcut) in _shortcuts)
-        {
-            bool isDown = IsShortcutDown(shortcut);
-            bool wasDown = _pressed.Contains(id);
-            if (isDown && !wasDown)
-            {
-                _ = _pressed.Add(id);
-                _pressedCallback?.Invoke(id);
-            }
-            else if (!isDown && wasDown)
-            {
-                _ = _pressed.Remove(id);
-                _releasedCallback?.Invoke(id);
-            }
-        }
+        _tracker.Refresh();
 
-        if (_pressed.Count == 0)
+        if (!_tracker.HasActiveState)
         {
             StopTimer();
         }
@@ -169,25 +148,6 @@ public sealed class GlobalShortcutListener : IGlobalShortcutListener
         _timer.Tick -= RefreshPressedShortcuts;
         _timer.Dispose();
         _timer = null;
-    }
-
-    private static bool IsShortcutDown(KeyboardShortcut shortcut)
-    {
-        return IsKeyDown(shortcut.VirtualKey) && HasExactModifierState(shortcut.Modifiers);
-    }
-
-    private static bool HasExactModifierState(KeyboardShortcutModifiers modifiers)
-    {
-        return HasModifier(modifiers, KeyboardShortcutModifiers.Control) == IsKeyDown((ushort)Keys.ControlKey) &&
-            HasModifier(modifiers, KeyboardShortcutModifiers.Alt) == IsKeyDown((ushort)Keys.Menu) &&
-            HasModifier(modifiers, KeyboardShortcutModifiers.Shift) == IsKeyDown((ushort)Keys.ShiftKey) &&
-            HasModifier(modifiers, KeyboardShortcutModifiers.Windows) ==
-            (IsKeyDown((ushort)Keys.LWin) || IsKeyDown((ushort)Keys.RWin));
-    }
-
-    private static bool HasModifier(KeyboardShortcutModifiers modifiers, KeyboardShortcutModifiers modifier)
-    {
-        return (modifiers & modifier) != 0;
     }
 
     private static bool IsKeyDown(ushort virtualKey)

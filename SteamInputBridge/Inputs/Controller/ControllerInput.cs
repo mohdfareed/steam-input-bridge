@@ -2,7 +2,7 @@ using System;
 
 namespace SteamInputBridge.Inputs.Controller;
 
-/// <summary>Controller button flags used by the Steam Controller path.</summary>
+/// <summary>Controller button flags used by the SDL controller path.</summary>
 [Flags]
 public enum ControllerButtons
 {

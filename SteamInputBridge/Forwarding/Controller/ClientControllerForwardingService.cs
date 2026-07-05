@@ -15,7 +15,7 @@ using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Forwarding.Controller;
 
-/// <summary>Client-side Steam Controller to VIIPER Xbox forwarding.</summary>
+/// <summary>Client-side Steam Input controller to VIIPER Xbox forwarding.</summary>
 public sealed class ClientControllerForwardingService(
     ClientRunOptions options,
     SettingsService settings,

@@ -6,7 +6,7 @@ using SteamInputBridge.Inputs.Controller;
 
 namespace SteamInputBridge.Inputs.Sdl;
 
-/// <summary>Open SDL Steam Controller stream.</summary>
+/// <summary>Open SDL Steam Input controller stream.</summary>
 public sealed class SdlSteamControllerSource : IAsyncDisposable
 {
     // REVIEW: Verify SDL's max rumble duration is the right "hold until next update" behavior.
