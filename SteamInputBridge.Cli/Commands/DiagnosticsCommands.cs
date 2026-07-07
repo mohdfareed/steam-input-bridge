@@ -12,14 +12,14 @@ internal static class DiagnosticsCommands
     public static Command CreateCommand()
     {
         Command diagnostics = new("diagnostics", "App diagnostics.");
-        diagnostics.SetAction((_, cancellationToken) => Main(cancellationToken));
+        diagnostics.SetAction((_, cancellationToken) => RunAsync(cancellationToken));
         return diagnostics;
     }
 
     // MARK: Implementation
     // ========================================================================
 
-    private static async Task<int> Main(CancellationToken cancellationToken)
+    private static async Task<int> RunAsync(CancellationToken cancellationToken)
     {
         try
         {

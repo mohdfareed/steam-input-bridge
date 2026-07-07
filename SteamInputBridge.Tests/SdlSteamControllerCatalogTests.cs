@@ -24,7 +24,16 @@ public sealed class SdlSteamControllerCatalogTests
     }
 
     [TestMethod]
-    public void RejectsEightBitDoUltimate2WirelessWithoutSteamHandle()
+    public void SupportsOtherSteamInputControllerWithSteamHandle()
+    {
+        Assert.IsTrue(SdlSteamControllerCatalog.IsSupportedSteamInputController(
+            steamHandle: 1,
+            vendorId: 0x2DC8,
+            productId: 0x310B));
+    }
+
+    [TestMethod]
+    public void RejectsControllerWithoutSteamHandle()
     {
         Assert.IsFalse(SdlSteamControllerCatalog.IsSupportedSteamInputController(
             steamHandle: 0,
@@ -33,11 +42,11 @@ public sealed class SdlSteamControllerCatalogTests
     }
 
     [TestMethod]
-    public void RejectsUnknownSteamInputController()
+    public void RejectsMirroredXbox360ControllerWithSteamHandle()
     {
         Assert.IsFalse(SdlSteamControllerCatalog.IsSupportedSteamInputController(
             steamHandle: 1,
-            vendorId: 0x2DC8,
-            productId: 0x0001));
+            vendorId: 0x045E,
+            productId: 0x028E));
     }
 }

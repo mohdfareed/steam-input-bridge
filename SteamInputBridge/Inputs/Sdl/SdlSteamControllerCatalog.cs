@@ -14,10 +14,8 @@ public sealed record SdlSteamControllerInfo(
 /// <summary>Lists supported Steam Input controller streams visible to the current process.</summary>
 public static class SdlSteamControllerCatalog
 {
-    private const ushort SteamVendorId = 0x28DE;
-    private const ushort SteamControllerProductId = 0x1302;
-    private const ushort EightBitDoVendorId = 0x2DC8;
-    private const ushort EightBitDoUltimate2WirelessProductId = 0x6012;
+    private const ushort MirroredXbox360VendorId = 0x045E;
+    private const ushort MirroredXbox360ProductId = 0x028E;
 
     /// <summary>Lists supported controller streams reported through Steam Input.</summary>
     public static IReadOnlyList<SdlSteamControllerInfo> GetControllers()
@@ -64,7 +62,6 @@ public static class SdlSteamControllerCatalog
     internal static bool IsSupportedSteamInputController(ulong steamHandle, ushort vendorId, ushort productId)
     {
         return steamHandle != 0 &&
-            ((vendorId == SteamVendorId && productId == SteamControllerProductId) ||
-             (vendorId == EightBitDoVendorId && productId == EightBitDoUltimate2WirelessProductId));
+            (vendorId != MirroredXbox360VendorId || productId != MirroredXbox360ProductId);
     }
 }
