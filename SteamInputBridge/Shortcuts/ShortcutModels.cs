@@ -16,6 +16,9 @@ public enum ShortcutTarget
 
     /// <summary>Action color target.</summary>
     ActionColor,
+
+    /// <summary>Steam Input controller configurator.</summary>
+    Steam,
 }
 
 /// <summary>State applied when a shortcut is pressed.</summary>

@@ -64,6 +64,9 @@ public sealed class SettingsValidationTests
             new ShortcutTargetSetting(ShortcutTarget.Microphone, null),
             ShortcutTargetSetting.Parse("microphone"));
         Assert.AreEqual(
+            new ShortcutTargetSetting(ShortcutTarget.Steam, null),
+            ShortcutTargetSetting.Parse("steam"));
+        Assert.AreEqual(
             new ShortcutTargetSetting(ShortcutTarget.ActionColor, "#80A0FF"),
             ShortcutTargetSetting.Parse(" #80a0ff "));
 

@@ -44,6 +44,8 @@ public static class ServerServices
         _ = services.AddSingleton<ShortcutService>();
         _ = services.AddHostedService(static services => services.GetRequiredService<ShortcutService>());
         _ = services.AddSingleton(static services => new ActionColorService(services.GetRequiredService<ShortcutService>()));
+        _ = services.AddSingleton<SteamInputConfigShortcutService>();
+        _ = services.AddHostedService(static services => services.GetRequiredService<SteamInputConfigShortcutService>());
 
         // Microphone
         _ = services.AddSingleton(_ => new MicrophoneService());
