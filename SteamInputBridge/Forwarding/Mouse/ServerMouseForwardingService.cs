@@ -83,7 +83,7 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
             bool outputConnected = output?.IsConnected == true;
             bool forwarding = outputConnected &&
                 pointerEnabled &&
-                _profiles.ActiveProfile?.MouseOutput == outputKind;
+                _profiles.ActiveProfile?.Definition.MouseOutput == outputKind;
             return new(
                 outputKind.ToString(),
                 outputConnected,

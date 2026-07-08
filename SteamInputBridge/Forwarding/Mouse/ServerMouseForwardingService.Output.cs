@@ -58,9 +58,9 @@ public sealed partial class ServerMouseForwardingService
     {
         foreach (ProfileStatus profile in _profiles.Profiles)
         {
-            if (profile.ClientProcessId.HasValue && profile.MouseOutput.HasValue)
+            if (profile.ClientProcessId.HasValue && profile.Definition.MouseOutput.HasValue)
             {
-                return profile.MouseOutput.Value;
+                return profile.Definition.MouseOutput.Value;
             }
         }
 

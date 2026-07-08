@@ -31,7 +31,11 @@ public sealed class BridgeServiceTests
             new SettingsFile(@"C:\Tests\appsettings.json"),
             NullLogger<SettingsService>.Instance);
         using TestGlobalShortcutListener listener = new();
-        using ShortcutService shortcuts = new(settings, listener, NullLogger<ShortcutService>.Instance);
+        using ShortcutService shortcuts = new(
+            settings,
+            runtime.ActiveProfiles,
+            listener,
+            NullLogger<ShortcutService>.Instance);
         await shortcuts.StartAsync(default).ConfigureAwait(false);
         await using ServerMouseForwardingService mouse = new(
             runtime.ActiveProfiles,

@@ -153,12 +153,10 @@ public sealed class BridgeService
         {
             statuses.Add(new(
                 profile.Id,
-                profile.Title,
+                profile.Definition,
                 profile.Active,
                 profile.ClientProcessId,
                 profile.EffectiveSteamAppId,
-                profile.MouseOutput?.ToString() ?? "None",
-                profile.ControllerOutput?.ToString() ?? "None",
                 profile.GameProcessIds));
         }
 

@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
@@ -15,13 +18,10 @@ public sealed class ShortcutServiceTests
     [TestMethod]
     public async Task StartRegistersConfiguredShortcutsAndPublishesStatus()
     {
-        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithShortcuts());
-        using SettingsService settings = new(
-            monitor,
-            new SettingsFile(@"C:\Tests\appsettings.json"),
-            NullLogger<SettingsService>.Instance);
+        using TestShortcutRuntime runtime = await TestShortcutRuntime.CreateStartedAsync(SettingsWithShortcuts())
+            .ConfigureAwait(false);
         using TestGlobalShortcutListener listener = new();
-        using ShortcutService service = new(settings, listener, NullLogger<ShortcutService>.Instance);
+        using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
         List<ShortcutEventArgs> events = [];
         service.Shortcut += (_, args) => events.Add(args);
 
@@ -44,17 +44,14 @@ public sealed class ShortcutServiceTests
     [TestMethod]
     public async Task ReloadReplacesRegistrationsAndClearsPressedStatus()
     {
-        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithShortcuts());
-        using SettingsService settings = new(
-            monitor,
-            new SettingsFile(@"C:\Tests\appsettings.json"),
-            NullLogger<SettingsService>.Instance);
+        using TestShortcutRuntime runtime = await TestShortcutRuntime.CreateStartedAsync(SettingsWithShortcuts())
+            .ConfigureAwait(false);
         using TestGlobalShortcutListener listener = new();
-        using ShortcutService service = new(settings, listener, NullLogger<ShortcutService>.Instance);
+        using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
         await service.StartAsync(default).ConfigureAwait(false);
         listener.Press(1);
 
-        monitor.Set(SettingsWithShortcut("Alt+F2"));
+        runtime.Monitor.Set(SettingsWithShortcut("Alt+F2"));
 
         Assert.HasCount(1, listener.Registrations);
         Assert.AreEqual("Alt+F2", service.Status[0].Keys);
@@ -64,32 +61,22 @@ public sealed class ShortcutServiceTests
     [TestMethod]
     public async Task ProfileShortcutsRegisterOnlyForActiveProfile()
     {
-        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithProfileShortcut());
-        using SettingsService settings = new(
-            monitor,
-            new SettingsFile(@"C:\Tests\appsettings.json"),
-            NullLogger<SettingsService>.Instance);
+        using TestShortcutRuntime runtime = await TestShortcutRuntime.CreateStartedAsync(SettingsWithProfileShortcut())
+            .ConfigureAwait(false);
         using TestGlobalShortcutListener listener = new();
-        TestActiveProfileSource profiles = new();
-        using ShortcutService service = new(
-            settings,
-            listener,
-            NullLogger<ShortcutService>.Instance,
-            profiles.ActiveProfileId,
-            profiles.Subscribe,
-            profiles.Unsubscribe);
+        using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
 
         await service.StartAsync(default).ConfigureAwait(false);
         Assert.HasCount(1, listener.Registrations);
         Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
 
-        profiles.SetActive("game");
+        await runtime.ActivateAsync("game").ConfigureAwait(false);
 
         Assert.HasCount(2, listener.Registrations);
         Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
         Assert.AreEqual("F2", listener.Registrations[1].Shortcut.ToString());
 
-        profiles.SetActive(null);
+        await runtime.DeactivateAsync().ConfigureAwait(false);
 
         Assert.HasCount(1, listener.Registrations);
         Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
@@ -98,27 +85,18 @@ public sealed class ShortcutServiceTests
     [TestMethod]
     public async Task ProfileShortcutReleasesWhenProfileStopsBeingActive()
     {
-        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithProfileShortcut(globalShortcut: false));
-        using SettingsService settings = new(
-            monitor,
-            new SettingsFile(@"C:\Tests\appsettings.json"),
-            NullLogger<SettingsService>.Instance);
+        using TestShortcutRuntime runtime = await TestShortcutRuntime
+            .CreateStartedAsync(SettingsWithProfileShortcut(globalShortcut: false))
+            .ConfigureAwait(false);
         using TestGlobalShortcutListener listener = new();
-        TestActiveProfileSource profiles = new();
-        profiles.SetActive("game");
-        using ShortcutService service = new(
-            settings,
-            listener,
-            NullLogger<ShortcutService>.Instance,
-            profiles.ActiveProfileId,
-            profiles.Subscribe,
-            profiles.Unsubscribe);
+        await runtime.ActivateAsync("game").ConfigureAwait(false);
+        using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
         List<ShortcutEventArgs> events = [];
         service.Shortcut += (_, args) => events.Add(args);
         await service.StartAsync(default).ConfigureAwait(false);
         listener.Press(1);
 
-        profiles.SetActive(null);
+        await runtime.DeactivateAsync().ConfigureAwait(false);
 
         Assert.HasCount(2, events);
         Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);
@@ -183,9 +161,19 @@ public sealed class ShortcutServiceTests
         SteamInputBridgeSettings settings = new();
         settings.Games["game"] = new GameProfile
         {
-            Executable = @"C:\Games\Game\game.exe",
+            Title = "Game",
         };
+        settings.Games["game"].ReceiverProcesses.Add(Process.GetCurrentProcess().ProcessName);
         return settings;
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(3));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token).ConfigureAwait(false);
+        }
     }
 
     private sealed class TestGlobalShortcutListener : IGlobalShortcutListener
@@ -220,31 +208,107 @@ public sealed class ShortcutServiceTests
         }
     }
 
-    private sealed class TestActiveProfileSource
+    private sealed class TestShortcutRuntime : IDisposable
     {
-        private event EventHandler<ActiveProfileChangedEventArgs>? Changed;
+        private readonly ProfileCatalogService _catalog;
+        private readonly ProfileClientsService _clients;
+        private readonly TestForeground _foreground;
+        private readonly TestClientApi _client = new();
+        private Guid? _connectionId;
 
-        private string? ProfileId { get; set; }
-
-        public string? ActiveProfileId()
+        private TestShortcutRuntime(
+            TestOptionsMonitor<SteamInputBridgeSettings> monitor,
+            SettingsService settings,
+            ProfileCatalogService catalog,
+            ProfileClientsService clients,
+            ActiveProfileService profiles,
+            TestForeground foreground)
         {
-            return ProfileId;
+            Monitor = monitor;
+            Settings = settings;
+            _catalog = catalog;
+            _clients = clients;
+            Profiles = profiles;
+            _foreground = foreground;
         }
 
-        public void Subscribe(EventHandler<ActiveProfileChangedEventArgs> handler)
+        public TestOptionsMonitor<SteamInputBridgeSettings> Monitor { get; }
+
+        public SettingsService Settings { get; }
+
+        public ActiveProfileService Profiles { get; }
+
+        public static async Task<TestShortcutRuntime> CreateStartedAsync(SteamInputBridgeSettings initialSettings)
         {
-            Changed += handler;
+            TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(initialSettings);
+            SettingsService settings = new(
+                monitor,
+                new SettingsFile(@"C:\Tests\appsettings.json"),
+                NullLogger<SettingsService>.Instance);
+            ProfileCatalogService catalog = new(settings);
+            ProfileClientsService clients = new(catalog, NullLogger<ProfileClientsService>.Instance);
+            TestForeground foreground = new();
+            ActiveProfileService profiles = new(
+                catalog,
+                clients,
+                () => foreground.ProcessId,
+                TimeSpan.FromMilliseconds(10));
+
+            await catalog.StartAsync(default).ConfigureAwait(false);
+            await profiles.StartAsync(default).ConfigureAwait(false);
+            return new(monitor, settings, catalog, clients, profiles, foreground);
         }
 
-        public void Unsubscribe(EventHandler<ActiveProfileChangedEventArgs> handler)
+        public async Task ActivateAsync(string profileId)
         {
-            Changed -= handler;
+            if (!_connectionId.HasValue)
+            {
+                _connectionId = Guid.NewGuid();
+                _ = await _clients
+                    .ConnectClientAsync(_connectionId.Value, 1234, profileId, steamAppId: null, _client)
+                    .ConfigureAwait(false);
+            }
+
+            _foreground.ProcessId = Environment.ProcessId;
+            await WaitUntilAsync(() => Profiles.ActiveProfile?.Id == profileId).ConfigureAwait(false);
         }
 
-        public void SetActive(string? profileId)
+        public async Task DeactivateAsync()
         {
-            ProfileId = profileId;
-            Changed?.Invoke(this, new(null));
+            _foreground.ProcessId = null;
+            await WaitUntilAsync(() => Profiles.ActiveProfile is null).ConfigureAwait(false);
+        }
+
+        public void Dispose()
+        {
+            Profiles.Dispose();
+            _clients.Dispose();
+            _catalog.Dispose();
+            Settings.Dispose();
+        }
+    }
+
+    private sealed class TestForeground
+    {
+        public int? ProcessId { get; set; }
+    }
+
+    private sealed class TestClientApi : IBridgeClientApi
+    {
+        public Task StopAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<BridgeClientRuntimeStatus> GetStatusAsync()
+        {
+            return Task.FromResult(new BridgeClientRuntimeStatus(new(false, 0, 0)));
+        }
+
+        public Task SetActiveAsync(bool active)
+        {
+            _ = active;
+            return Task.CompletedTask;
         }
     }
 }

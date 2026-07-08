@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Hosting;
+using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Profiles;
 
@@ -140,9 +141,9 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
     private ClientSession StartSession(Guid connectionId, ResolvedProfile profile, IBridgeClientApi control)
     {
         StopSession(connectionId);
-        HashSet<int> receiverBaseline = string.IsNullOrWhiteSpace(profile.Executable)
+        HashSet<int> receiverBaseline = string.IsNullOrWhiteSpace(profile.Definition.Executable)
             ? []
-            : FindReceivers(profile.ReceiverProcesses);
+            : FindReceivers(profile.Definition.ReceiverProcesses);
 
 #pragma warning disable CA2000 // CancellationTokenSource ownership transfers to ClientSession.
         CancellationTokenSource stop = new();
@@ -181,25 +182,26 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
 
     private static void LaunchProfile(ResolvedProfile profile)
     {
-        if (string.IsNullOrWhiteSpace(profile.Executable))
+        GameProfile definition = profile.Definition;
+        if (string.IsNullOrWhiteSpace(definition.Executable))
         {
             return;
         }
 
         ProcessStartInfo start = new()
         {
-            FileName = profile.Executable,
-            Arguments = profile.Arguments ?? string.Empty,
-            WorkingDirectory = profile.WorkingDirectory ?? AppContext.BaseDirectory,
+            FileName = definition.Executable,
+            Arguments = definition.Arguments ?? string.Empty,
+            WorkingDirectory = definition.WorkingDirectory ?? AppContext.BaseDirectory,
             UseShellExecute = false,
         };
 
-        _ = Process.Start(start) ?? throw new InvalidOperationException($"Could not launch {profile.Executable}.");
+        _ = Process.Start(start) ?? throw new InvalidOperationException($"Could not launch {definition.Executable}.");
     }
 
     private async Task WatchReceiversAsync(ClientSession session, CancellationToken cancellationToken)
     {
-        if (session.Profile.ReceiverProcesses.Count == 0)
+        if (session.Profile.Definition.ReceiverProcesses.Count == 0)
         {
             return;
         }
@@ -258,7 +260,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
 
     private static bool RefreshSessionReceivers(ClientSession session, out bool changed)
     {
-        HashSet<int> receivers = FindReceivers(session.Profile.ReceiverProcesses);
+        HashSet<int> receivers = FindReceivers(session.Profile.Definition.ReceiverProcesses);
         receivers.ExceptWith(session.ReceiverBaseline);
 
         lock (session.Gate)

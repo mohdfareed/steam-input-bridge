@@ -16,9 +16,7 @@ namespace SteamInputBridge.Shortcuts;
 public sealed class ShortcutService : IHostedService, IDisposable
 {
     private readonly SettingsService _settings;
-    private readonly Func<string?> _activeProfileId;
-    private readonly Action<EventHandler<ActiveProfileChangedEventArgs>> _subscribeActiveProfileChanged;
-    private readonly Action<EventHandler<ActiveProfileChangedEventArgs>> _unsubscribeActiveProfileChanged;
+    private readonly ActiveProfileService _profiles;
     private readonly IGlobalShortcutListener _listener;
     private readonly ILogger<ShortcutService> _logger;
     private readonly Lock _gate = new();
@@ -32,49 +30,23 @@ public sealed class ShortcutService : IHostedService, IDisposable
         ActiveProfileService profiles,
         GlobalShortcutListener listener,
         ILogger<ShortcutService> logger)
-        : this(
-            settings,
-            listener ?? throw new ArgumentNullException(nameof(listener)),
-            logger,
-            ActiveProfileId(profiles),
-            handler => profiles.ActiveProfileChanged += handler,
-            handler => profiles.ActiveProfileChanged -= handler)
+        : this(settings, profiles, (IGlobalShortcutListener)listener, logger)
     {
     }
 
     internal ShortcutService(
         SettingsService settings,
+        ActiveProfileService profiles,
         IGlobalShortcutListener listener,
         ILogger<ShortcutService> logger)
-        : this(
-            settings,
-            listener,
-            logger,
-            static () => null,
-            static _ => { },
-            static _ => { })
-    {
-    }
-
-    internal ShortcutService(
-        SettingsService settings,
-        IGlobalShortcutListener listener,
-        ILogger<ShortcutService> logger,
-        Func<string?> activeProfileId,
-        Action<EventHandler<ActiveProfileChangedEventArgs>> subscribeActiveProfileChanged,
-        Action<EventHandler<ActiveProfileChangedEventArgs>> unsubscribeActiveProfileChanged)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(profiles);
         ArgumentNullException.ThrowIfNull(listener);
         ArgumentNullException.ThrowIfNull(logger);
-        ArgumentNullException.ThrowIfNull(activeProfileId);
-        ArgumentNullException.ThrowIfNull(subscribeActiveProfileChanged);
-        ArgumentNullException.ThrowIfNull(unsubscribeActiveProfileChanged);
 
         _settings = settings;
-        _activeProfileId = activeProfileId;
-        _subscribeActiveProfileChanged = subscribeActiveProfileChanged;
-        _unsubscribeActiveProfileChanged = unsubscribeActiveProfileChanged;
+        _profiles = profiles;
         _listener = listener;
         _logger = logger;
     }
@@ -95,8 +67,8 @@ public sealed class ShortcutService : IHostedService, IDisposable
     {
         _ = cancellationToken;
         _settings.Changed += OnSettingsChanged;
-        _subscribeActiveProfileChanged(OnActiveProfileChanged);
-        Apply(_settings.Current);
+        _profiles.ActiveProfileChanged += OnActiveProfileChanged;
+        ApplySettings(_settings.Current);
         return Task.CompletedTask;
     }
 
@@ -105,7 +77,7 @@ public sealed class ShortcutService : IHostedService, IDisposable
     {
         _ = cancellationToken;
         _settings.Changed -= OnSettingsChanged;
-        _unsubscribeActiveProfileChanged(OnActiveProfileChanged);
+        _profiles.ActiveProfileChanged -= OnActiveProfileChanged;
         _listener.Update([], static _ => { }, static _ => { });
         return Task.CompletedTask;
     }
@@ -120,7 +92,7 @@ public sealed class ShortcutService : IHostedService, IDisposable
 
         _disposed = true;
         _settings.Changed -= OnSettingsChanged;
-        _unsubscribeActiveProfileChanged(OnActiveProfileChanged);
+        _profiles.ActiveProfileChanged -= OnActiveProfileChanged;
         _listener.Dispose();
     }
 
@@ -130,23 +102,19 @@ public sealed class ShortcutService : IHostedService, IDisposable
     private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)
     {
         _ = sender;
-        Apply(args.Settings);
+        ApplySettings(args.Settings);
     }
 
     private void OnActiveProfileChanged(object? sender, ActiveProfileChangedEventArgs args)
     {
         _ = sender;
         _ = args;
-        Apply(_settings.Current);
+        ApplySettings(_settings.Current);
     }
 
-    private void Apply(SteamInputBridgeSettings settings)
+    private void ApplySettings(SteamInputBridgeSettings settings)
     {
-        Apply(ActiveShortcuts(settings));
-    }
-
-    private void Apply(IReadOnlyList<ShortcutEntry> shortcuts)
-    {
+        List<ShortcutEntry> shortcuts = ActiveShortcuts(settings);
         ShortcutBindingSet bindings = ShortcutBindingSet.Create(shortcuts);
         List<(int Id, ShortcutEntry Shortcut)> releases;
         lock (_gate)
@@ -178,7 +146,7 @@ public sealed class ShortcutService : IHostedService, IDisposable
     {
         List<ShortcutEntry> shortcuts = [.. settings.Shortcuts];
 
-        string? profileId = _activeProfileId();
+        string? profileId = _profiles.ActiveProfile?.Id;
         if (!string.IsNullOrWhiteSpace(profileId) &&
             settings.Games.TryGetValue(profileId, out GameProfile? profile))
         {
@@ -318,12 +286,6 @@ public sealed class ShortcutService : IHostedService, IDisposable
 
             return status;
         }
-    }
-
-    private static Func<string?> ActiveProfileId(ActiveProfileService profiles)
-    {
-        ArgumentNullException.ThrowIfNull(profiles);
-        return () => profiles.ActiveProfile?.Id;
     }
 
     // MARK: Logging

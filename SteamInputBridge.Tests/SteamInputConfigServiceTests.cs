@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using SteamInputBridge.Profiles;
+using SteamInputBridge.Settings;
 using SteamInputBridge.Steam;
 
 namespace SteamInputBridge.Tests;
@@ -64,12 +65,12 @@ public sealed class SteamInputConfigServiceTests
     {
         return new(
             id,
-            "Game",
-            ConfiguredSteamAppId: appId,
+            new GameProfile
+            {
+                Title = "Game",
+                SteamAppId = appId,
+            },
             EffectiveSteamAppId: appId,
-            MouseOutput: null,
-            ControllerOutput: null,
-            ReceiverProcesses: [],
             GameProcessIds: [],
             Active: true,
             ClientProcessId: 1,

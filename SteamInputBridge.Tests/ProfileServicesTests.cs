@@ -49,8 +49,8 @@ public sealed class ProfileServicesTests
         Assert.AreEqual(connectionId, connected.ConnectionId);
         Assert.AreEqual(1234, profile.ClientProcessId);
         Assert.AreEqual<uint?>(5678, profile.EffectiveSteamAppId);
-        Assert.AreEqual(MouseOutput.Viiper, profile.MouseOutput);
-        Assert.AreEqual(ControllerOutput.Xbox360, profile.ControllerOutput);
+        Assert.AreEqual(MouseOutput.Viiper, profile.Definition.MouseOutput);
+        Assert.AreEqual(ControllerOutput.Xbox360, profile.Definition.ControllerOutput);
         Assert.HasCount(1, control.SetActiveCalls);
         Assert.IsFalse(control.SetActiveCalls[0]);
 

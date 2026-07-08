@@ -46,7 +46,7 @@ public sealed partial class ServerMouseForwardingService
         if (output is null ||
             !pointerEnabled ||
             input.Report.IsEmpty ||
-            activeProfile?.MouseOutput != outputKind)
+            activeProfile?.Definition.MouseOutput != outputKind)
         {
             return;
         }

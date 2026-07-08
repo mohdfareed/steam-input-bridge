@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using PolyType;
+using SteamInputBridge.Settings;
 using StreamJsonRpc;
 
 namespace SteamInputBridge.Hosting;
@@ -129,19 +130,17 @@ public sealed class BridgeShortcutStatus(
 /// <summary>Resolved profile status snapshot.</summary>
 public sealed class BridgeProfileStatus(
     string id,
-    string title,
+    GameProfile definition,
     bool active,
     int? clientProcessId,
-    uint? steamAppId,
-    string mouseOutput,
-    string controllerOutput,
+    uint? effectiveSteamAppId,
     IReadOnlyList<int> gameProcessIds)
 {
     /// <summary>Profile id.</summary>
     public string Id { get; } = id;
 
-    /// <summary>Profile title.</summary>
-    public string Title { get; } = title;
+    /// <summary>Profile definition.</summary>
+    public GameProfile Definition { get; } = definition;
 
     /// <summary>Whether this profile is active.</summary>
     public bool Active { get; } = active;
@@ -150,13 +149,7 @@ public sealed class BridgeProfileStatus(
     public int? ClientProcessId { get; } = clientProcessId;
 
     /// <summary>Effective Steam app id.</summary>
-    public uint? SteamAppId { get; } = steamAppId;
-
-    /// <summary>Mouse output setting.</summary>
-    public string MouseOutput { get; } = mouseOutput;
-
-    /// <summary>Controller output setting.</summary>
-    public string ControllerOutput { get; } = controllerOutput;
+    public uint? EffectiveSteamAppId { get; } = effectiveSteamAppId;
 
     /// <summary>Tracked game process ids.</summary>
     public IReadOnlyList<int> GameProcessIds { get; } = gameProcessIds;

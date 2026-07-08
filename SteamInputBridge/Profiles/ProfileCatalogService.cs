@@ -95,16 +95,7 @@ public sealed class ProfileCatalogService(SettingsService settings) : IHostedSer
         Dictionary<string, ResolvedProfile> profiles = new(StringComparer.OrdinalIgnoreCase);
         foreach ((string profileId, GameProfile profile) in settings.Games)
         {
-            profiles[profileId] = new(
-                profileId,
-                profile.Title,
-                profile.Executable,
-                profile.Arguments,
-                profile.WorkingDirectory,
-                profile.SteamAppId,
-                profile.MouseOutput,
-                profile.ControllerOutput,
-                [.. profile.ReceiverProcesses]);
+            profiles[profileId] = new(profileId, profile);
         }
 
         return profiles;

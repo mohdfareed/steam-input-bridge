@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Profiles;
+using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.App.Tray.Menu;
 
@@ -16,6 +18,7 @@ internal sealed class ProfilesMenuSection
     public ToolStripMenuItem Build(
         IReadOnlyList<ProfileStatus> profiles,
         string? lastActiveProfileId,
+        IReadOnlyList<BridgeShortcutStatus> activeShortcuts,
         Func<uint, Task> openSteamConfig,
         Action<Exception> onError,
         Action<Guid> stopClient)
@@ -33,6 +36,7 @@ internal sealed class ProfilesMenuSection
             _ = menu.DropDownItems.Add(CreateProfileMenu(
                 profile,
                 IsLastActive(profile, lastActiveProfileId),
+                activeShortcuts,
                 openSteamConfig,
                 onError,
                 stopClient));
@@ -41,13 +45,16 @@ internal sealed class ProfilesMenuSection
         return menu;
     }
 
-    public void Update(IReadOnlyList<ProfileStatus> profiles, string? lastActiveProfileId)
+    public void Update(
+        IReadOnlyList<ProfileStatus> profiles,
+        string? lastActiveProfileId,
+        IReadOnlyList<BridgeShortcutStatus> activeShortcuts)
     {
         foreach (ProfileStatus profile in profiles)
         {
             if (_profiles.TryGetValue(profile.Id, out ProfileMenuBinding? items))
             {
-                items.Update(profile, IsLastActive(profile, lastActiveProfileId));
+                items.Update(profile, IsLastActive(profile, lastActiveProfileId), activeShortcuts);
             }
         }
     }
@@ -62,10 +69,9 @@ internal sealed class ProfilesMenuSection
         for (int i = 0; i < previous.Count; i++)
         {
             if (previous[i].Id != current[i].Id ||
-                previous[i].Title != current[i].Title ||
+                previous[i].Definition != current[i].Definition ||
                 previous[i].EffectiveSteamAppId != current[i].EffectiveSteamAppId ||
-                previous[i].MouseOutput != current[i].MouseOutput ||
-                previous[i].ControllerOutput != current[i].ControllerOutput)
+                previous[i].ClientProcessId != current[i].ClientProcessId)
             {
                 return true;
             }
@@ -80,11 +86,12 @@ internal sealed class ProfilesMenuSection
     private ToolStripMenuItem CreateProfileMenu(
         ProfileStatus profile,
         bool lastActive,
+        IReadOnlyList<BridgeShortcutStatus> activeShortcuts,
         Func<uint, Task> openSteamConfig,
         Action<Exception> onError,
         Action<Guid> stopClient)
     {
-        ToolStripMenuItem menu = TrayMenuItems.Menu(profile.Title);
+        ToolStripMenuItem menu = TrayMenuItems.Menu(profile.Definition.Title);
         SetProfileCheckMark(menu, profile, lastActive);
 
         ToolStripMenuItem appId = TrayMenuItems.Item("Steam app ID", TrayMenuItems.Number(profile.EffectiveSteamAppId));
@@ -95,13 +102,15 @@ internal sealed class ProfilesMenuSection
             "Game processes",
             TrayMenuItems.Number(profile.GameProcessIds.Count));
         TrayMenuItems.SetCheckMark(gameProcesses, HasGameProcesses(profile));
+        ShortcutsMenuSection shortcuts = new();
 
         _ = menu.DropDownItems.Add(TrayMenuItems.Item("ID", profile.Id));
         _ = menu.DropDownItems.Add(appId);
-        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Mouse output", TrayMenuItems.Output(profile.MouseOutput)));
-        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Controller output", TrayMenuItems.Output(profile.ControllerOutput)));
+        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Mouse output", TrayMenuItems.Output(profile.Definition.MouseOutput)));
+        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Controller output", TrayMenuItems.Output(profile.Definition.ControllerOutput)));
         _ = menu.DropDownItems.Add(client);
         _ = menu.DropDownItems.Add(gameProcesses);
+        _ = menu.DropDownItems.Add(shortcuts.Build(ShortcutStatuses(profile, activeShortcuts)));
         _ = menu.DropDownItems.Add(new ToolStripSeparator());
         _ = menu.DropDownItems.Add(openConfig);
         if (profile.ClientConnectionId is Guid connectionId)
@@ -109,8 +118,56 @@ internal sealed class ProfilesMenuSection
             _ = menu.DropDownItems.Add(TrayMenuItems.ActionItem("Stop client", () => stopClient(connectionId)));
         }
 
-        _profiles[profile.Id] = new(menu, appId, client, gameProcesses);
+        _profiles[profile.Id] = new(menu, appId, client, gameProcesses, shortcuts);
         return menu;
+    }
+
+    private static List<BridgeShortcutStatus> ShortcutStatuses(
+        ProfileStatus profile,
+        IReadOnlyList<BridgeShortcutStatus> activeShortcuts)
+    {
+        List<BridgeShortcutStatus> statuses = [];
+        foreach (ShortcutEntry shortcut in profile.Definition.Shortcuts)
+        {
+            if (!shortcut.Target.HasValue)
+            {
+                continue;
+            }
+
+            string target = shortcut.Target.Value.ToString();
+            string action = shortcut.Action.ToString();
+            statuses.Add(new(
+                shortcut.Keys,
+                target,
+                action,
+                profile.Active && IsPressed(activeShortcuts, shortcut.Keys, target, action)));
+        }
+
+        return statuses;
+    }
+
+    private static bool IsPressed(
+        IReadOnlyList<BridgeShortcutStatus> shortcuts,
+        string keys,
+        string target,
+        string action)
+    {
+        foreach (BridgeShortcutStatus shortcut in shortcuts)
+        {
+            if (!shortcut.Pressed ||
+                !string.Equals(shortcut.Keys, keys, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(shortcut.Action, action, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(shortcut.Target, target, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static ToolStripMenuItem CreateOpenConfigItem(
@@ -154,9 +211,13 @@ internal sealed class ProfilesMenuSection
         ToolStripMenuItem Menu,
         ToolStripMenuItem AppId,
         ToolStripMenuItem Client,
-        ToolStripMenuItem GameProcesses)
+        ToolStripMenuItem GameProcesses,
+        ShortcutsMenuSection Shortcuts)
     {
-        public void Update(ProfileStatus profile, bool lastActive)
+        public void Update(
+            ProfileStatus profile,
+            bool lastActive,
+            IReadOnlyList<BridgeShortcutStatus> activeShortcuts)
         {
             SetProfileCheckMark(Menu, profile, lastActive);
             TrayMenuItems.SetValue(AppId, TrayMenuItems.Number(profile.EffectiveSteamAppId));
@@ -164,6 +225,7 @@ internal sealed class ProfilesMenuSection
             TrayMenuItems.SetCheckMark(Client, HasClient(profile));
             TrayMenuItems.SetValue(GameProcesses, TrayMenuItems.Number(profile.GameProcessIds.Count));
             TrayMenuItems.SetCheckMark(GameProcesses, HasGameProcesses(profile));
+            Shortcuts.Update(ShortcutStatuses(profile, activeShortcuts));
         }
     }
 }

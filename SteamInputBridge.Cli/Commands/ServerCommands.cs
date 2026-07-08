@@ -111,12 +111,12 @@ internal static class ServerCommands
         {
             string state = profile.Active ? "active" : profile.ClientProcessId.HasValue ? "connected" : "idle";
             await Console.Out.WriteLineAsync($"{profile.Id}  {state}").ConfigureAwait(false);
-            await Console.Out.WriteLineAsync($"  title       {profile.Title}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  title       {profile.Definition.Title}").ConfigureAwait(false);
             await Console.Out.WriteLineAsync($"  clientPid   {FormatNumber(profile.ClientProcessId)}").ConfigureAwait(false);
-            await Console.Out.WriteLineAsync($"  steamAppId  {FormatNumber(profile.SteamAppId)}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  steamAppId  {FormatNumber(profile.EffectiveSteamAppId)}").ConfigureAwait(false);
             await Console.Out.WriteLineAsync($"  gamePids    {FormatList(profile.GameProcessIds)}").ConfigureAwait(false);
-            await Console.Out.WriteLineAsync($"  mouse       {profile.MouseOutput}").ConfigureAwait(false);
-            await Console.Out.WriteLineAsync($"  controller  {profile.ControllerOutput}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  mouse       {FormatText(profile.Definition.MouseOutput?.ToString())}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"  controller  {FormatText(profile.Definition.ControllerOutput?.ToString())}").ConfigureAwait(false);
         }
 
         await Console.Out.WriteLineAsync().ConfigureAwait(false);

@@ -216,12 +216,8 @@ public sealed class ActiveProfileService : IHostedService, IDisposable
         ProfileClientStatus? client = ConnectedClient(profile.Id, clients);
         return new(
             profile.Id,
-            profile.Title,
-            profile.SteamAppId,
-            client?.SteamAppId ?? profile.SteamAppId,
-            profile.MouseOutput,
-            profile.ControllerOutput,
-            profile.ReceiverProcesses,
+            profile.Definition,
+            client?.SteamAppId ?? profile.Definition.SteamAppId,
             client?.ReceiverProcessIds ?? [],
             Active: string.Equals(activeProfileId, profile.Id, StringComparison.OrdinalIgnoreCase),
             ClientProcessId: client?.ProcessId,
