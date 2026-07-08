@@ -11,7 +11,7 @@ namespace SteamInputBridge.Profiles;
 public sealed class ProfileCatalogService(SettingsService settings) : IHostedService, IDisposable
 {
     private readonly Lock _gate = new();
-    private Dictionary<string, ResolvedProfile> _profiles = ResolveProfiles(settings.Current);
+    private Dictionary<string, GameProfile> _profiles = ResolveProfiles(settings.Current);
     private bool _disposed;
 
     // MARK: Publics
@@ -21,13 +21,13 @@ public sealed class ProfileCatalogService(SettingsService settings) : IHostedSer
     internal event EventHandler? ProfilesChanged;
 
     /// <summary>Resolved profiles.</summary>
-    internal IReadOnlyList<ResolvedProfile> Profiles
+    internal IReadOnlyDictionary<string, GameProfile> Profiles
     {
         get
         {
             lock (_gate)
             {
-                return [.. _profiles.Values];
+                return new Dictionary<string, GameProfile>(_profiles, StringComparer.OrdinalIgnoreCase);
             }
         }
     }
@@ -60,7 +60,7 @@ public sealed class ProfileCatalogService(SettingsService settings) : IHostedSer
         settings.Changed -= OnSettingsChanged;
     }
 
-    internal bool TryGetProfile(string profileId, out ResolvedProfile profile)
+    internal bool TryGetProfile(string profileId, out GameProfile profile)
     {
         lock (_gate)
         {
@@ -90,12 +90,12 @@ public sealed class ProfileCatalogService(SettingsService settings) : IHostedSer
         ProfilesChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private static Dictionary<string, ResolvedProfile> ResolveProfiles(SteamInputBridgeSettings settings)
+    private static Dictionary<string, GameProfile> ResolveProfiles(SteamInputBridgeSettings settings)
     {
-        Dictionary<string, ResolvedProfile> profiles = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, GameProfile> profiles = new(StringComparer.OrdinalIgnoreCase);
         foreach ((string profileId, GameProfile profile) in settings.Games)
         {
-            profiles[profileId] = new(profileId, profile);
+            profiles[profileId] = profile;
         }
 
         return profiles;

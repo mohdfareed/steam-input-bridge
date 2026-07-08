@@ -23,7 +23,7 @@ public sealed class MicrophoneShortcutService : IHostedService, IDisposable
         ShortcutService shortcuts,
         MicrophoneService microphone,
         ILogger<MicrophoneShortcutService> logger)
-        : this(new ShortcutServiceSource(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))), microphone, logger)
+        : this((IShortcutSource)(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))), microphone, logger)
     {
     }
 

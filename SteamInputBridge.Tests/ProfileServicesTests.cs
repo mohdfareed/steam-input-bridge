@@ -14,7 +14,7 @@ namespace SteamInputBridge.Tests;
 public sealed class ProfileServicesTests
 {
     [TestMethod]
-    public async Task ProfileCatalogServiceReloadsResolvedProfiles()
+    public async Task ProfileCatalogServiceReloadsProfiles()
     {
         TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithProfile("one"));
         using SettingsService settings = CreateSettings(monitor);

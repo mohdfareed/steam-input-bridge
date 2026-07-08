@@ -1,12 +1,14 @@
+using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
 using SteamInputBridge.Hosting;
+using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.App.Tray.Menu;
 
 internal sealed class ShortcutsMenuSection
 {
-    private readonly Dictionary<string, ShortcutMenuBinding> _shortcuts = [];
+    private readonly Dictionary<(string Keys, string Target, string Action), ShortcutMenuBinding> _shortcuts = [];
 
     // MARK: Publics
     // ========================================================================
@@ -23,8 +25,49 @@ internal sealed class ShortcutsMenuSection
         {
             foreach (BridgeShortcutStatus shortcut in shortcuts)
             {
-                _ = menu.DropDownItems.Add(CreateShortcutMenu(shortcut));
+                _ = menu.DropDownItems.Add(CreateShortcutMenu(
+                    shortcut.Keys,
+                    shortcut.Target,
+                    shortcut.Action,
+                    shortcut.Pressed));
             }
+        }
+
+        return menu;
+    }
+
+    public ToolStripMenuItem BuildProfile(
+        IReadOnlyList<ShortcutEntry> shortcuts,
+        IReadOnlyList<BridgeShortcutStatus> activeShortcuts,
+        bool active)
+    {
+        _shortcuts.Clear();
+        ToolStripMenuItem menu = TrayMenuItems.Menu("Shortcuts");
+        if (shortcuts.Count == 0)
+        {
+            _ = menu.DropDownItems.Add(TrayMenuItems.Disabled("None"));
+            return menu;
+        }
+
+        foreach (ShortcutEntry shortcut in shortcuts)
+        {
+            if (!shortcut.Target.HasValue)
+            {
+                continue;
+            }
+
+            string target = shortcut.Target.Value.ToString();
+            string action = shortcut.Action.ToString();
+            _ = menu.DropDownItems.Add(CreateShortcutMenu(
+                shortcut.Keys,
+                target,
+                action,
+                active && IsPressed(activeShortcuts, shortcut.Keys, target, action)));
+        }
+
+        if (menu.DropDownItems.Count == 0)
+        {
+            _ = menu.DropDownItems.Add(TrayMenuItems.Disabled("None"));
         }
 
         return menu;
@@ -34,10 +77,29 @@ internal sealed class ShortcutsMenuSection
     {
         foreach (BridgeShortcutStatus shortcut in shortcuts)
         {
-            if (_shortcuts.TryGetValue(shortcut.Keys, out ShortcutMenuBinding? items))
+            UpdateShortcut(shortcut.Keys, shortcut.Target, shortcut.Action, shortcut.Pressed);
+        }
+    }
+
+    public void UpdateProfile(
+        IReadOnlyList<ShortcutEntry> shortcuts,
+        IReadOnlyList<BridgeShortcutStatus> activeShortcuts,
+        bool active)
+    {
+        foreach (ShortcutEntry shortcut in shortcuts)
+        {
+            if (!shortcut.Target.HasValue)
             {
-                items.Update(shortcut);
+                continue;
             }
+
+            string target = shortcut.Target.Value.ToString();
+            string action = shortcut.Action.ToString();
+            UpdateShortcut(
+                shortcut.Keys,
+                target,
+                action,
+                active && IsPressed(activeShortcuts, shortcut.Keys, target, action));
         }
     }
 
@@ -66,28 +128,56 @@ internal sealed class ShortcutsMenuSection
     // MARK: Build
     // ========================================================================
 
-    private ToolStripMenuItem CreateShortcutMenu(BridgeShortcutStatus shortcut)
+    private ToolStripMenuItem CreateShortcutMenu(string keys, string target, string action, bool pressed)
     {
-        ToolStripMenuItem menu = TrayMenuItems.Menu(shortcut.Keys);
-        TrayMenuItems.SetCheckMark(menu, shortcut.Pressed);
-        ToolStripMenuItem pressed = TrayMenuItems.Item("Pressed", TrayMenuItems.YesNo(shortcut.Pressed));
-        TrayMenuItems.SetCheckMark(pressed, shortcut.Pressed);
+        ToolStripMenuItem menu = TrayMenuItems.Menu(keys);
+        TrayMenuItems.SetCheckMark(menu, pressed);
+        ToolStripMenuItem pressedItem = TrayMenuItems.Item("Pressed", TrayMenuItems.YesNo(pressed));
+        TrayMenuItems.SetCheckMark(pressedItem, pressed);
 
-        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Target", shortcut.Target));
-        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Action", shortcut.Action));
-        _ = menu.DropDownItems.Add(pressed);
+        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Target", target));
+        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Action", action));
+        _ = menu.DropDownItems.Add(pressedItem);
 
-        _shortcuts[shortcut.Keys] = new(menu, pressed);
+        _shortcuts[(keys, target, action)] = new(menu, pressedItem);
         return menu;
+    }
+
+    private void UpdateShortcut(string keys, string target, string action, bool pressed)
+    {
+        if (_shortcuts.TryGetValue((keys, target, action), out ShortcutMenuBinding? items))
+        {
+            items.Update(pressed);
+        }
+    }
+
+    private static bool IsPressed(
+        IReadOnlyList<BridgeShortcutStatus> shortcuts,
+        string keys,
+        string target,
+        string action)
+    {
+        foreach (BridgeShortcutStatus shortcut in shortcuts)
+        {
+            if (shortcut.Pressed &&
+                string.Equals(shortcut.Keys, keys, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(shortcut.Target, target, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(shortcut.Action, action, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private sealed record ShortcutMenuBinding(ToolStripMenuItem Menu, ToolStripMenuItem Pressed)
     {
-        public void Update(BridgeShortcutStatus shortcut)
+        public void Update(bool pressed)
         {
-            TrayMenuItems.SetCheckMark(Menu, shortcut.Pressed);
-            TrayMenuItems.SetValue(Pressed, TrayMenuItems.YesNo(shortcut.Pressed));
-            TrayMenuItems.SetCheckMark(Pressed, shortcut.Pressed);
+            TrayMenuItems.SetCheckMark(Menu, pressed);
+            TrayMenuItems.SetValue(Pressed, TrayMenuItems.YesNo(pressed));
+            TrayMenuItems.SetCheckMark(Pressed, pressed);
         }
     }
 }

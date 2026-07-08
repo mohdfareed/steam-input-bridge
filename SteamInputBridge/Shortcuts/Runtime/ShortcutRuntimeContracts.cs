@@ -42,14 +42,3 @@ internal interface IGlobalShortcutListener : IDisposable
         Action<int> pressed,
         Action<int> released);
 }
-
-internal sealed class ShortcutServiceSource(ShortcutService service) : IShortcutSource
-{
-    public event EventHandler<ShortcutEventArgs>? Shortcut
-    {
-        add => service.Shortcut += value;
-        remove => service.Shortcut -= value;
-    }
-
-    public IReadOnlyList<BridgeShortcutStatus> Status => service.Status;
-}

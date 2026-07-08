@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Profiles;
-using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.App.Tray.Menu;
 
@@ -110,7 +109,10 @@ internal sealed class ProfilesMenuSection
         _ = menu.DropDownItems.Add(TrayMenuItems.Item("Controller output", TrayMenuItems.Output(profile.Definition.ControllerOutput)));
         _ = menu.DropDownItems.Add(client);
         _ = menu.DropDownItems.Add(gameProcesses);
-        _ = menu.DropDownItems.Add(shortcuts.Build(ShortcutStatuses(profile, activeShortcuts)));
+        _ = menu.DropDownItems.Add(shortcuts.BuildProfile(
+            profile.Definition.Shortcuts,
+            activeShortcuts,
+            profile.Active));
         _ = menu.DropDownItems.Add(new ToolStripSeparator());
         _ = menu.DropDownItems.Add(openConfig);
         if (profile.ClientConnectionId is Guid connectionId)
@@ -120,54 +122,6 @@ internal sealed class ProfilesMenuSection
 
         _profiles[profile.Id] = new(menu, appId, client, gameProcesses, shortcuts);
         return menu;
-    }
-
-    private static List<BridgeShortcutStatus> ShortcutStatuses(
-        ProfileStatus profile,
-        IReadOnlyList<BridgeShortcutStatus> activeShortcuts)
-    {
-        List<BridgeShortcutStatus> statuses = [];
-        foreach (ShortcutEntry shortcut in profile.Definition.Shortcuts)
-        {
-            if (!shortcut.Target.HasValue)
-            {
-                continue;
-            }
-
-            string target = shortcut.Target.Value.ToString();
-            string action = shortcut.Action.ToString();
-            statuses.Add(new(
-                shortcut.Keys,
-                target,
-                action,
-                profile.Active && IsPressed(activeShortcuts, shortcut.Keys, target, action)));
-        }
-
-        return statuses;
-    }
-
-    private static bool IsPressed(
-        IReadOnlyList<BridgeShortcutStatus> shortcuts,
-        string keys,
-        string target,
-        string action)
-    {
-        foreach (BridgeShortcutStatus shortcut in shortcuts)
-        {
-            if (!shortcut.Pressed ||
-                !string.Equals(shortcut.Keys, keys, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(shortcut.Action, action, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (string.Equals(shortcut.Target, target, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static ToolStripMenuItem CreateOpenConfigItem(
@@ -225,7 +179,7 @@ internal sealed class ProfilesMenuSection
             TrayMenuItems.SetCheckMark(Client, HasClient(profile));
             TrayMenuItems.SetValue(GameProcesses, TrayMenuItems.Number(profile.GameProcessIds.Count));
             TrayMenuItems.SetCheckMark(GameProcesses, HasGameProcesses(profile));
-            Shortcuts.Update(ShortcutStatuses(profile, activeShortcuts));
+            Shortcuts.UpdateProfile(profile.Definition.Shortcuts, activeShortcuts, profile.Active);
         }
     }
 }

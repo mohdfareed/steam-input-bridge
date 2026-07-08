@@ -13,7 +13,7 @@ namespace SteamInputBridge.Steam;
 public sealed class SteamInputConfigShortcutService : IHostedService, IDisposable
 {
     private readonly IShortcutSource _shortcuts;
-    private readonly Func<uint?> _activeSteamAppId;
+    private readonly ActiveProfileService _profiles;
     private readonly SteamInputClient _steam;
     private readonly ILogger<SteamInputConfigShortcutService> _logger;
     private bool _disposed;
@@ -24,24 +24,24 @@ public sealed class SteamInputConfigShortcutService : IHostedService, IDisposabl
         ActiveProfileService profiles,
         ILogger<SteamInputConfigShortcutService> logger)
         : this(
-            new ShortcutServiceSource(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))),
-            ActiveSteamAppId(profiles),
+            (IShortcutSource)(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))),
+            profiles,
             logger)
     {
     }
 
     internal SteamInputConfigShortcutService(
         IShortcutSource shortcuts,
-        Func<uint?> activeSteamAppId,
+        ActiveProfileService profiles,
         ILogger<SteamInputConfigShortcutService> logger,
         SteamInputClient? steam = null)
     {
         ArgumentNullException.ThrowIfNull(shortcuts);
-        ArgumentNullException.ThrowIfNull(activeSteamAppId);
+        ArgumentNullException.ThrowIfNull(profiles);
         ArgumentNullException.ThrowIfNull(logger);
 
         _shortcuts = shortcuts;
-        _activeSteamAppId = activeSteamAppId;
+        _profiles = profiles;
         _logger = logger;
         _steam = steam ?? new();
     }
@@ -88,7 +88,7 @@ public sealed class SteamInputConfigShortcutService : IHostedService, IDisposabl
             return;
         }
 
-        uint appId = _activeSteamAppId() ?? SteamInputClient.DesktopConfigAppId;
+        uint appId = _profiles.ActiveProfile?.EffectiveSteamAppId ?? SteamInputClient.DesktopConfigAppId;
         _ = OpenSteamConfigAsync(appId, CancellationToken.None);
     }
 
@@ -102,12 +102,6 @@ public sealed class SteamInputConfigShortcutService : IHostedService, IDisposabl
         {
             LogSteamConfigOpenFailed(_logger, appId, exception.Message, null);
         }
-    }
-
-    private static Func<uint?> ActiveSteamAppId(ActiveProfileService profiles)
-    {
-        ArgumentNullException.ThrowIfNull(profiles);
-        return () => profiles.ActiveProfile?.EffectiveSteamAppId;
     }
 
     // MARK: Logging

@@ -11,7 +11,7 @@ internal static class DiagnosticsCommands
 {
     public static Command CreateCommand()
     {
-        Command diagnostics = new("diagnostics", "App diagnostics.");
+        Command diagnostics = new("diagnostics", "Run app diagnostics.");
         diagnostics.SetAction((_, cancellationToken) => RunAsync(cancellationToken));
         return diagnostics;
     }
@@ -23,57 +23,41 @@ internal static class DiagnosticsCommands
     {
         try
         {
-            using DiagnosticTranscript transcript = DiagnosticTranscript.Create(AppContext.BaseDirectory);
-            await transcript.WriteLineAsync("Starting diagnostics").ConfigureAwait(false);
+            // Set up logging
+            string path = LogPath(AppContext.BaseDirectory);
+            _ = Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            using FileStream stream = new(path, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
+            using StreamWriter writer = new(stream) { AutoFlush = true };
+
+            // Header
+            await WriteLineAsync(writer, "Steam Input Bridge diagnostics", cancellationToken).ConfigureAwait(false);
+            await WriteLineAsync(writer, $"log=\"{path}\"", cancellationToken).ConfigureAwait(false);
+
+            // Diagnostics
+            await WriteLineAsync(writer, "No diagnostics are configured.", cancellationToken).ConfigureAwait(false);
+
+            return 0;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return 1;
         }
-
-        return 0;
     }
 
-    // MARK: Transcript
-    // ========================================================================
-
-    private sealed class DiagnosticTranscript : IDisposable
+    private static string LogPath(string baseDirectory)
     {
-        private readonly StreamWriter _writer;
+        string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        string processId = Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
+        return Path.Combine(baseDirectory, "logs", $"diagnostics-{timestamp}-{processId}.log");
+    }
 
-        private DiagnosticTranscript(string path)
-        {
-            Path = path;
-            _ = Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
-            _writer = new StreamWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read))
-            {
-                AutoFlush = true,
-            };
-        }
-
-        public string Path { get; }
-
-        public static DiagnosticTranscript Create(string baseDirectory)
-        {
-            string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-            string fileName = $"diagnostics-2xko-steam-controllers-{timestamp}-{Environment.ProcessId.ToString(CultureInfo.InvariantCulture)}.log";
-            return new DiagnosticTranscript(System.IO.Path.Combine(baseDirectory, "logs", fileName));
-        }
-
-        public void WriteLine(string line)
-        {
-            Console.WriteLine(line);
-            _writer.WriteLine(line);
-        }
-
-        public async Task WriteLineAsync(string line)
-        {
-            await Console.Out.WriteLineAsync(line).ConfigureAwait(false);
-            await _writer.WriteLineAsync(line).ConfigureAwait(false);
-        }
-
-        public void Dispose()
-        {
-            _writer.Dispose();
-        }
+    private static async Task WriteLineAsync(
+        TextWriter writer,
+        string line,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Console.Out.WriteLineAsync(line).ConfigureAwait(false);
+        await writer.WriteLineAsync(line).ConfigureAwait(false);
     }
 }

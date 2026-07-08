@@ -21,7 +21,7 @@ public sealed class ActionColorService : IDisposable
 
     /// <summary>Creates the action color service.</summary>
     public ActionColorService(ShortcutService shortcuts)
-        : this(new ShortcutServiceSource(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))))
+        : this((IShortcutSource)(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))))
     {
     }
 

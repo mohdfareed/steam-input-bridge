@@ -38,7 +38,12 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
         IMouseInputSourceFactory inputFactory,
         IMouseOutputFactory outputFactory,
         ILogger<ServerMouseForwardingService> logger)
-        : this(profiles, new ShortcutServiceSource(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))), inputFactory, outputFactory, logger)
+        : this(
+            profiles,
+            (IShortcutSource)(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))),
+            inputFactory,
+            outputFactory,
+            logger)
     {
     }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
+using SteamInputBridge.Settings;
 using Vanara.PInvoke;
 using static Vanara.PInvoke.User32;
 
@@ -191,14 +192,14 @@ public sealed class ActiveProfileService : IHostedService, IDisposable
 
     private List<ProfileStatus> SnapshotProfiles(Func<ProfileStatus, bool>? filter = null)
     {
-        IReadOnlyList<ResolvedProfile> resolvedProfiles = _catalog.Profiles;
+        IReadOnlyDictionary<string, GameProfile> configuredProfiles = _catalog.Profiles;
         IReadOnlyList<ProfileClientStatus> connectedClients = _clients.Clients;
         string? activeProfileId = ActiveProfile?.Id;
 
-        List<ProfileStatus> profiles = new(resolvedProfiles.Count);
-        foreach (ResolvedProfile profile in resolvedProfiles)
+        List<ProfileStatus> profiles = new(configuredProfiles.Count);
+        foreach ((string profileId, GameProfile profile) in configuredProfiles)
         {
-            ProfileStatus status = ToStatus(profile, connectedClients, activeProfileId);
+            ProfileStatus status = ToStatus(profileId, profile, connectedClients, activeProfileId);
             if (filter is null || filter(status))
             {
                 profiles.Add(status);
@@ -209,17 +210,18 @@ public sealed class ActiveProfileService : IHostedService, IDisposable
     }
 
     private static ProfileStatus ToStatus(
-        ResolvedProfile profile,
+        string profileId,
+        GameProfile profile,
         IReadOnlyList<ProfileClientStatus> clients,
         string? activeProfileId)
     {
-        ProfileClientStatus? client = ConnectedClient(profile.Id, clients);
+        ProfileClientStatus? client = ConnectedClient(profileId, clients);
         return new(
-            profile.Id,
-            profile.Definition,
-            client?.SteamAppId ?? profile.Definition.SteamAppId,
+            profileId,
+            profile,
+            client?.SteamAppId ?? profile.SteamAppId,
             client?.ReceiverProcessIds ?? [],
-            Active: string.Equals(activeProfileId, profile.Id, StringComparison.OrdinalIgnoreCase),
+            Active: string.Equals(activeProfileId, profileId, StringComparison.OrdinalIgnoreCase),
             ClientProcessId: client?.ProcessId,
             ClientConnectionId: client?.ConnectionId);
     }

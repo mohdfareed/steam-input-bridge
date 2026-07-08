@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using SteamInputBridge.Outputs.Mouse;
+using SteamInputBridge.Profiles;
+using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
 using SteamInputBridge.Shortcuts.Runtime;
 using SteamInputBridge.Steam;
@@ -16,7 +19,10 @@ public sealed class SteamInputConfigShortcutServiceTests
     {
         TestShortcutSource shortcuts = new();
         List<Uri> opened = [];
-        using SteamInputConfigShortcutService service = CreateService(shortcuts, () => 123456, opened);
+        using ForwardingServiceTests.TestProfileRuntime runtime =
+            await ForwardingServiceTests.TestProfileRuntime.CreateStartedAsync(MouseOutput.None).ConfigureAwait(false);
+        await runtime.WaitForActiveProfileAsync().ConfigureAwait(false);
+        using SteamInputConfigShortcutService service = CreateService(shortcuts, runtime.ActiveProfiles, opened);
         await service.StartAsync(default).ConfigureAwait(false);
 
         shortcuts.Raise(
@@ -26,7 +32,7 @@ public sealed class SteamInputConfigShortcutServiceTests
             ShortcutPhase.Pressed);
 
         Assert.HasCount(1, opened);
-        Assert.AreEqual("steam://controllerconfig/123456", opened[0].AbsoluteUri);
+        Assert.AreEqual("steam://controllerconfig/123", opened[0].AbsoluteUri);
     }
 
     [TestMethod]
@@ -34,7 +40,11 @@ public sealed class SteamInputConfigShortcutServiceTests
     {
         TestShortcutSource shortcuts = new();
         List<Uri> opened = [];
-        using SteamInputConfigShortcutService service = CreateService(shortcuts, () => null, opened);
+        using SettingsService settings = TestSettings(new SteamInputBridgeSettings());
+        using ProfileCatalogService catalog = new(settings);
+        using ProfileClientsService clients = new(catalog, NullLogger<ProfileClientsService>.Instance);
+        using ActiveProfileService profiles = new(catalog, clients, static () => null, TimeSpan.FromMilliseconds(10));
+        using SteamInputConfigShortcutService service = CreateService(shortcuts, profiles, opened);
         await service.StartAsync(default).ConfigureAwait(false);
 
         shortcuts.Raise(
@@ -52,7 +62,10 @@ public sealed class SteamInputConfigShortcutServiceTests
     {
         TestShortcutSource shortcuts = new();
         List<Uri> opened = [];
-        using SteamInputConfigShortcutService service = CreateService(shortcuts, () => 123456, opened);
+        using ForwardingServiceTests.TestProfileRuntime runtime =
+            await ForwardingServiceTests.TestProfileRuntime.CreateStartedAsync(MouseOutput.None).ConfigureAwait(false);
+        await runtime.WaitForActiveProfileAsync().ConfigureAwait(false);
+        using SteamInputConfigShortcutService service = CreateService(shortcuts, runtime.ActiveProfiles, opened);
         await service.StartAsync(default).ConfigureAwait(false);
 
         shortcuts.Raise(
@@ -66,7 +79,7 @@ public sealed class SteamInputConfigShortcutServiceTests
 
     private static SteamInputConfigShortcutService CreateService(
         TestShortcutSource shortcuts,
-        Func<uint?> activeSteamAppId,
+        ActiveProfileService profiles,
         List<Uri> opened)
     {
         SteamInputClient steam = new((uri, cancellationToken) =>
@@ -76,6 +89,14 @@ public sealed class SteamInputConfigShortcutServiceTests
             return ValueTask.CompletedTask;
         });
 
-        return new(shortcuts, activeSteamAppId, NullLogger<SteamInputConfigShortcutService>.Instance, steam);
+        return new(shortcuts, profiles, NullLogger<SteamInputConfigShortcutService>.Instance, steam);
+    }
+
+    private static SettingsService TestSettings(SteamInputBridgeSettings settings)
+    {
+        return new(
+            new TestOptionsMonitor<SteamInputBridgeSettings>(settings),
+            new SettingsFile(@"C:\Tests\appsettings.json"),
+            NullLogger<SettingsService>.Instance);
     }
 }

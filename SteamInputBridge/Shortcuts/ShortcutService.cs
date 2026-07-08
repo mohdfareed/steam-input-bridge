@@ -13,7 +13,7 @@ using SteamInputBridge.Shortcuts.Runtime;
 namespace SteamInputBridge.Shortcuts;
 
 /// <summary>Registers configured shortcuts and applies shortcut target behavior.</summary>
-public sealed class ShortcutService : IHostedService, IDisposable
+public sealed class ShortcutService : IHostedService, IDisposable, IShortcutSource
 {
     private readonly SettingsService _settings;
     private readonly ActiveProfileService _profiles;
@@ -61,6 +61,14 @@ public sealed class ShortcutService : IHostedService, IDisposable
 
     /// <summary>Current shortcut status snapshot.</summary>
     public IReadOnlyList<BridgeShortcutStatus> Status => GetStatus();
+
+    event EventHandler<ShortcutEventArgs>? IShortcutSource.Shortcut
+    {
+        add => Shortcut += value;
+        remove => Shortcut -= value;
+    }
+
+    IReadOnlyList<BridgeShortcutStatus> IShortcutSource.Status => Status;
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)

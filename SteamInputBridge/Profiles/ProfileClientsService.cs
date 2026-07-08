@@ -45,7 +45,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
         ClientSession session;
         lock (_gate)
         {
-            if (!profiles.TryGetProfile(profileId, out ResolvedProfile profile))
+            if (!profiles.TryGetProfile(profileId, out GameProfile profile))
             {
                 throw new InvalidOperationException($"Profile '{profileId}' is not configured.");
             }
@@ -62,7 +62,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
 
             client = new(connectionId, processId, profileId, steamAppId, control);
             _clients[connectionId] = client;
-            session = StartSession(connectionId, profile, control);
+            session = StartSession(connectionId, profileId, profile, control);
         }
 
         ClientsChanged?.Invoke(this, EventArgs.Empty);
@@ -85,7 +85,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
             if (session.StopReceiversOnDisconnect)
             {
                 int stopped = StopSessionReceivers(session);
-                LogProfileReceiversStopped(logger, session.Profile.Id, stopped, null);
+                LogProfileReceiversStopped(logger, session.ProfileId, stopped, null);
             }
 
             session.Cancel();
@@ -111,7 +111,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
         ClientSession session = GetSession(connectionId);
         session.StopReceiversOnDisconnect = false;
         int stopped = StopSessionReceivers(session);
-        LogProfileReceiversStopped(logger, session.Profile.Id, stopped, null);
+        LogProfileReceiversStopped(logger, session.ProfileId, stopped, null);
     }
 
     /// <summary>Releases active sessions without stopping receiver processes again.</summary>
@@ -138,16 +138,20 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
     // MARK: Sessions
     // ========================================================================
 
-    private ClientSession StartSession(Guid connectionId, ResolvedProfile profile, IBridgeClientApi control)
+    private ClientSession StartSession(
+        Guid connectionId,
+        string profileId,
+        GameProfile profile,
+        IBridgeClientApi control)
     {
         StopSession(connectionId);
-        HashSet<int> receiverBaseline = string.IsNullOrWhiteSpace(profile.Definition.Executable)
+        HashSet<int> receiverBaseline = string.IsNullOrWhiteSpace(profile.Executable)
             ? []
-            : FindReceivers(profile.Definition.ReceiverProcesses);
+            : FindReceivers(profile.ReceiverProcesses);
 
 #pragma warning disable CA2000 // CancellationTokenSource ownership transfers to ClientSession.
         CancellationTokenSource stop = new();
-        ClientSession session = new(connectionId, profile, control, receiverBaseline, stop);
+        ClientSession session = new(connectionId, profileId, profile, control, receiverBaseline, stop);
 #pragma warning restore CA2000
 
         _sessions[connectionId] = session;
@@ -167,7 +171,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
     {
         try
         {
-            LaunchProfile(session.Profile);
+            LaunchProfile(session.Definition);
             await WatchReceiversAsync(session, cancellationToken).ConfigureAwait(false);
             await session.Control.StopAsync().ConfigureAwait(false);
         }
@@ -176,13 +180,12 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
         }
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
         {
-            LogProfileSessionFailed(logger, session.Profile.Id, exception.Message, null);
+            LogProfileSessionFailed(logger, session.ProfileId, exception.Message, null);
         }
     }
 
-    private static void LaunchProfile(ResolvedProfile profile)
+    private static void LaunchProfile(GameProfile definition)
     {
-        GameProfile definition = profile.Definition;
         if (string.IsNullOrWhiteSpace(definition.Executable))
         {
             return;
@@ -201,7 +204,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
 
     private async Task WatchReceiversAsync(ClientSession session, CancellationToken cancellationToken)
     {
-        if (session.Profile.Definition.ReceiverProcesses.Count == 0)
+        if (session.Definition.ReceiverProcesses.Count == 0)
         {
             return;
         }
@@ -260,7 +263,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
 
     private static bool RefreshSessionReceivers(ClientSession session, out bool changed)
     {
-        HashSet<int> receivers = FindReceivers(session.Profile.Definition.ReceiverProcesses);
+        HashSet<int> receivers = FindReceivers(session.Definition.ReceiverProcesses);
         receivers.ExceptWith(session.ReceiverBaseline);
 
         lock (session.Gate)
@@ -394,7 +397,8 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
 
     private sealed class ClientSession(
         Guid connectionId,
-        ResolvedProfile profile,
+        string profileId,
+        GameProfile definition,
         IBridgeClientApi control,
         HashSet<int> receiverBaseline,
         CancellationTokenSource stop)
@@ -403,7 +407,9 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
 
         public Guid ConnectionId { get; } = connectionId;
 
-        public ResolvedProfile Profile { get; } = profile;
+        public string ProfileId { get; } = profileId;
+
+        public GameProfile Definition { get; } = definition;
 
         public IBridgeClientApi Control { get; } = control;
 

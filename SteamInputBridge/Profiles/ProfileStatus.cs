@@ -7,11 +7,6 @@ namespace SteamInputBridge.Profiles;
 // MARK: Models
 // ============================================================================
 
-/// <summary>Resolved profile settings used by runtime services.</summary>
-internal sealed record ResolvedProfile(
-    string Id,
-    GameProfile Definition);
-
 /// <summary>Resolved profile runtime status.</summary>
 public sealed record ProfileStatus(
     string Id,
