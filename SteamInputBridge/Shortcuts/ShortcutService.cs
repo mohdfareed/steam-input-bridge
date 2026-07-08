@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Hosting;
+using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts.Runtime;
 
@@ -15,6 +16,9 @@ namespace SteamInputBridge.Shortcuts;
 public sealed class ShortcutService : IHostedService, IDisposable
 {
     private readonly SettingsService _settings;
+    private readonly Func<string?> _activeProfileId;
+    private readonly Action<EventHandler<ActiveProfileChangedEventArgs>> _subscribeActiveProfileChanged;
+    private readonly Action<EventHandler<ActiveProfileChangedEventArgs>> _unsubscribeActiveProfileChanged;
     private readonly IGlobalShortcutListener _listener;
     private readonly ILogger<ShortcutService> _logger;
     private readonly Lock _gate = new();
@@ -25,9 +29,16 @@ public sealed class ShortcutService : IHostedService, IDisposable
     /// <summary>Creates the shortcut service.</summary>
     public ShortcutService(
         SettingsService settings,
+        ActiveProfileService profiles,
         GlobalShortcutListener listener,
         ILogger<ShortcutService> logger)
-        : this(settings, (IGlobalShortcutListener)(listener ?? throw new ArgumentNullException(nameof(listener))), logger)
+        : this(
+            settings,
+            listener ?? throw new ArgumentNullException(nameof(listener)),
+            logger,
+            ActiveProfileId(profiles),
+            handler => profiles.ActiveProfileChanged += handler,
+            handler => profiles.ActiveProfileChanged -= handler)
     {
     }
 
@@ -35,12 +46,35 @@ public sealed class ShortcutService : IHostedService, IDisposable
         SettingsService settings,
         IGlobalShortcutListener listener,
         ILogger<ShortcutService> logger)
+        : this(
+            settings,
+            listener,
+            logger,
+            static () => null,
+            static _ => { },
+            static _ => { })
+    {
+    }
+
+    internal ShortcutService(
+        SettingsService settings,
+        IGlobalShortcutListener listener,
+        ILogger<ShortcutService> logger,
+        Func<string?> activeProfileId,
+        Action<EventHandler<ActiveProfileChangedEventArgs>> subscribeActiveProfileChanged,
+        Action<EventHandler<ActiveProfileChangedEventArgs>> unsubscribeActiveProfileChanged)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(listener);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(activeProfileId);
+        ArgumentNullException.ThrowIfNull(subscribeActiveProfileChanged);
+        ArgumentNullException.ThrowIfNull(unsubscribeActiveProfileChanged);
 
         _settings = settings;
+        _activeProfileId = activeProfileId;
+        _subscribeActiveProfileChanged = subscribeActiveProfileChanged;
+        _unsubscribeActiveProfileChanged = unsubscribeActiveProfileChanged;
         _listener = listener;
         _logger = logger;
     }
@@ -61,7 +95,8 @@ public sealed class ShortcutService : IHostedService, IDisposable
     {
         _ = cancellationToken;
         _settings.Changed += OnSettingsChanged;
-        Apply(_settings.Current.Shortcuts);
+        _subscribeActiveProfileChanged(OnActiveProfileChanged);
+        Apply(_settings.Current);
         return Task.CompletedTask;
     }
 
@@ -70,6 +105,7 @@ public sealed class ShortcutService : IHostedService, IDisposable
     {
         _ = cancellationToken;
         _settings.Changed -= OnSettingsChanged;
+        _unsubscribeActiveProfileChanged(OnActiveProfileChanged);
         _listener.Update([], static _ => { }, static _ => { });
         return Task.CompletedTask;
     }
@@ -84,6 +120,7 @@ public sealed class ShortcutService : IHostedService, IDisposable
 
         _disposed = true;
         _settings.Changed -= OnSettingsChanged;
+        _unsubscribeActiveProfileChanged(OnActiveProfileChanged);
         _listener.Dispose();
     }
 
@@ -93,16 +130,35 @@ public sealed class ShortcutService : IHostedService, IDisposable
     private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)
     {
         _ = sender;
-        Apply(args.Settings.Shortcuts);
+        Apply(args.Settings);
     }
 
-    private void Apply(IEnumerable<ShortcutEntry> shortcuts)
+    private void OnActiveProfileChanged(object? sender, ActiveProfileChangedEventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        Apply(_settings.Current);
+    }
+
+    private void Apply(SteamInputBridgeSettings settings)
+    {
+        Apply(ActiveShortcuts(settings));
+    }
+
+    private void Apply(IReadOnlyList<ShortcutEntry> shortcuts)
     {
         ShortcutBindingSet bindings = ShortcutBindingSet.Create(shortcuts);
+        List<(int Id, ShortcutEntry Shortcut)> releases;
         lock (_gate)
         {
+            releases = PressedReleaseShortcuts();
             _shortcuts = bindings.Shortcuts;
             _pressedShortcuts.Clear();
+        }
+
+        foreach ((int id, ShortcutEntry shortcut) in releases)
+        {
+            Publish(id, shortcut, ShortcutPhase.Released);
         }
 
         StatusChanged?.Invoke(this, EventArgs.Empty);
@@ -116,6 +172,45 @@ public sealed class ShortcutService : IHostedService, IDisposable
         {
             LogShortcutRegistrationFailed(_logger, exception.Message, null);
         }
+    }
+
+    private List<ShortcutEntry> ActiveShortcuts(SteamInputBridgeSettings settings)
+    {
+        List<ShortcutEntry> shortcuts = [.. settings.Shortcuts];
+
+        string? profileId = _activeProfileId();
+        if (!string.IsNullOrWhiteSpace(profileId) &&
+            settings.Games.TryGetValue(profileId, out GameProfile? profile))
+        {
+            foreach (ShortcutEntry shortcut in profile.Shortcuts)
+            {
+                shortcuts.Add(shortcut);
+            }
+        }
+
+        return shortcuts;
+    }
+
+    private List<(int Id, ShortcutEntry Shortcut)> PressedReleaseShortcuts()
+    {
+        List<(int Id, ShortcutEntry Shortcut)> releases = [];
+        foreach (int id in _pressedShortcuts)
+        {
+            if (!_shortcuts.TryGetValue(id, out IReadOnlyList<ShortcutEntry>? shortcuts))
+            {
+                continue;
+            }
+
+            foreach (ShortcutEntry shortcut in shortcuts)
+            {
+                if (shortcut.Action is ShortcutValue.Enable or ShortcutValue.Disable)
+                {
+                    releases.Add((id, shortcut));
+                }
+            }
+        }
+
+        return releases;
     }
 
     // MARK: Shortcuts
@@ -136,7 +231,7 @@ public sealed class ShortcutService : IHostedService, IDisposable
 
         foreach (ShortcutEntry shortcut in shortcuts)
         {
-            ApplyPressed(id, shortcut);
+            Publish(id, shortcut, ShortcutPhase.Pressed);
         }
 
         if (changed)
@@ -160,7 +255,10 @@ public sealed class ShortcutService : IHostedService, IDisposable
 
         foreach (ShortcutEntry shortcut in shortcuts)
         {
-            ApplyReleased(id, shortcut);
+            if (shortcut.Action is ShortcutValue.Enable or ShortcutValue.Disable)
+            {
+                Publish(id, shortcut, ShortcutPhase.Released);
+            }
         }
 
         if (changed)
@@ -183,28 +281,14 @@ public sealed class ShortcutService : IHostedService, IDisposable
         return false;
     }
 
-    private void ApplyPressed(int id, ShortcutEntry shortcut)
+    private void Publish(int id, ShortcutEntry shortcut, ShortcutPhase phase)
     {
-        foreach (ShortcutTargetSetting target in shortcut.Targets)
+        if (!shortcut.Target.HasValue)
         {
-            Publish(id, shortcut, target, ShortcutPhase.Pressed);
+            return;
         }
-    }
 
-    private void ApplyReleased(int id, ShortcutEntry shortcut)
-    {
-        foreach (ShortcutTargetSetting target in shortcut.Targets)
-        {
-            if (shortcut.Action is ShortcutValue.Enable or ShortcutValue.Disable)
-            {
-                Publish(id, shortcut, target, ShortcutPhase.Released);
-            }
-        }
-    }
-
-    private void Publish(int id, ShortcutEntry shortcut, ShortcutTargetSetting target, ShortcutPhase phase)
-    {
-        Shortcut?.Invoke(this, new(id, shortcut.Keys, target, shortcut.Action, phase));
+        Shortcut?.Invoke(this, new(id, shortcut.Keys, shortcut.Target.Value, shortcut.Action, phase));
     }
 
     // MARK: Status
@@ -219,9 +303,14 @@ public sealed class ShortcutService : IHostedService, IDisposable
             {
                 foreach (ShortcutEntry entry in entries)
                 {
+                    if (!entry.Target.HasValue)
+                    {
+                        continue;
+                    }
+
                     status.Add(new(
                         entry.Keys,
-                        ShortcutTargets(entry),
+                        entry.Target.Value.ToString(),
                         entry.Action.ToString(),
                         _pressedShortcuts.Contains(shortcutId)));
                 }
@@ -231,15 +320,10 @@ public sealed class ShortcutService : IHostedService, IDisposable
         }
     }
 
-    private static List<string> ShortcutTargets(ShortcutEntry entry)
+    private static Func<string?> ActiveProfileId(ActiveProfileService profiles)
     {
-        List<string> targets = new(entry.Targets.Count);
-        foreach (ShortcutTargetSetting target in entry.Targets)
-        {
-            targets.Add(target.ToString());
-        }
-
-        return targets;
+        ArgumentNullException.ThrowIfNull(profiles);
+        return () => profiles.ActiveProfile?.Id;
     }
 
     // MARK: Logging

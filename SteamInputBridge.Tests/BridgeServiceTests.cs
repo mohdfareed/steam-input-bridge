@@ -67,11 +67,8 @@ public sealed class BridgeServiceTests
         settings.Shortcuts.Add(new ShortcutEntry
         {
             Keys = "F13",
+            Target = new ShortcutTargetSetting(ShortcutTarget.MousePointer, null),
             Action = ShortcutValue.Toggle,
-            Targets =
-            {
-                new ShortcutTargetSetting(ShortcutTarget.MousePointer, null),
-            },
         });
         return settings;
     }

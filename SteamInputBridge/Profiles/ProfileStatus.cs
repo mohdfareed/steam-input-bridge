@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using SteamInputBridge.Outputs.Controller;
 using SteamInputBridge.Outputs.Mouse;
+using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Profiles;
 
@@ -18,7 +19,8 @@ internal sealed record ResolvedProfile(
     uint? SteamAppId,
     MouseOutput? MouseOutput,
     ControllerOutput? ControllerOutput,
-    IReadOnlyList<string> ReceiverProcesses);
+    IReadOnlyList<string> ReceiverProcesses,
+    IReadOnlyList<ShortcutEntry> Shortcuts);
 
 /// <summary>Resolved profile runtime status.</summary>
 public sealed record ProfileStatus(
@@ -29,6 +31,7 @@ public sealed record ProfileStatus(
     MouseOutput? MouseOutput,
     ControllerOutput? ControllerOutput,
     IReadOnlyList<string> ReceiverProcesses,
+    IReadOnlyList<ShortcutEntry> Shortcuts,
     IReadOnlyList<int> GameProcessIds,
     bool Active,
     int? ClientProcessId,

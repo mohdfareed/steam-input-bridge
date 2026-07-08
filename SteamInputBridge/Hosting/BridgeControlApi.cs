@@ -104,20 +104,20 @@ public sealed class BridgeClientStatus(
 
 /// <summary>Configured shortcut status snapshot.</summary>
 /// <param name="keys">Shortcut key combination.</param>
-/// <param name="targets">Shortcut target names.</param>
+/// <param name="target">Shortcut target name.</param>
 /// <param name="action">Shortcut action.</param>
 /// <param name="pressed">Whether the shortcut is currently pressed.</param>
 public sealed class BridgeShortcutStatus(
     string keys,
-    IReadOnlyList<string> targets,
+    string target,
     string action,
     bool pressed)
 {
     /// <summary>Shortcut key combination.</summary>
     public string Keys { get; } = keys;
 
-    /// <summary>Shortcut target names.</summary>
-    public IReadOnlyList<string> Targets { get; } = targets;
+    /// <summary>Shortcut target name.</summary>
+    public string Target { get; } = target;
 
     /// <summary>Shortcut action.</summary>
     public string Action { get; } = action;

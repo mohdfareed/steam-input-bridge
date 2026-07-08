@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
 using SteamInputBridge.Shortcuts.Runtime;
@@ -60,26 +61,85 @@ public sealed class ShortcutServiceTests
         Assert.IsFalse(service.Status[0].Pressed);
     }
 
+    [TestMethod]
+    public async Task ProfileShortcutsRegisterOnlyForActiveProfile()
+    {
+        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithProfileShortcut());
+        using SettingsService settings = new(
+            monitor,
+            new SettingsFile(@"C:\Tests\appsettings.json"),
+            NullLogger<SettingsService>.Instance);
+        using TestGlobalShortcutListener listener = new();
+        TestActiveProfileSource profiles = new();
+        using ShortcutService service = new(
+            settings,
+            listener,
+            NullLogger<ShortcutService>.Instance,
+            profiles.ActiveProfileId,
+            profiles.Subscribe,
+            profiles.Unsubscribe);
+
+        await service.StartAsync(default).ConfigureAwait(false);
+        Assert.HasCount(1, listener.Registrations);
+        Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
+
+        profiles.SetActive("game");
+
+        Assert.HasCount(2, listener.Registrations);
+        Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
+        Assert.AreEqual("F2", listener.Registrations[1].Shortcut.ToString());
+
+        profiles.SetActive(null);
+
+        Assert.HasCount(1, listener.Registrations);
+        Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
+    }
+
+    [TestMethod]
+    public async Task ProfileShortcutReleasesWhenProfileStopsBeingActive()
+    {
+        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithProfileShortcut(globalShortcut: false));
+        using SettingsService settings = new(
+            monitor,
+            new SettingsFile(@"C:\Tests\appsettings.json"),
+            NullLogger<SettingsService>.Instance);
+        using TestGlobalShortcutListener listener = new();
+        TestActiveProfileSource profiles = new();
+        profiles.SetActive("game");
+        using ShortcutService service = new(
+            settings,
+            listener,
+            NullLogger<ShortcutService>.Instance,
+            profiles.ActiveProfileId,
+            profiles.Subscribe,
+            profiles.Unsubscribe);
+        List<ShortcutEventArgs> events = [];
+        service.Shortcut += (_, args) => events.Add(args);
+        await service.StartAsync(default).ConfigureAwait(false);
+        listener.Press(1);
+
+        profiles.SetActive(null);
+
+        Assert.HasCount(2, events);
+        Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);
+        Assert.AreEqual(ShortcutPhase.Released, events[1].Phase);
+        Assert.HasCount(0, listener.Registrations);
+    }
+
     private static SteamInputBridgeSettings SettingsWithShortcuts()
     {
         SteamInputBridgeSettings settings = ValidBaseSettings();
         settings.Shortcuts.Add(new ShortcutEntry
         {
             Keys = "Ctrl+Alt+F1",
+            Target = new ShortcutTargetSetting(ShortcutTarget.Microphone, null),
             Action = ShortcutValue.Enable,
-            Targets =
-            {
-                new ShortcutTargetSetting(ShortcutTarget.Microphone, null),
-            },
         });
         settings.Shortcuts.Add(new ShortcutEntry
         {
             Keys = "Ctrl+Alt+F1",
+            Target = new ShortcutTargetSetting(ShortcutTarget.ActionColor, "#808080"),
             Action = ShortcutValue.Toggle,
-            Targets =
-            {
-                new ShortcutTargetSetting(ShortcutTarget.ActionColor, "#808080"),
-            },
         });
         return settings;
     }
@@ -90,11 +150,30 @@ public sealed class ShortcutServiceTests
         settings.Shortcuts.Add(new ShortcutEntry
         {
             Keys = keys,
+            Target = new ShortcutTargetSetting(ShortcutTarget.MousePointer, null),
             Action = ShortcutValue.Toggle,
-            Targets =
+        });
+        return settings;
+    }
+
+    private static SteamInputBridgeSettings SettingsWithProfileShortcut(bool globalShortcut = true)
+    {
+        SteamInputBridgeSettings settings = ValidBaseSettings();
+        if (globalShortcut)
+        {
+            settings.Shortcuts.Add(new ShortcutEntry
             {
-                new ShortcutTargetSetting(ShortcutTarget.MousePointer, null),
-            },
+                Keys = "F1",
+                Target = new ShortcutTargetSetting(ShortcutTarget.MousePointer, null),
+                Action = ShortcutValue.Toggle,
+            });
+        }
+
+        settings.Games["game"].Shortcuts.Add(new ShortcutEntry
+        {
+            Keys = "F2",
+            Target = new ShortcutTargetSetting(ShortcutTarget.Microphone, null),
+            Action = ShortcutValue.Enable,
         });
         return settings;
     }
@@ -138,6 +217,34 @@ public sealed class ShortcutServiceTests
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class TestActiveProfileSource
+    {
+        private event EventHandler<ActiveProfileChangedEventArgs>? Changed;
+
+        private string? ProfileId { get; set; }
+
+        public string? ActiveProfileId()
+        {
+            return ProfileId;
+        }
+
+        public void Subscribe(EventHandler<ActiveProfileChangedEventArgs> handler)
+        {
+            Changed += handler;
+        }
+
+        public void Unsubscribe(EventHandler<ActiveProfileChangedEventArgs> handler)
+        {
+            Changed -= handler;
+        }
+
+        public void SetActive(string? profileId)
+        {
+            ProfileId = profileId;
+            Changed?.Invoke(this, new(null));
         }
     }
 }

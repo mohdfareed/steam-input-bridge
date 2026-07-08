@@ -87,8 +87,8 @@ public sealed class ShortcutEntry
     /// <summary>Keyboard combination such as Ctrl+Alt+F13.</summary>
     public string Keys { get; set; } = "";
 
-    /// <summary>Targets controlled by this shortcut.</summary>
-    public Collection<ShortcutTargetSetting> Targets { get; } = [];
+    /// <summary>Shortcut target controlled by this shortcut.</summary>
+    public ShortcutTargetSetting? Target { get; set; }
 
     /// <summary>State applied when the shortcut is pressed.</summary>
     public ShortcutValue Action { get; set; } = ShortcutValue.Enable;
@@ -100,17 +100,20 @@ public sealed class GameProfile
     /// <summary>Display title.</summary>
     public string Title { get; set; } = "";
 
+    /// <summary>Optional Steam app id used when the client cannot read one from Steam.</summary>
+    public uint? SteamAppId { get; set; }
+
     /// <summary>Optional executable path used to start the game.</summary>
     public string? Executable { get; set; }
+
+    /// <summary>Optional working directory.</summary>
+    public string? WorkingDirectory { get; set; }
 
     /// <summary>Optional process arguments.</summary>
     public string? Arguments { get; set; }
 
-    /// <summary>Optional Steam app id used when the client cannot read one from Steam.</summary>
-    public uint? SteamAppId { get; set; }
-
-    /// <summary>Optional working directory.</summary>
-    public string? WorkingDirectory { get; set; }
+    /// <summary>Processes that identify the receiver game.</summary>
+    public Collection<string> ReceiverProcesses { get; } = [];
 
     /// <summary>Virtual replacement controller output.</summary>
     public ControllerOutput? ControllerOutput { get; set; }
@@ -118,6 +121,6 @@ public sealed class GameProfile
     /// <summary>Virtual pointer output.</summary>
     public MouseOutput? MouseOutput { get; set; }
 
-    /// <summary>Processes that identify the receiver game.</summary>
-    public Collection<string> ReceiverProcesses { get; } = [];
+    /// <summary>Keyboard shortcuts active only while this profile is active.</summary>
+    public Collection<ShortcutEntry> Shortcuts { get; } = [];
 }

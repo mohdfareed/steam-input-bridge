@@ -137,7 +137,7 @@ internal static class ServerCommands
         {
             string pressed = FormatYesNo(shortcut.Pressed);
             await Console.Out.WriteLineAsync(
-                    $"{shortcut.Keys}  {pressed}  {string.Join(", ", shortcut.Targets)}  {shortcut.Action}")
+                    $"{shortcut.Keys}  {pressed}  {shortcut.Target}  {shortcut.Action}")
                 .ConfigureAwait(false);
         }
 

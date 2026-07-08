@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using SteamInputBridge.Shortcuts;
 using SteamInputBridge.Shortcuts.Runtime;
 
 namespace SteamInputBridge.Settings;
@@ -33,7 +34,7 @@ public static class SettingsValidation
         {
             ValidateViiper(settings.Viiper, failures);
             ValidateTeensy(settings.Teensy, failures);
-            ValidateShortcuts(settings.Shortcuts, failures);
+            ValidateShortcuts("shortcuts", settings.Shortcuts, failures);
             ValidateProfiles(settings.Games, failures);
         }
 
@@ -65,17 +66,17 @@ public static class SettingsValidation
         }
     }
 
-    private static void ValidateShortcuts(Collection<ShortcutEntry> shortcuts, List<string> failures)
+    private static void ValidateShortcuts(string scope, Collection<ShortcutEntry> shortcuts, List<string> failures)
     {
         foreach (ShortcutEntry shortcut in shortcuts)
         {
             if (string.IsNullOrWhiteSpace(shortcut.Keys))
             {
-                failures.Add("shortcuts:keys is required.");
+                failures.Add($"{scope}:keys is required.");
                 continue;
             }
 
-            string prefix = $"shortcuts:{shortcut.Keys.Trim()}";
+            string prefix = $"{scope}:{shortcut.Keys.Trim()}";
             try
             {
                 _ = KeyboardShortcutParser.Parse(shortcut.Keys.Trim());
@@ -85,9 +86,13 @@ public static class SettingsValidation
                 failures.Add($"{prefix}:keys is invalid: {exception.Message}");
             }
 
-            if (shortcut.Targets.Count == 0)
+            if (!shortcut.Target.HasValue)
             {
-                failures.Add($"{prefix}:targets is required.");
+                failures.Add($"{prefix}:target is required.");
+            }
+            else if (!IsValidTarget(shortcut.Target.Value))
+            {
+                failures.Add($"{prefix}:target is invalid.");
             }
 
             if (!Enum.IsDefined(shortcut.Action))
@@ -130,6 +135,8 @@ public static class SettingsValidation
             {
                 failures.Add($"games:{profileId}:mouseOutput is invalid.");
             }
+
+            ValidateShortcuts($"games:{profileId}:shortcuts", profile.Shortcuts, failures);
         }
     }
 
@@ -152,5 +159,12 @@ public static class SettingsValidation
         }
 
         return int.TryParse(value[3..], out int number) && number > 0;
+    }
+
+    private static bool IsValidTarget(ShortcutTargetSetting target)
+    {
+        return target.Target == ShortcutTarget.ActionColor
+            ? !string.IsNullOrWhiteSpace(target.Color)
+            : Enum.IsDefined(target.Target);
     }
 }

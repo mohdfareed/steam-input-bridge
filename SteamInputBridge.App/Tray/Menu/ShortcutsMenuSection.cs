@@ -54,7 +54,7 @@ internal sealed class ShortcutsMenuSection
         {
             if (previous[i].Keys != current[i].Keys ||
                 previous[i].Action != current[i].Action ||
-                string.Join('\n', previous[i].Targets) != string.Join('\n', current[i].Targets))
+                previous[i].Target != current[i].Target)
             {
                 return true;
             }
@@ -73,7 +73,7 @@ internal sealed class ShortcutsMenuSection
         ToolStripMenuItem pressed = TrayMenuItems.Item("Pressed", TrayMenuItems.YesNo(shortcut.Pressed));
         TrayMenuItems.SetCheckMark(pressed, shortcut.Pressed);
 
-        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Targets", string.Join(", ", shortcut.Targets)));
+        _ = menu.DropDownItems.Add(TrayMenuItems.Item("Target", shortcut.Target));
         _ = menu.DropDownItems.Add(TrayMenuItems.Item("Action", shortcut.Action));
         _ = menu.DropDownItems.Add(pressed);
 
