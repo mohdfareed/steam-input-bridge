@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -12,16 +13,38 @@ using SteamInputBridge.Settings;
 namespace SteamInputBridge.Profiles;
 
 /// <summary>Owns connected profile clients and their launched receiver processes.</summary>
-public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogger<ProfileClientsService> logger)
-    : IDisposable
+public sealed class ProfileClientsService : IDisposable
 {
     private static readonly TimeSpan ReceiverPollInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan ReceiverCloseTimeout = TimeSpan.FromSeconds(5);
 
+    private readonly ProfileCatalogService _profiles;
+    private readonly ILogger<ProfileClientsService> _logger;
+    private readonly Func<int, ReceiverWindowActivationResult> _activateReceiver;
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, ConnectedProfileClient> _clients = [];
     private readonly Dictionary<Guid, ClientSession> _sessions = [];
     private bool _disposed;
+
+    /// <summary>Creates profile client session ownership.</summary>
+    public ProfileClientsService(ProfileCatalogService profiles, ILogger<ProfileClientsService> logger)
+        : this(profiles, logger, ReceiverWindowActivator.TryActivate)
+    {
+    }
+
+    internal ProfileClientsService(
+        ProfileCatalogService profiles,
+        ILogger<ProfileClientsService> logger,
+        Func<int, ReceiverWindowActivationResult> activateReceiver)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(activateReceiver);
+
+        _profiles = profiles;
+        _logger = logger;
+        _activateReceiver = activateReceiver;
+    }
 
     // MARK: Publics
     // ========================================================================
@@ -45,7 +68,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
         ClientSession session;
         lock (_gate)
         {
-            if (!profiles.TryGetProfile(profileId, out GameProfile profile))
+            if (!_profiles.TryGetProfile(profileId, out GameProfile profile))
             {
                 throw new InvalidOperationException($"Profile '{profileId}' is not configured.");
             }
@@ -85,7 +108,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
             if (session.StopReceiversOnDisconnect)
             {
                 int stopped = StopSessionReceivers(session);
-                LogProfileReceiversStopped(logger, session.ProfileId, stopped, null);
+                LogProfileReceiversStopped(_logger, session.ProfileId, stopped, null);
             }
 
             session.Cancel();
@@ -111,7 +134,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
         ClientSession session = GetSession(connectionId);
         session.StopReceiversOnDisconnect = false;
         int stopped = StopSessionReceivers(session);
-        LogProfileReceiversStopped(logger, session.ProfileId, stopped, null);
+        LogProfileReceiversStopped(_logger, session.ProfileId, stopped, null);
     }
 
     /// <summary>Releases active sessions without stopping receiver processes again.</summary>
@@ -180,7 +203,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
         }
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
         {
-            LogProfileSessionFailed(logger, session.ProfileId, exception.Message, null);
+            LogProfileSessionFailed(_logger, session.ProfileId, exception.Message, null);
         }
     }
 
@@ -214,6 +237,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
         {
             bool hasReceiver = RefreshSessionReceivers(session, out bool changed);
             sawReceiver |= hasReceiver;
+            ActivateDetectedReceivers(session);
             if (changed)
             {
                 ClientsChanged?.Invoke(this, EventArgs.Empty);
@@ -225,6 +249,40 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
             }
 
             await Task.Delay(ReceiverPollInterval, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private void ActivateDetectedReceivers(ClientSession session)
+    {
+        int[] receiverProcessIds;
+        lock (session.Gate)
+        {
+            receiverProcessIds = [.. session.Receivers.Where(
+                receiverProcessId => !session.ReceiverActivationCompleted.Contains(receiverProcessId))];
+        }
+
+        foreach (int receiverProcessId in receiverProcessIds)
+        {
+            ReceiverWindowActivationResult result = _activateReceiver(receiverProcessId);
+            if (result == ReceiverWindowActivationResult.WindowNotFound)
+            {
+                continue;
+            }
+
+            lock (session.Gate)
+            {
+                if (!session.Receivers.Contains(receiverProcessId))
+                {
+                    continue;
+                }
+
+                _ = session.ReceiverActivationCompleted.Add(receiverProcessId);
+            }
+
+            if (result == ReceiverWindowActivationResult.Rejected)
+            {
+                LogReceiverActivationRejected(_logger, session.ProfileId, receiverProcessId, null);
+            }
         }
     }
 
@@ -271,6 +329,7 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
             HashSet<int> previous = [.. session.Receivers];
             _ = session.Receivers.RemoveWhere(processId => !receivers.Contains(processId));
             session.Receivers.UnionWith(receivers);
+            session.ReceiverActivationCompleted.IntersectWith(session.Receivers);
             changed = !previous.SetEquals(session.Receivers);
 
             return session.Receivers.Count != 0;
@@ -417,6 +476,8 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
 
         public HashSet<int> Receivers { get; } = [];
 
+        public HashSet<int> ReceiverActivationCompleted { get; } = [];
+
         public Task? Task { get; set; }
 
         public bool StopReceiversOnDisconnect { get; set; } = true;
@@ -442,4 +503,10 @@ public sealed class ProfileClientsService(ProfileCatalogService profiles, ILogge
             LogLevel.Information,
             new EventId(2, nameof(LogProfileReceiversStopped)),
             "Stopped {ReceiverCount} receiver process(es) for profile {ProfileId}.");
+
+    private static readonly Action<ILogger, string, int, Exception?> LogReceiverActivationRejected =
+        LoggerMessage.Define<string, int>(
+            LogLevel.Debug,
+            new EventId(3, nameof(LogReceiverActivationRejected)),
+            "Foreground activation was rejected for profile {ProfileId} receiver process {ProcessId}.");
 }

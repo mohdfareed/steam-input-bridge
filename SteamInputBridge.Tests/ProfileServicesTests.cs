@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using SteamInputBridge.Hosting;
@@ -64,10 +68,70 @@ public sealed class ProfileServicesTests
         Assert.IsNull(AssertSingle(activeProfiles.Profiles).ClientProcessId);
     }
 
+    [TestMethod]
+    public async Task ProfileClientsServiceActivatesAttachOnlyReceiverWhenDetected()
+    {
+        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithCurrentReceiver("game"));
+        using SettingsService settings = CreateSettings(monitor);
+        using ProfileCatalogService catalog = new(settings);
+        ConcurrentQueue<int> activatedProcessIds = new();
+        using ProfileClientsService clients = new(
+            catalog,
+            NullLogger<ProfileClientsService>.Instance,
+            processId =>
+            {
+                activatedProcessIds.Enqueue(processId);
+                return ReceiverWindowActivationResult.Activated;
+            });
+
+        _ = await clients
+            .ConnectClientAsync(Guid.NewGuid(), processId: 1234, "game", steamAppId: null, new FakeClientApi())
+            .ConfigureAwait(false);
+
+        await WaitUntilAsync(() => activatedProcessIds.Contains(Environment.ProcessId)).ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    public async Task ProfileClientsServiceRetriesActivationUntilReceiverWindowExists()
+    {
+        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithCurrentReceiver("game"));
+        using SettingsService settings = CreateSettings(monitor);
+        using ProfileCatalogService catalog = new(settings);
+        ConcurrentQueue<int> activationAttempts = new();
+        using ProfileClientsService clients = new(
+            catalog,
+            NullLogger<ProfileClientsService>.Instance,
+            processId =>
+            {
+                activationAttempts.Enqueue(processId);
+                return activationAttempts.Count == 1
+                    ? ReceiverWindowActivationResult.WindowNotFound
+                    : ReceiverWindowActivationResult.Activated;
+            });
+
+        _ = await clients
+            .ConnectClientAsync(Guid.NewGuid(), processId: 1234, "game", steamAppId: null, new FakeClientApi())
+            .ConfigureAwait(false);
+
+        await WaitUntilAsync(() => activationAttempts.Count >= 2).ConfigureAwait(false);
+        CollectionAssert.AreEqual(
+            new[] { Environment.ProcessId, Environment.ProcessId },
+            activationAttempts.Take(2).ToArray());
+    }
+
     private static ProfileStatus AssertSingle(IReadOnlyList<ProfileStatus> profiles)
     {
         Assert.HasCount(1, profiles);
         return profiles[0];
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(3));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token).ConfigureAwait(false);
+        }
     }
 
     private static SettingsService CreateSettings(TestOptionsMonitor<SteamInputBridgeSettings> monitor)
@@ -89,6 +153,14 @@ public sealed class ProfileServicesTests
             ControllerOutput = ControllerOutput.Xbox360,
         };
         settings.Games[profileId].ReceiverProcesses.Add("definitely-not-running-test-receiver.exe");
+        return settings;
+    }
+
+    private static SteamInputBridgeSettings SettingsWithCurrentReceiver(string profileId)
+    {
+        SteamInputBridgeSettings settings = SettingsWithProfile(profileId);
+        settings.Games[profileId].ReceiverProcesses.Clear();
+        settings.Games[profileId].ReceiverProcesses.Add(Process.GetCurrentProcess().ProcessName);
         return settings;
     }
 
