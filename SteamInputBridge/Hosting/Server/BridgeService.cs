@@ -76,9 +76,9 @@ public sealed class BridgeService
         return client;
     }
 
-    internal ProfileClientStatus? UnregisterClient(Guid connectionId)
+    internal ProfileClientStatus? UnregisterClient(Guid connectionId, bool stopReceivers = true)
     {
-        ProfileClientStatus? client = _clients.DisconnectClient(connectionId);
+        ProfileClientStatus? client = _clients.DisconnectClient(connectionId, stopReceivers);
         if (client is not null)
         {
             StatusChanged?.Invoke(this, EventArgs.Empty);

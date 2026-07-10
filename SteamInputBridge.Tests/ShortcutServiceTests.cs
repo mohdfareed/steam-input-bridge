@@ -97,6 +97,7 @@ public sealed class ShortcutServiceTests
         listener.Press(1);
 
         await runtime.DeactivateAsync().ConfigureAwait(false);
+        await WaitUntilAsync(() => events.Count == 2).ConfigureAwait(false);
 
         Assert.HasCount(2, events);
         Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);

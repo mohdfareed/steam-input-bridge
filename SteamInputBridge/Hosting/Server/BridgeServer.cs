@@ -21,6 +21,7 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
 
     private readonly ConcurrentBag<NamedPipeServerStream> _pipes = [];
     private Semaphore? _serverInstance;
+    private bool _stopping;
 
     // MARK: Lifecycle
     // ========================================================================
@@ -86,6 +87,7 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
     /// <inheritdoc />
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        _stopping = true;
         foreach (NamedPipeServerStream pipe in _pipes)
         {
             await pipe.DisposeAsync().ConfigureAwait(false);
@@ -131,7 +133,7 @@ public sealed class BridgeServer(SettingsService settings, BridgeService service
             }
             finally
             {
-                ProfileClientStatus? client = service.UnregisterClient(connectionId);
+                ProfileClientStatus? client = service.UnregisterClient(connectionId, stopReceivers: !_stopping);
                 if (client is not null)
                 {
                     BridgeLog.ClientDisconnected(logger, client.ProcessId, client.ProfileId);

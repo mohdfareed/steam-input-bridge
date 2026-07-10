@@ -18,6 +18,11 @@ internal enum ReceiverWindowActivationResult
 [SupportedOSPlatform("windows")]
 internal static class ReceiverWindowActivator
 {
+    private const SetWindowPosFlags FrontMostFlags =
+        SetWindowPosFlags.SWP_NOMOVE |
+        SetWindowPosFlags.SWP_NOSIZE |
+        SetWindowPosFlags.SWP_SHOWWINDOW;
+
     public static ReceiverWindowActivationResult TryActivate(int processId)
     {
         HWND window = FindReceiverWindow(processId);
@@ -27,8 +32,47 @@ internal static class ReceiverWindowActivator
         }
 
         _ = ShowWindow(window, IsIconic(window) ? ShowWindowCommand.SW_RESTORE : ShowWindowCommand.SW_SHOW);
-        _ = BringWindowToTop(window);
-        return SetForegroundWindow(window)
+
+        HWND foregroundWindow = GetForegroundWindow();
+        uint currentThreadId = Kernel32.GetCurrentThreadId();
+        uint receiverThreadId = GetWindowThreadProcessId(window, out _);
+        uint foregroundThreadId = foregroundWindow.IsNull ? 0 : GetWindowThreadProcessId(foregroundWindow, out _);
+        bool receiverAttached = false;
+        bool foregroundAttached = false;
+
+        try
+        {
+            if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
+            {
+                foregroundAttached = AttachThreadInput(currentThreadId, foregroundThreadId, true);
+            }
+
+            if (receiverThreadId != 0 && receiverThreadId != currentThreadId)
+            {
+                receiverAttached = AttachThreadInput(currentThreadId, receiverThreadId, true);
+            }
+
+            _ = SetWindowPos(window, HWND.HWND_TOPMOST, 0, 0, 0, 0, FrontMostFlags);
+            _ = SetWindowPos(window, HWND.HWND_NOTOPMOST, 0, 0, 0, 0, FrontMostFlags);
+            _ = BringWindowToTop(window);
+            _ = SetForegroundWindow(window);
+            _ = SetActiveWindow(window);
+            _ = SetFocus(window);
+        }
+        finally
+        {
+            if (receiverAttached)
+            {
+                _ = AttachThreadInput(currentThreadId, receiverThreadId, false);
+            }
+
+            if (foregroundAttached)
+            {
+                _ = AttachThreadInput(currentThreadId, foregroundThreadId, false);
+            }
+        }
+
+        return GetForegroundWindow() == window
             ? ReceiverWindowActivationResult.Activated
             : ReceiverWindowActivationResult.Rejected;
     }

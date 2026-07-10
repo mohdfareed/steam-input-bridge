@@ -1,28 +1,31 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Globalization;
 using System.Threading;
 using System.Windows.Forms;
-using NHotkey;
-using NHotkey.WindowsForms;
 using SteamInputBridge.Shortcuts.Runtime;
 using Vanara.PInvoke;
 using Timer = System.Windows.Forms.Timer;
 
 namespace SteamInputBridge.Shortcuts;
 
-/// <summary>Registers global shortcuts and reports press/release transitions.</summary>
+/// <summary>Observes global shortcuts and reports press/release transitions.</summary>
 public sealed class GlobalShortcutListener : IGlobalShortcutListener
 {
     private const int ReleasePollMilliseconds = 25;
 
     private readonly MessageThread _messageThread = new();
     private readonly ShortcutPressTracker _tracker = new(IsKeyDown);
-    private readonly List<string> _registeredNames = [];
+    private readonly PassThroughKeyboardHook _keyboardHook;
 
     private Timer? _timer;
     private bool _disposed;
+
+    /// <summary>Creates the global shortcut listener.</summary>
+    public GlobalShortcutListener()
+    {
+        _keyboardHook = new(OnKeyDown);
+    }
 
     // MARK: Publics
     // ========================================================================
@@ -41,9 +44,10 @@ public sealed class GlobalShortcutListener : IGlobalShortcutListener
         {
             ClearRegistrations();
             _tracker.Update(shortcuts, pressed, released);
-            foreach (KeyboardShortcutRegistration shortcut in shortcuts)
+
+            if (shortcuts.Count != 0)
             {
-                Register(shortcut);
+                _keyboardHook.Start();
             }
         });
     }
@@ -66,45 +70,26 @@ public sealed class GlobalShortcutListener : IGlobalShortcutListener
 
         _messageThread.Invoke(ClearRegistrations);
         _messageThread.Dispose();
+        _keyboardHook.Dispose();
         _disposed = true;
     }
 
     // MARK: Registrations
     // ========================================================================
 
-    private void Register(KeyboardShortcutRegistration shortcut)
-    {
-        string name = shortcut.Id.ToString(CultureInfo.InvariantCulture);
-        HotkeyManager.Current.AddOrReplace(name, shortcut.Shortcut.ToKeys(), noRepeat: true, OnHotkeyPressed);
-        _registeredNames.Add(name);
-    }
-
     private void ClearRegistrations()
     {
         StopTimer();
+        _keyboardHook.Stop();
         _tracker.Update([], static _ => { }, static _ => { });
-
-        foreach (string name in _registeredNames)
-        {
-            HotkeyManager.Current.Remove(name);
-        }
-
-        _registeredNames.Clear();
     }
 
     // MARK: Events
     // ========================================================================
 
-    private void OnHotkeyPressed(object? sender, HotkeyEventArgs args)
+    private void OnKeyDown(ushort virtualKey)
     {
-        _ = sender;
-        args.Handled = true;
-        if (!int.TryParse(args.Name, NumberStyles.None, CultureInfo.InvariantCulture, out int id))
-        {
-            return;
-        }
-
-        if (_tracker.HotkeyPressed(id))
+        if (_tracker.KeyPressed(virtualKey))
         {
             StartTimer();
         }

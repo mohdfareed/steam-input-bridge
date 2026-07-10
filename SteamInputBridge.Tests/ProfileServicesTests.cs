@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Outputs.Controller;
@@ -119,6 +120,63 @@ public sealed class ProfileServicesTests
             activationAttempts.Take(2).ToArray());
     }
 
+    [TestMethod]
+    public async Task ProfileClientsServiceAttachesExistingReceiverInsteadOfLaunchingProfile()
+    {
+        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithCurrentReceiver("game"));
+        monitor.CurrentValue.Games["game"].Executable = @"C:\Unavailable\launcher.exe";
+        using SettingsService settings = CreateSettings(monitor);
+        using ProfileCatalogService catalog = new(settings);
+        ConcurrentQueue<int> activatedProcessIds = new();
+        using ProfileClientsService clients = new(
+            catalog,
+            NullLogger<ProfileClientsService>.Instance,
+            processId =>
+            {
+                activatedProcessIds.Enqueue(processId);
+                return ReceiverWindowActivationResult.Activated;
+            });
+
+        _ = await clients
+            .ConnectClientAsync(
+                Guid.NewGuid(),
+                processId: 1234,
+                "game",
+                steamAppId: null,
+                new FakeClientApi())
+            .ConfigureAwait(false);
+
+        await WaitUntilAsync(() => activatedProcessIds.Contains(Environment.ProcessId)).ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    public async Task ProfileClientsServiceLogsReceiverActivationResultDetails()
+    {
+        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithCurrentReceiver("game"));
+        using SettingsService settings = CreateSettings(monitor);
+        using ProfileCatalogService catalog = new(settings);
+        TestLogger<ProfileClientsService> logger = new();
+        int attempts = 0;
+        using ProfileClientsService clients = new(
+            catalog,
+            logger,
+            _ =>
+            {
+                attempts++;
+                return attempts == 1
+                    ? ReceiverWindowActivationResult.WindowNotFound
+                    : ReceiverWindowActivationResult.Rejected;
+            });
+
+        _ = await clients
+            .ConnectClientAsync(Guid.NewGuid(), processId: 1234, "game", steamAppId: null, new FakeClientApi())
+            .ConfigureAwait(false);
+
+        await WaitUntilAsync(() => logger.Contains(LogLevel.Warning, "Windows rejected foreground activation"))
+            .ConfigureAwait(false);
+        Assert.IsTrue(logger.Contains(LogLevel.Information, "Receiver window not found yet"));
+    }
+
     private static ProfileStatus AssertSingle(IReadOnlyList<ProfileStatus> profiles)
     {
         Assert.HasCount(1, profiles);
@@ -186,5 +244,48 @@ public sealed class ProfileServicesTests
             SetActiveCalls.Add(active);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class TestLogger<T> : ILogger<T>
+    {
+        private readonly Lock _gate = new();
+        private readonly List<LogEntry> _entries = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+        {
+            _ = state;
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            _ = logLevel;
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (_gate)
+            {
+                _entries.Add(new(logLevel, eventId.Name ?? string.Empty, formatter(state, exception)));
+            }
+        }
+
+        public bool Contains(LogLevel level, string messageText)
+        {
+            lock (_gate)
+            {
+                return _entries.Any(entry =>
+                    entry.Level == level &&
+                    entry.Message.Contains(messageText, StringComparison.Ordinal));
+            }
+        }
+
+        private sealed record LogEntry(LogLevel Level, string EventName, string Message);
     }
 }

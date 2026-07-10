@@ -1,9 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -12,18 +8,15 @@ using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Profiles;
 
-/// <summary>Owns connected profile clients and their launched receiver processes.</summary>
+/// <summary>Owns connected profile clients.</summary>
 public sealed class ProfileClientsService : IDisposable
 {
-    private static readonly TimeSpan ReceiverPollInterval = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan ReceiverCloseTimeout = TimeSpan.FromSeconds(5);
-
     private readonly ProfileCatalogService _profiles;
     private readonly ILogger<ProfileClientsService> _logger;
     private readonly Func<int, ReceiverWindowActivationResult> _activateReceiver;
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, ConnectedProfileClient> _clients = [];
-    private readonly Dictionary<Guid, ClientSession> _sessions = [];
+    private readonly Dictionary<Guid, ProfileReceiverSession> _sessions = [];
     private bool _disposed;
 
     /// <summary>Creates profile client session ownership.</summary>
@@ -53,9 +46,39 @@ public sealed class ProfileClientsService : IDisposable
     public event EventHandler? ClientsChanged;
 
     /// <summary>Connected profile clients.</summary>
-    internal IReadOnlyList<ProfileClientStatus> Clients => SnapshotClients();
+    internal IReadOnlyList<ProfileClientStatus> Clients
+    {
+        get
+        {
+            lock (_gate)
+            {
+                List<ProfileClientStatus> clients = new(_clients.Count);
+                foreach (ConnectedProfileClient client in _clients.Values)
+                {
+                    clients.Add(ToStatus(client, _sessions.GetValueOrDefault(client.ConnectionId)));
+                }
 
-    internal IReadOnlyList<BridgeClientConnection> Connections => SnapshotConnections();
+                return clients;
+            }
+        }
+    }
+
+    internal IReadOnlyList<BridgeClientConnection> Connections
+    {
+        get
+        {
+            lock (_gate)
+            {
+                List<BridgeClientConnection> clients = new(_clients.Count);
+                foreach (ConnectedProfileClient client in _clients.Values)
+                {
+                    clients.Add(new(client.ConnectionId, client.ProfileId, client.Control));
+                }
+
+                return clients;
+            }
+        }
+    }
 
     internal async Task<ProfileClientStatus> ConnectClientAsync(
         Guid connectionId,
@@ -65,7 +88,7 @@ public sealed class ProfileClientsService : IDisposable
         IBridgeClientApi control)
     {
         ConnectedProfileClient client;
-        ClientSession session;
+        ProfileReceiverSession session;
         lock (_gate)
         {
             if (!_profiles.TryGetProfile(profileId, out GameProfile profile))
@@ -78,40 +101,54 @@ public sealed class ProfileClientsService : IDisposable
                 throw new InvalidOperationException($"Control connection '{connectionId}' is already registered.");
             }
 
-            if (ConnectedClient(profileId) is not null)
+            foreach (ConnectedProfileClient connectedClient in _clients.Values)
             {
-                throw new InvalidOperationException($"Profile '{profileId}' already has a connected client.");
+                if (string.Equals(connectedClient.ProfileId, profileId, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Profile '{profileId}' already has a connected client.");
+                }
             }
 
             client = new(connectionId, processId, profileId, steamAppId, control);
             _clients[connectionId] = client;
-            session = StartSession(connectionId, profileId, profile, control);
+#pragma warning disable CA2000 // ProfileReceiverSession ownership transfers to _sessions.
+            session = new(
+                profileId,
+                profile,
+                control,
+                _activateReceiver,
+                _logger,
+                () => ClientsChanged?.Invoke(this, EventArgs.Empty));
+#pragma warning restore CA2000
+            _sessions[connectionId] = session;
         }
 
+        session.Start();
         ClientsChanged?.Invoke(this, EventArgs.Empty);
         await control.SetActiveAsync(active: false).ConfigureAwait(false);
         return ToStatus(client, session);
     }
 
-    internal ProfileClientStatus? DisconnectClient(Guid connectionId)
+    internal ProfileClientStatus? DisconnectClient(Guid connectionId, bool stopTrackedReceivers = true)
     {
         ConnectedProfileClient? client;
-        ClientSession? session;
+        ProfileReceiverSession? session;
         lock (_gate)
         {
             _ = _clients.Remove(connectionId, out client);
+#pragma warning disable CA2000 // Removed session is disposed immediately below.
             _ = _sessions.Remove(connectionId, out session);
+#pragma warning restore CA2000
         }
 
         if (session is not null)
         {
-            if (session.StopReceiversOnDisconnect)
+            if (stopTrackedReceivers && session.StopReceiversWhenPipeCloses)
             {
-                int stopped = StopSessionReceivers(session);
-                LogProfileReceiversStopped(_logger, session.ProfileId, stopped, null);
+                _ = session.StopReceivers();
             }
 
-            session.Cancel();
+            session.Dispose();
         }
 
         if (client is not null)
@@ -124,17 +161,16 @@ public sealed class ProfileClientsService : IDisposable
 
     internal async Task StopClientAsync(Guid connectionId)
     {
-        ClientSession session = GetSession(connectionId);
-        session.StopReceiversOnDisconnect = false;
-        await session.Control.StopAsync().ConfigureAwait(false);
+        ProfileReceiverSession session = GetSession(connectionId);
+        session.StopReceiversWhenPipeCloses = false;
+        await session.StopClientAsync().ConfigureAwait(false);
     }
 
     internal void StopReceivers(Guid connectionId)
     {
-        ClientSession session = GetSession(connectionId);
-        session.StopReceiversOnDisconnect = false;
-        int stopped = StopSessionReceivers(session);
-        LogProfileReceiversStopped(_logger, session.ProfileId, stopped, null);
+        ProfileReceiverSession session = GetSession(connectionId);
+        session.StopReceiversWhenPipeCloses = false;
+        _ = session.StopReceivers();
     }
 
     /// <summary>Releases active sessions without stopping receiver processes again.</summary>
@@ -148,9 +184,9 @@ public sealed class ProfileClientsService : IDisposable
         _disposed = true;
         lock (_gate)
         {
-            foreach (ClientSession session in _sessions.Values)
+            foreach (ProfileReceiverSession session in _sessions.Values)
             {
-                session.Cancel();
+                session.Dispose();
             }
 
             _sessions.Clear();
@@ -158,271 +194,14 @@ public sealed class ProfileClientsService : IDisposable
         }
     }
 
-    // MARK: Sessions
+    // MARK: State
     // ========================================================================
 
-    private ClientSession StartSession(
-        Guid connectionId,
-        string profileId,
-        GameProfile profile,
-        IBridgeClientApi control)
-    {
-        StopSession(connectionId);
-        HashSet<int> receiverBaseline = string.IsNullOrWhiteSpace(profile.Executable)
-            ? []
-            : FindReceivers(profile.ReceiverProcesses);
-
-#pragma warning disable CA2000 // CancellationTokenSource ownership transfers to ClientSession.
-        CancellationTokenSource stop = new();
-        ClientSession session = new(connectionId, profileId, profile, control, receiverBaseline, stop);
-#pragma warning restore CA2000
-
-        _sessions[connectionId] = session;
-        session.Task = Task.Run(() => RunSessionAsync(session, stop.Token), CancellationToken.None);
-        return session;
-    }
-
-    private void StopSession(Guid connectionId)
-    {
-        if (_sessions.Remove(connectionId, out ClientSession? session))
-        {
-            session.Cancel();
-        }
-    }
-
-    private async Task RunSessionAsync(ClientSession session, CancellationToken cancellationToken)
-    {
-        try
-        {
-            LaunchProfile(session.Definition);
-            await WatchReceiversAsync(session, cancellationToken).ConfigureAwait(false);
-            await session.Control.StopAsync().ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
-        {
-            LogProfileSessionFailed(_logger, session.ProfileId, exception.Message, null);
-        }
-    }
-
-    private static void LaunchProfile(GameProfile definition)
-    {
-        if (string.IsNullOrWhiteSpace(definition.Executable))
-        {
-            return;
-        }
-
-        ProcessStartInfo start = new()
-        {
-            FileName = definition.Executable,
-            Arguments = definition.Arguments ?? string.Empty,
-            WorkingDirectory = definition.WorkingDirectory ?? AppContext.BaseDirectory,
-            UseShellExecute = false,
-        };
-
-        _ = Process.Start(start) ?? throw new InvalidOperationException($"Could not launch {definition.Executable}.");
-    }
-
-    private async Task WatchReceiversAsync(ClientSession session, CancellationToken cancellationToken)
-    {
-        if (session.Definition.ReceiverProcesses.Count == 0)
-        {
-            return;
-        }
-
-        bool sawReceiver = false;
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            bool hasReceiver = RefreshSessionReceivers(session, out bool changed);
-            sawReceiver |= hasReceiver;
-            ActivateDetectedReceivers(session);
-            if (changed)
-            {
-                ClientsChanged?.Invoke(this, EventArgs.Empty);
-            }
-
-            if (sawReceiver && !hasReceiver)
-            {
-                return;
-            }
-
-            await Task.Delay(ReceiverPollInterval, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private void ActivateDetectedReceivers(ClientSession session)
-    {
-        int[] receiverProcessIds;
-        lock (session.Gate)
-        {
-            receiverProcessIds = [.. session.Receivers.Where(
-                receiverProcessId => !session.ReceiverActivationCompleted.Contains(receiverProcessId))];
-        }
-
-        foreach (int receiverProcessId in receiverProcessIds)
-        {
-            ReceiverWindowActivationResult result = _activateReceiver(receiverProcessId);
-            if (result == ReceiverWindowActivationResult.WindowNotFound)
-            {
-                continue;
-            }
-
-            lock (session.Gate)
-            {
-                if (!session.Receivers.Contains(receiverProcessId))
-                {
-                    continue;
-                }
-
-                _ = session.ReceiverActivationCompleted.Add(receiverProcessId);
-            }
-
-            if (result == ReceiverWindowActivationResult.Rejected)
-            {
-                LogReceiverActivationRejected(_logger, session.ProfileId, receiverProcessId, null);
-            }
-        }
-    }
-
-    // MARK: Receivers
-    // ========================================================================
-
-    private static HashSet<int> FindReceivers(IReadOnlyList<string> processNames)
-    {
-        HashSet<int> processIds = [];
-        foreach (string processName in processNames)
-        {
-            string normalized = Path.GetFileNameWithoutExtension(processName.Trim());
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                continue;
-            }
-
-            foreach (Process process in Process.GetProcessesByName(normalized))
-            {
-                try
-                {
-                    _ = processIds.Add(process.Id);
-                }
-                catch (InvalidOperationException)
-                {
-                }
-                finally
-                {
-                    process.Dispose();
-                }
-            }
-        }
-
-        return processIds;
-    }
-
-    private static bool RefreshSessionReceivers(ClientSession session, out bool changed)
-    {
-        HashSet<int> receivers = FindReceivers(session.Definition.ReceiverProcesses);
-        receivers.ExceptWith(session.ReceiverBaseline);
-
-        lock (session.Gate)
-        {
-            HashSet<int> previous = [.. session.Receivers];
-            _ = session.Receivers.RemoveWhere(processId => !receivers.Contains(processId));
-            session.Receivers.UnionWith(receivers);
-            session.ReceiverActivationCompleted.IntersectWith(session.Receivers);
-            changed = !previous.SetEquals(session.Receivers);
-
-            return session.Receivers.Count != 0;
-        }
-    }
-
-    private static int StopSessionReceivers(ClientSession session)
-    {
-        int stopped = 0;
-        int[] receivers;
-        lock (session.Gate)
-        {
-            receivers = [.. session.Receivers];
-        }
-
-        foreach (int processId in receivers)
-        {
-            stopped += StopProcess(processId);
-        }
-
-        return stopped;
-    }
-
-    private static int StopProcess(int processId)
-    {
-        try
-        {
-            using Process process = Process.GetProcessById(processId);
-            if (process.CloseMainWindow() && process.WaitForExit(ReceiverCloseTimeout))
-            {
-                return 1;
-            }
-
-            process.Kill(entireProcessTree: true);
-            process.WaitForExit();
-            return 1;
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or InvalidOperationException or Win32Exception or NotSupportedException)
-        {
-            return 0;
-        }
-    }
-
-    // MARK: Snapshots
-    // ========================================================================
-
-    private List<ProfileClientStatus> SnapshotClients()
+    private ProfileReceiverSession GetSession(Guid connectionId)
     {
         lock (_gate)
         {
-            List<ProfileClientStatus> clients = new(_clients.Count);
-            foreach (ConnectedProfileClient client in _clients.Values)
-            {
-                clients.Add(ToStatus(client, _sessions.GetValueOrDefault(client.ConnectionId)));
-            }
-
-            return clients;
-        }
-    }
-
-    private List<BridgeClientConnection> SnapshotConnections()
-    {
-        lock (_gate)
-        {
-            List<BridgeClientConnection> clients = new(_clients.Count);
-            foreach (ConnectedProfileClient client in _clients.Values)
-            {
-                clients.Add(new(client.ConnectionId, client.ProfileId, client.Control));
-            }
-
-            return clients;
-        }
-    }
-
-    private ConnectedProfileClient? ConnectedClient(string profileId)
-    {
-        foreach (ConnectedProfileClient client in _clients.Values)
-        {
-            if (string.Equals(client.ProfileId, profileId, StringComparison.OrdinalIgnoreCase))
-            {
-                return client;
-            }
-        }
-
-        return null;
-    }
-
-    private ClientSession GetSession(Guid connectionId)
-    {
-        lock (_gate)
-        {
-            if (_sessions.TryGetValue(connectionId, out ClientSession? session))
+            if (_sessions.TryGetValue(connectionId, out ProfileReceiverSession? session))
             {
                 return session;
             }
@@ -431,18 +210,14 @@ public sealed class ProfileClientsService : IDisposable
         throw new InvalidOperationException($"Profile session '{connectionId}' is not connected.");
     }
 
-    private static ProfileClientStatus ToStatus(ConnectedProfileClient client, ClientSession? session)
+    private static ProfileClientStatus ToStatus(ConnectedProfileClient client, ProfileReceiverSession? session)
     {
-        int[] receiverProcessIds = [];
-        if (session is not null)
-        {
-            lock (session.Gate)
-            {
-                receiverProcessIds = [.. session.Receivers];
-            }
-        }
-
-        return new(client.ConnectionId, client.ProcessId, client.ProfileId, client.SteamAppId, receiverProcessIds);
+        return new(
+            client.ConnectionId,
+            client.ProcessId,
+            client.ProfileId,
+            client.SteamAppId,
+            session?.ReceiverProcessIds ?? []);
     }
 
     private sealed record ConnectedProfileClient(
@@ -453,60 +228,4 @@ public sealed class ProfileClientsService : IDisposable
         IBridgeClientApi Control);
 
     internal sealed record BridgeClientConnection(Guid ConnectionId, string ProfileId, IBridgeClientApi Control);
-
-    private sealed class ClientSession(
-        Guid connectionId,
-        string profileId,
-        GameProfile definition,
-        IBridgeClientApi control,
-        HashSet<int> receiverBaseline,
-        CancellationTokenSource stop)
-    {
-        public Lock Gate { get; } = new();
-
-        public Guid ConnectionId { get; } = connectionId;
-
-        public string ProfileId { get; } = profileId;
-
-        public GameProfile Definition { get; } = definition;
-
-        public IBridgeClientApi Control { get; } = control;
-
-        public HashSet<int> ReceiverBaseline { get; } = receiverBaseline;
-
-        public HashSet<int> Receivers { get; } = [];
-
-        public HashSet<int> ReceiverActivationCompleted { get; } = [];
-
-        public Task? Task { get; set; }
-
-        public bool StopReceiversOnDisconnect { get; set; } = true;
-
-        public void Cancel()
-        {
-            stop.Cancel();
-            stop.Dispose();
-        }
-    }
-
-    // MARK: Logging
-    // ========================================================================
-
-    private static readonly Action<ILogger, string, string, Exception?> LogProfileSessionFailed =
-        LoggerMessage.Define<string, string>(
-            LogLevel.Warning,
-            new EventId(1, nameof(LogProfileSessionFailed)),
-            "Profile session failed for profile {ProfileId}: {Message}");
-
-    private static readonly Action<ILogger, string, int, Exception?> LogProfileReceiversStopped =
-        LoggerMessage.Define<string, int>(
-            LogLevel.Information,
-            new EventId(2, nameof(LogProfileReceiversStopped)),
-            "Stopped {ReceiverCount} receiver process(es) for profile {ProfileId}.");
-
-    private static readonly Action<ILogger, string, int, Exception?> LogReceiverActivationRejected =
-        LoggerMessage.Define<string, int>(
-            LogLevel.Debug,
-            new EventId(3, nameof(LogReceiverActivationRejected)),
-            "Foreground activation was rejected for profile {ProfileId} receiver process {ProcessId}.");
 }

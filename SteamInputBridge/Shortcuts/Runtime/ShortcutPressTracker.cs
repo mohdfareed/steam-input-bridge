@@ -58,6 +58,29 @@ internal sealed class ShortcutPressTracker(Func<ushort, bool> isKeyDown)
         return true;
     }
 
+    public bool KeyPressed(ushort virtualKey)
+    {
+        KeyboardShortcutModifiers currentModifiers = CurrentModifiers();
+        int? fallbackId = null;
+
+        foreach ((int id, KeyboardShortcut shortcut) in _shortcuts)
+        {
+            if (shortcut.VirtualKey != virtualKey || !HasRequiredModifiers(shortcut.Modifiers))
+            {
+                continue;
+            }
+
+            if (shortcut.Modifiers == currentModifiers)
+            {
+                return HotkeyPressed(id);
+            }
+
+            fallbackId ??= id;
+        }
+
+        return fallbackId.HasValue && HotkeyPressed(fallbackId.Value);
+    }
+
     public void Refresh()
     {
         ClearReleasedBlocks();

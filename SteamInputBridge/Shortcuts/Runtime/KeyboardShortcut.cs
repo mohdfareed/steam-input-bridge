@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Windows.Forms;
 
 namespace SteamInputBridge.Shortcuts.Runtime;
 
@@ -42,32 +41,6 @@ internal readonly record struct KeyboardShortcut(KeyboardShortcutModifiers Modif
 
         parts.Add(FormatVirtualKey(VirtualKey));
         return string.Join("+", parts);
-    }
-
-    public Keys ToKeys()
-    {
-        Keys keys = (Keys)VirtualKey;
-        if ((Modifiers & KeyboardShortcutModifiers.Control) != 0)
-        {
-            keys |= Keys.Control;
-        }
-
-        if ((Modifiers & KeyboardShortcutModifiers.Alt) != 0)
-        {
-            keys |= Keys.Alt;
-        }
-
-        if ((Modifiers & KeyboardShortcutModifiers.Shift) != 0)
-        {
-            keys |= Keys.Shift;
-        }
-
-        if ((Modifiers & KeyboardShortcutModifiers.Windows) != 0)
-        {
-            keys |= Keys.LWin;
-        }
-
-        return keys;
     }
 
     private static string FormatVirtualKey(ushort virtualKey)

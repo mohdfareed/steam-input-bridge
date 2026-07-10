@@ -58,6 +58,32 @@ public sealed class ShortcutPressTrackerTests
     }
 
     [TestMethod]
+    public void KeyPressedChoosesExactModifierVariant()
+    {
+        ShortcutPressTracker tracker = CreateTracker(
+            Registration(1, "Num."),
+            Registration(2, "Ctrl+Num."));
+
+        _ = _down.Add(Control);
+        Assert.IsTrue(tracker.KeyPressed(NumPeriod));
+        tracker.Refresh();
+
+        CollectionAssert.AreEqual(new[] { 2 }, _pressed);
+    }
+
+    [TestMethod]
+    public void KeyPressedUsesPlainShortcutWhenNoExactModifierVariantExists()
+    {
+        ShortcutPressTracker tracker = CreateTracker(Registration(1, "Num."));
+
+        _ = _down.Add(Control);
+        Assert.IsTrue(tracker.KeyPressed(NumPeriod));
+        tracker.Refresh();
+
+        CollectionAssert.AreEqual(new[] { 1 }, _pressed);
+    }
+
+    [TestMethod]
     public void CommittedShortcutDoesNotSwitchToModifierVariant()
     {
         ShortcutPressTracker tracker = CreateTracker(
