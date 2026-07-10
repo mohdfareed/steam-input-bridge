@@ -9,14 +9,16 @@ internal sealed class PassThroughKeyboardHook : IDisposable
 {
     private static readonly IntPtr KeyDown = (IntPtr)User32.WindowMessage.WM_KEYDOWN;
     private static readonly IntPtr SystemKeyDown = (IntPtr)User32.WindowMessage.WM_SYSKEYDOWN;
+    private static readonly IntPtr KeyUp = (IntPtr)User32.WindowMessage.WM_KEYUP;
+    private static readonly IntPtr SystemKeyUp = (IntPtr)User32.WindowMessage.WM_SYSKEYUP;
 
-    private readonly Action<ushort> _keyDown;
+    private readonly Action<ushort, bool> _keyChanged;
     private readonly User32.HookProc _hookProc;
     private User32.HHOOK _hook;
 
-    public PassThroughKeyboardHook(Action<ushort> keyDown)
+    public PassThroughKeyboardHook(Action<ushort, bool> keyChanged)
     {
-        _keyDown = keyDown;
+        _keyChanged = keyChanged;
         _hookProc = OnKeyboardHook;
     }
 
@@ -53,9 +55,16 @@ internal sealed class PassThroughKeyboardHook : IDisposable
 
     private IntPtr OnKeyboardHook(int code, IntPtr wParam, IntPtr lParam)
     {
-        if (code >= 0 && (wParam == KeyDown || wParam == SystemKeyDown))
+        if (code >= 0)
         {
-            _keyDown((ushort)Marshal.ReadInt32(lParam));
+            if (wParam == KeyDown || wParam == SystemKeyDown)
+            {
+                _keyChanged((ushort)Marshal.ReadInt32(lParam), true);
+            }
+            else if (wParam == KeyUp || wParam == SystemKeyUp)
+            {
+                _keyChanged((ushort)Marshal.ReadInt32(lParam), false);
+            }
         }
 
         return User32.CallNextHookEx(_hook, code, wParam, lParam);

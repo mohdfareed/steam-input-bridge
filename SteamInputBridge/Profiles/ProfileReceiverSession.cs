@@ -20,6 +20,7 @@ internal sealed class ProfileReceiverSession : IDisposable
     private readonly GameProfile _definition;
     private readonly IBridgeClientApi _control;
     private readonly Func<int, ReceiverWindowActivationResult> _activateReceiver;
+    private readonly Func<IReadOnlyList<string>, HashSet<int>> _findReceivers;
     private readonly ILogger<ProfileClientsService> _logger;
     private readonly Action _receiversChanged;
     private readonly CancellationTokenSource _stop;
@@ -28,6 +29,8 @@ internal sealed class ProfileReceiverSession : IDisposable
     private readonly HashSet<int> _receivers;
     private readonly HashSet<int> _activationCompleted = [];
     private readonly HashSet<int> _windowNotFoundLogged = [];
+    private bool _receiverSeen;
+    private bool _clientStopRequested;
 
     public ProfileReceiverSession(
         string profileId,
@@ -35,16 +38,19 @@ internal sealed class ProfileReceiverSession : IDisposable
         IBridgeClientApi control,
         Func<int, ReceiverWindowActivationResult> activateReceiver,
         ILogger<ProfileClientsService> logger,
-        Action receiversChanged)
+        Action receiversChanged,
+        Func<IReadOnlyList<string>, HashSet<int>>? findReceivers = null)
     {
         ProfileId = profileId;
         _definition = definition;
         _control = control;
         _activateReceiver = activateReceiver;
+        _findReceivers = findReceivers ?? FindReceivers;
         _logger = logger;
         _receiversChanged = receiversChanged;
-        _receivers = FindReceivers(definition.ReceiverProcesses);
+        _receivers = _findReceivers(definition.ReceiverProcesses);
         _startExecutable = _receivers.Count == 0;
+        _receiverSeen = _receivers.Count != 0;
         _stop = new();
     }
 
@@ -98,7 +104,7 @@ internal sealed class ProfileReceiverSession : IDisposable
             }
         }
 
-        LogProfileReceiversStopped(_logger, ProfileId, stopped, null);
+        LogProfileReceiversStopped(_logger, stopped, ProfileId, null);
         return stopped;
     }
 
@@ -126,47 +132,37 @@ internal sealed class ProfileReceiverSession : IDisposable
                     throw new InvalidOperationException($"Could not launch {_definition.Executable}.");
             }
 
-            if (_definition.ReceiverProcesses.Count == 0)
-            {
-                await _control.StopAsync().ConfigureAwait(false);
-                return;
-            }
-
-            bool sawReceiver;
-            lock (_gate)
-            {
-                sawReceiver = _receivers.Count != 0;
-            }
-
             while (!cancellationToken.IsCancellationRequested)
             {
-                HashSet<int> observedReceivers = FindReceivers(_definition.ReceiverProcesses);
+                HashSet<int> observedReceivers = _findReceivers(_definition.ReceiverProcesses);
                 int[] receiverProcessIds;
                 bool changed;
-                bool hasReceiver;
+                bool stopClient;
                 lock (_gate)
                 {
                     HashSet<int> previous = [.. _receivers];
                     _ = _receivers.RemoveWhere(processId => !observedReceivers.Contains(processId));
                     _receivers.UnionWith(observedReceivers);
+                    _receiverSeen |= _receivers.Count != 0;
+                    stopClient = _receiverSeen && _receivers.Count == 0 && !_clientStopRequested;
+                    _clientStopRequested |= stopClient;
                     _activationCompleted.IntersectWith(_receivers);
                     _windowNotFoundLogged.IntersectWith(_receivers);
                     receiverProcessIds = [.. _receivers.Where(processId => !_activationCompleted.Contains(processId))];
                     changed = !previous.SetEquals(_receivers);
-                    hasReceiver = _receivers.Count != 0;
                 }
 
-                sawReceiver |= hasReceiver;
                 ActivateReceivers(receiverProcessIds);
                 if (changed)
                 {
                     _receiversChanged();
                 }
 
-                if (sawReceiver && !hasReceiver)
+                if (stopClient)
                 {
-                    await _control.StopAsync().ConfigureAwait(false);
-                    return;
+                    StopReceiversWhenPipeCloses = false;
+                    await StopClientAsync().ConfigureAwait(false);
+                    LogClientStopRequestedAfterReceiversExited(_logger, ProfileId, null);
                 }
 
                 await Task.Delay(ReceiverPollInterval, cancellationToken).ConfigureAwait(false);
@@ -256,8 +252,8 @@ internal sealed class ProfileReceiverSession : IDisposable
             new EventId(1, nameof(LogProfileSessionFailed)),
             "Profile session failed for profile {ProfileId}: {Message}");
 
-    private static readonly Action<ILogger, string, int, Exception?> LogProfileReceiversStopped =
-        LoggerMessage.Define<string, int>(
+    private static readonly Action<ILogger, int, string, Exception?> LogProfileReceiversStopped =
+        LoggerMessage.Define<int, string>(
             LogLevel.Information,
             new EventId(2, nameof(LogProfileReceiversStopped)),
             "Stopped {ReceiverCount} receiver process(es) for profile {ProfileId}.");
@@ -279,4 +275,10 @@ internal sealed class ProfileReceiverSession : IDisposable
             LogLevel.Warning,
             new EventId(5, nameof(LogReceiverActivationRejected)),
             "Windows rejected foreground activation for profile {ProfileId} receiver process {ProcessId}.");
+
+    private static readonly Action<ILogger, string, Exception?> LogClientStopRequestedAfterReceiversExited =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(6, nameof(LogClientStopRequestedAfterReceiversExited)),
+            "Client stop requested for profile {ProfileId} because all receiver processes exited.");
 }

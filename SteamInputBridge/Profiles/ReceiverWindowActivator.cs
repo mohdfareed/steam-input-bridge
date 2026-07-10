@@ -1,6 +1,3 @@
-using System;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.Versioning;
 using Vanara.PInvoke;
 using static Vanara.PInvoke.User32;
@@ -18,11 +15,6 @@ internal enum ReceiverWindowActivationResult
 [SupportedOSPlatform("windows")]
 internal static class ReceiverWindowActivator
 {
-    private const SetWindowPosFlags FrontMostFlags =
-        SetWindowPosFlags.SWP_NOMOVE |
-        SetWindowPosFlags.SWP_NOSIZE |
-        SetWindowPosFlags.SWP_SHOWWINDOW;
-
     public static ReceiverWindowActivationResult TryActivate(int processId)
     {
         HWND window = FindReceiverWindow(processId);
@@ -31,71 +23,83 @@ internal static class ReceiverWindowActivator
             return ReceiverWindowActivationResult.WindowNotFound;
         }
 
-        _ = ShowWindow(window, IsIconic(window) ? ShowWindowCommand.SW_RESTORE : ShowWindowCommand.SW_SHOW);
-
-        HWND foregroundWindow = GetForegroundWindow();
         uint currentThreadId = Kernel32.GetCurrentThreadId();
-        uint receiverThreadId = GetWindowThreadProcessId(window, out _);
-        uint foregroundThreadId = foregroundWindow.IsNull ? 0 : GetWindowThreadProcessId(foregroundWindow, out _);
-        bool receiverAttached = false;
-        bool foregroundAttached = false;
-
+        uint targetThreadId = GetWindowThreadProcessId(window, out _);
+        uint foregroundThreadId = ForegroundThreadId();
+        bool attachedForeground = false;
+        bool attachedTarget = false;
         try
         {
-            if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
-            {
-                foregroundAttached = AttachThreadInput(currentThreadId, foregroundThreadId, true);
-            }
+            attachedForeground = AttachInput(currentThreadId, foregroundThreadId);
+            attachedTarget = AttachInput(currentThreadId, targetThreadId);
 
-            if (receiverThreadId != 0 && receiverThreadId != currentThreadId)
-            {
-                receiverAttached = AttachThreadInput(currentThreadId, receiverThreadId, true);
-            }
-
-            _ = SetWindowPos(window, HWND.HWND_TOPMOST, 0, 0, 0, 0, FrontMostFlags);
-            _ = SetWindowPos(window, HWND.HWND_NOTOPMOST, 0, 0, 0, 0, FrontMostFlags);
+            _ = ShowWindow(window, IsIconic(window) ? ShowWindowCommand.SW_RESTORE : ShowWindowCommand.SW_SHOW);
             _ = BringWindowToTop(window);
             _ = SetForegroundWindow(window);
-            _ = SetActiveWindow(window);
-            _ = SetFocus(window);
         }
         finally
         {
-            if (receiverAttached)
+            if (attachedTarget)
             {
-                _ = AttachThreadInput(currentThreadId, receiverThreadId, false);
+                _ = AttachThreadInput(currentThreadId, targetThreadId, false);
             }
 
-            if (foregroundAttached)
+            if (attachedForeground)
             {
                 _ = AttachThreadInput(currentThreadId, foregroundThreadId, false);
             }
         }
 
-        return GetForegroundWindow() == window
+        return ForegroundProcessId() == processId
             ? ReceiverWindowActivationResult.Activated
             : ReceiverWindowActivationResult.Rejected;
     }
 
     private static HWND FindReceiverWindow(int processId)
     {
-        try
+        HWND receiverWindow = default;
+        _ = EnumWindows((window, parameter) =>
         {
-            using Process process = Process.GetProcessById(processId);
-            process.Refresh();
-            nint windowHandle = process.MainWindowHandle;
-            if (windowHandle == nint.Zero)
+            _ = parameter;
+            _ = GetWindowThreadProcessId(window, out uint windowProcessId);
+            if (windowProcessId == processId &&
+                IsWindowVisible(window) &&
+                GetWindow(window, GetWindowCmd.GW_OWNER).IsNull)
             {
-                return default;
+                receiverWindow = window;
+                return false;
             }
 
-            HWND window = new(windowHandle);
-            return IsWindowVisible(window) ? window : default;
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or InvalidOperationException or Win32Exception or NotSupportedException)
+            return true;
+        }, default);
+
+        return receiverWindow;
+    }
+
+    private static bool AttachInput(uint currentThreadId, uint otherThreadId)
+    {
+        return otherThreadId != 0 &&
+            otherThreadId != currentThreadId &&
+            AttachThreadInput(currentThreadId, otherThreadId, true);
+    }
+
+    private static uint ForegroundThreadId()
+    {
+        HWND foregroundWindow = GetForegroundWindow();
+        return foregroundWindow.IsNull
+            ? 0
+            : GetWindowThreadProcessId(foregroundWindow, out _);
+    }
+
+    private static int? ForegroundProcessId()
+    {
+        HWND foregroundWindow = GetForegroundWindow();
+        if (foregroundWindow.IsNull)
         {
-            return default;
+            return null;
         }
+
+        _ = GetWindowThreadProcessId(foregroundWindow, out uint processId);
+        return processId == 0 ? null : (int)processId;
     }
 }

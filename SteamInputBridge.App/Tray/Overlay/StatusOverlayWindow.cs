@@ -14,13 +14,13 @@ namespace SteamInputBridge.App.Tray.Overlay;
 internal sealed class StatusOverlayWindow : Window
 {
     private const double DotSize = 9;
-    private const double DotGap = 7;
-    private const double GlowPadding = 18;
-    private const double GlowBlurRadius = 14;
-    private const double GlowOpacity = 0.9;
+    private const double DotGap = 3.5;
+    private const double GlowPadding = 9;
+    private const double GlowBlurRadius = 7;
+    private const double GlowOpacity = 0.45;
     private const double GlowShadowDepth = 0;
 
-    private const double EdgeMargin = DotSize;
+    private const double EdgeMargin = DotSize / 2;
     private const double WindowWidth = (DotSize * 2) + DotGap + EdgeMargin + GlowPadding;
     private const double WindowHeight = DotSize + EdgeMargin + GlowPadding;
 
