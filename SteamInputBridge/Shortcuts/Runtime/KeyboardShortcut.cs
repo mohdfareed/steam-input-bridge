@@ -8,10 +8,18 @@ namespace SteamInputBridge.Shortcuts.Runtime;
 internal enum KeyboardShortcutModifiers
 {
     None = 0,
-    Alt = 0x0001,
-    Control = 0x0002,
-    Shift = 0x0004,
-    Windows = 0x0008,
+    Control = 0x0001,
+    LeftControl = 0x0002,
+    RightControl = 0x0004,
+    Alt = 0x0008,
+    LeftAlt = 0x0010,
+    RightAlt = 0x0020,
+    Shift = 0x0040,
+    LeftShift = 0x0080,
+    RightShift = 0x0100,
+    Windows = 0x0200,
+    LeftWindows = 0x0400,
+    RightWindows = 0x0800,
 }
 
 internal readonly record struct KeyboardShortcut(KeyboardShortcutModifiers Modifiers, ushort VirtualKey)
@@ -24,9 +32,29 @@ internal readonly record struct KeyboardShortcut(KeyboardShortcutModifiers Modif
             parts.Add("Ctrl");
         }
 
+        if ((Modifiers & KeyboardShortcutModifiers.LeftControl) != 0)
+        {
+            parts.Add("LCtrl");
+        }
+
+        if ((Modifiers & KeyboardShortcutModifiers.RightControl) != 0)
+        {
+            parts.Add("RCtrl");
+        }
+
         if ((Modifiers & KeyboardShortcutModifiers.Alt) != 0)
         {
             parts.Add("Alt");
+        }
+
+        if ((Modifiers & KeyboardShortcutModifiers.LeftAlt) != 0)
+        {
+            parts.Add("LAlt");
+        }
+
+        if ((Modifiers & KeyboardShortcutModifiers.RightAlt) != 0)
+        {
+            parts.Add("RAlt");
         }
 
         if ((Modifiers & KeyboardShortcutModifiers.Shift) != 0)
@@ -34,9 +62,29 @@ internal readonly record struct KeyboardShortcut(KeyboardShortcutModifiers Modif
             parts.Add("Shift");
         }
 
+        if ((Modifiers & KeyboardShortcutModifiers.LeftShift) != 0)
+        {
+            parts.Add("LShift");
+        }
+
+        if ((Modifiers & KeyboardShortcutModifiers.RightShift) != 0)
+        {
+            parts.Add("RShift");
+        }
+
         if ((Modifiers & KeyboardShortcutModifiers.Windows) != 0)
         {
             parts.Add("Win");
+        }
+
+        if ((Modifiers & KeyboardShortcutModifiers.LeftWindows) != 0)
+        {
+            parts.Add("LWin");
+        }
+
+        if ((Modifiers & KeyboardShortcutModifiers.RightWindows) != 0)
+        {
+            parts.Add("RWin");
         }
 
         parts.Add(FormatVirtualKey(VirtualKey));
@@ -106,9 +154,17 @@ internal static class KeyboardShortcutParser
         modifier = value.ToUpperInvariant() switch
         {
             "CTRL" or "CONTROL" => KeyboardShortcutModifiers.Control,
+            "LCTRL" or "LCONTROL" or "LEFTCTRL" or "LEFTCONTROL" => KeyboardShortcutModifiers.LeftControl,
+            "RCTRL" or "RCONTROL" or "RIGHTCTRL" or "RIGHTCONTROL" => KeyboardShortcutModifiers.RightControl,
             "ALT" => KeyboardShortcutModifiers.Alt,
+            "LALT" or "LEFTALT" => KeyboardShortcutModifiers.LeftAlt,
+            "RALT" or "RIGHTALT" => KeyboardShortcutModifiers.RightAlt,
             "SHIFT" => KeyboardShortcutModifiers.Shift,
+            "LSHIFT" or "LEFTSHIFT" => KeyboardShortcutModifiers.LeftShift,
+            "RSHIFT" or "RIGHTSHIFT" => KeyboardShortcutModifiers.RightShift,
             "WIN" or "WINDOWS" => KeyboardShortcutModifiers.Windows,
+            "LWIN" or "LWINDOWS" or "LEFTWIN" or "LEFTWINDOWS" => KeyboardShortcutModifiers.LeftWindows,
+            "RWIN" or "RWINDOWS" or "RIGHTWIN" or "RIGHTWINDOWS" => KeyboardShortcutModifiers.RightWindows,
             _ => KeyboardShortcutModifiers.None,
         };
         return modifier != KeyboardShortcutModifiers.None;
