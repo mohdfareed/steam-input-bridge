@@ -10,7 +10,7 @@ namespace SteamInputBridge.Inputs.RawInput;
 [SupportedOSPlatform("windows")]
 public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
 {
-    private static readonly WindowProc WindowProcDelegate = HandleWindowMessage;
+    private static readonly RawInputNative.WindowProc WindowProcDelegate = HandleWindowMessage;
     private static RunState? CurrentState;
     private int _isConnected = 1;
 
@@ -54,7 +54,7 @@ public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
         nint windowHandle = CreateWindowHandle();
         using CancellationTokenRegistration registration = cancellationToken.Register(static target =>
         {
-            _ = NativeMethods.PostMessage((nint)target!, WmClose, nint.Zero, nint.Zero);
+            _ = RawInputNative.PostMessage((nint)target!, RawInputNative.WmClose, nint.Zero, nint.Zero);
         }, windowHandle);
 
         try
@@ -67,7 +67,7 @@ public sealed partial class RawInputMouseSource : IMouseInputSource, IDisposable
             _ = Interlocked.CompareExchange(ref CurrentState, null, state);
             if (windowHandle != nint.Zero)
             {
-                _ = NativeMethods.DestroyWindow(windowHandle);
+                _ = RawInputNative.DestroyWindow(windowHandle);
             }
 
             state.Dispose();

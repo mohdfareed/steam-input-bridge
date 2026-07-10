@@ -85,8 +85,7 @@ internal sealed class StatusOverlayWindow : Window
     private void RefreshOverlay()
     {
         LayoutDots();
-        bool visible = _actionDot.Visibility == Visibility.Visible || _microphoneDot.Visibility == Visibility.Visible;
-        if (!visible)
+        if (_actionDot.Visibility != Visibility.Visible && _microphoneDot.Visibility != Visibility.Visible)
         {
             Hide();
             return;
@@ -102,7 +101,7 @@ internal sealed class StatusOverlayWindow : Window
 
     private void LayoutDots()
     {
-        double rightDotLeft = WindowWidth - EdgeMargin - DotSize;
+        double rightDotLeft = WindowWidth - GlowPadding - DotSize;
         if (_actionDot.Visibility == Visibility.Visible && _microphoneDot.Visibility == Visibility.Visible)
         {
             Canvas.SetLeft(_actionDot, rightDotLeft - DotGap - DotSize);

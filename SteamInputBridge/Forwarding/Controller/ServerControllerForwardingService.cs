@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using SteamInputBridge.Hosting;
 using SteamInputBridge.Profiles;
 
 namespace SteamInputBridge.Forwarding.Controller;
@@ -64,7 +63,7 @@ public sealed class ServerControllerForwardingService(
         {
             cancellationToken.ThrowIfCancellationRequested();
             bool active = string.Equals(connection.ProfileId, activeProfileId, StringComparison.OrdinalIgnoreCase);
-            await SetActiveAsync(connection.Control, active).ConfigureAwait(false);
+            await SetActiveAsync(connection, active).ConfigureAwait(false);
         }
     }
 
@@ -73,28 +72,28 @@ public sealed class ServerControllerForwardingService(
         IReadOnlyList<ProfileClientsService.BridgeClientConnection> connections = clients.Connections;
         foreach (ProfileClientsService.BridgeClientConnection connection in connections)
         {
-            await SetActiveAsync(connection.Control, active: false).ConfigureAwait(false);
+            await SetActiveAsync(connection, active: false).ConfigureAwait(false);
         }
     }
 
-    private async Task SetActiveAsync(IBridgeClientApi control, bool active)
+    private async Task SetActiveAsync(ProfileClientsService.BridgeClientConnection connection, bool active)
     {
         try
         {
-            await control.SetActiveAsync(active).ConfigureAwait(false);
+            await connection.Control.SetActiveAsync(active).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
         {
-            LogClientActiveUpdateFailed(logger, exception.Message, null);
+            LogActiveStateUpdateFailed(logger, connection.ProfileId, connection.ConnectionId, exception.Message, null);
         }
     }
 
     // MARK: Logging
     // ========================================================================
 
-    private static readonly Action<ILogger, string, Exception?> LogClientActiveUpdateFailed =
-        LoggerMessage.Define<string>(
+    private static readonly Action<ILogger, string, Guid, string, Exception?> LogActiveStateUpdateFailed =
+        LoggerMessage.Define<string, Guid, string>(
             LogLevel.Debug,
-            new EventId(1, nameof(LogClientActiveUpdateFailed)),
-            "Client active state update failed: {Message}");
+            new EventId(1, nameof(LogActiveStateUpdateFailed)),
+            "Client active state update failed for profile {ProfileId} connection {ConnectionId}: {Message}");
 }

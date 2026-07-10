@@ -7,13 +7,8 @@ namespace SteamInputBridge.Inputs.RawInput;
 [SupportedOSPlatform("windows")]
 public sealed partial class RawInputMouseSource
 {
-    private const int DeviceName = 0x20000007;
     private const ushort MouseWheel = 0x0400;
     private const int WheelDelta = 120;
-
-    private static readonly int RawInputBufferInitialSize = Marshal.SizeOf<RawInput>();
-    private static readonly uint RawInputBufferInitialCapacity = (uint)(RawInputBufferInitialSize * 64);
-    private static readonly uint RawInputHeaderSize = (uint)Marshal.SizeOf<RawInputHeader>();
 
     // MARK: Methods
     // ========================================================================
@@ -57,7 +52,7 @@ public sealed partial class RawInputMouseSource
         }
 
         uint size = 0;
-        _ = NativeMethods.GetRawInputDeviceInfo(device, DeviceName, nint.Zero, ref size);
+        _ = RawInputNative.GetRawInputDeviceInfo(device, RawInputNative.DeviceName, nint.Zero, ref size);
         if (size == 0)
         {
             return string.Empty;
@@ -66,7 +61,7 @@ public sealed partial class RawInputMouseSource
         nint buffer = Marshal.AllocHGlobal((int)(size * sizeof(char)));
         try
         {
-            uint result = NativeMethods.GetRawInputDeviceInfo(device, DeviceName, buffer, ref size);
+            uint result = RawInputNative.GetRawInputDeviceInfo(device, RawInputNative.DeviceName, buffer, ref size);
             return result == uint.MaxValue
                 ? string.Empty
                 : Marshal.PtrToStringUni(buffer) ?? string.Empty;
