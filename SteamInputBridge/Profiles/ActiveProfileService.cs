@@ -18,6 +18,7 @@ public sealed class ActiveProfileService : IHostedService, IDisposable
     private readonly ProfileClientsService _clients;
     private readonly Func<int?> _foregroundProcessId;
     private readonly TimeSpan _foregroundPollInterval;
+    private readonly int? _neutralForegroundProcessId;
     private readonly Lock _gate = new();
     private readonly CancellationTokenSource _stop = new();
     private ProfileStatus? _activeProfile;
@@ -26,7 +27,7 @@ public sealed class ActiveProfileService : IHostedService, IDisposable
 
     /// <summary>Creates active profile tracking from the foreground window.</summary>
     public ActiveProfileService(ProfileCatalogService catalog, ProfileClientsService clients)
-        : this(catalog, clients, ForegroundProcessId, ForegroundPollInterval)
+        : this(catalog, clients, ForegroundProcessId, ForegroundPollInterval, Environment.ProcessId)
     {
     }
 
@@ -34,12 +35,14 @@ public sealed class ActiveProfileService : IHostedService, IDisposable
         ProfileCatalogService catalog,
         ProfileClientsService clients,
         Func<int?> foregroundProcessId,
-        TimeSpan foregroundPollInterval)
+        TimeSpan foregroundPollInterval,
+        int? neutralForegroundProcessId = null)
     {
         _catalog = catalog;
         _clients = clients;
         _foregroundProcessId = foregroundProcessId;
         _foregroundPollInterval = foregroundPollInterval;
+        _neutralForegroundProcessId = neutralForegroundProcessId;
     }
 
     // MARK: Publics
@@ -162,6 +165,11 @@ public sealed class ActiveProfileService : IHostedService, IDisposable
             return null;
         }
 
+        if (foregroundProcessId == _neutralForegroundProcessId)
+        {
+            return CurrentActiveProfile();
+        }
+
         foreach (ProfileStatus profile in MonitoredProfiles)
         {
             ProfileClientStatus? client = ConnectedClient(profile.Id, _clients.Clients);
@@ -176,6 +184,25 @@ public sealed class ActiveProfileService : IHostedService, IDisposable
                 {
                     return profile with { Active = true };
                 }
+            }
+        }
+
+        return null;
+    }
+
+    private ProfileStatus? CurrentActiveProfile()
+    {
+        string? activeProfileId = ActiveProfile?.Id;
+        if (string.IsNullOrWhiteSpace(activeProfileId))
+        {
+            return null;
+        }
+
+        foreach (ProfileStatus profile in MonitoredProfiles)
+        {
+            if (string.Equals(profile.Id, activeProfileId, StringComparison.OrdinalIgnoreCase))
+            {
+                return profile with { Active = true };
             }
         }
 

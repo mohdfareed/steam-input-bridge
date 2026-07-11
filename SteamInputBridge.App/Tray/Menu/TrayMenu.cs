@@ -10,7 +10,6 @@ namespace SteamInputBridge.App.Tray.Menu;
 
 internal sealed record TrayMenuState(
     IReadOnlyList<ProfileStatus> Profiles,
-    string? LastActiveProfileId,
     BridgeServerStatus ServerStatus,
     MicrophoneStatus Microphone,
     string? ActionColor,
@@ -73,7 +72,6 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
             // Profiles and shortcuts
             _ = Menu.Items.Add(_profiles.Build(
                 state.Profiles,
-                state.LastActiveProfileId,
                 state.ServerStatus.Shortcuts,
                 actions.OpenSteamInputConfigAsync,
                 onError,
@@ -137,7 +135,7 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
 
     private void UpdateLiveItems(TrayMenuState state)
     {
-        _profiles.Update(state.Profiles, state.LastActiveProfileId, state.ServerStatus.Shortcuts);
+        _profiles.Update(state.Profiles, state.ServerStatus.Shortcuts);
         _shortcuts.Update(state.ServerStatus.Shortcuts);
         _diagnostics.Update(state.ServerStatus, state.Microphone, state.ActionColor);
 

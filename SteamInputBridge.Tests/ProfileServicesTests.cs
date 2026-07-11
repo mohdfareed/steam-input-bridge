@@ -70,6 +70,37 @@ public sealed class ProfileServicesTests
     }
 
     [TestMethod]
+    public async Task ActiveProfileKeepsCurrentProfileWhileNeutralAppWindowIsForeground()
+    {
+        const int neutralForegroundProcessId = 987654;
+        int? foregroundProcessId = null;
+        TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithCurrentReceiver("game"));
+        using SettingsService settings = CreateSettings(monitor);
+        using ProfileCatalogService catalog = new(settings);
+        using ProfileClientsService clients = new(catalog, NullLogger<ProfileClientsService>.Instance);
+        using ActiveProfileService activeProfiles = new(
+            catalog,
+            clients,
+            () => foregroundProcessId,
+            TimeSpan.FromMilliseconds(10),
+            neutralForegroundProcessId);
+
+        await catalog.StartAsync(default).ConfigureAwait(false);
+        await activeProfiles.StartAsync(default).ConfigureAwait(false);
+        _ = await clients
+            .ConnectClientAsync(Guid.NewGuid(), processId: 1234, "game", steamAppId: null, new FakeClientApi())
+            .ConfigureAwait(false);
+
+        foregroundProcessId = Environment.ProcessId;
+        await WaitUntilAsync(() => activeProfiles.ActiveProfile?.Id == "game").ConfigureAwait(false);
+
+        foregroundProcessId = neutralForegroundProcessId;
+        await Task.Delay(50).ConfigureAwait(false);
+
+        Assert.AreEqual("game", activeProfiles.ActiveProfile?.Id);
+    }
+
+    [TestMethod]
     public async Task ProfileClientsServiceActivatesAttachOnlyReceiverWhenDetected()
     {
         TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(SettingsWithCurrentReceiver("game"));
@@ -177,6 +208,29 @@ public sealed class ProfileServicesTests
         Assert.IsTrue(logger.Contains(LogLevel.Information, "Receiver window not found yet"));
     }
 
+    [TestMethod]
+    public async Task ProfileReceiverSessionStopsClientWhenTrackedReceiverExits()
+    {
+        GameProfile profile = new();
+        profile.ReceiverProcesses.Add("test-receiver");
+        bool receiverRunning = true;
+        FakeClientApi control = new();
+        using ProfileReceiverSession session = new(
+            "game",
+            profile,
+            control,
+            _ => ReceiverWindowActivationResult.Activated,
+            NullLogger<ProfileClientsService>.Instance,
+            static () => { },
+            _ => receiverRunning ? [4321] : []);
+
+        receiverRunning = false;
+        session.Start();
+
+        await WaitUntilAsync(() => control.StopCalls == 1).ConfigureAwait(false);
+        Assert.IsFalse(session.StopReceiversWhenPipeCloses);
+    }
+
     private static ProfileStatus AssertSingle(IReadOnlyList<ProfileStatus> profiles)
     {
         Assert.HasCount(1, profiles);
@@ -224,13 +278,15 @@ public sealed class ProfileServicesTests
 
     private sealed class FakeClientApi : IBridgeClientApi
     {
+        private int _stopCalls;
+
         public List<bool> SetActiveCalls { get; } = [];
 
-        public int StopCalls { get; private set; }
+        public int StopCalls => Volatile.Read(ref _stopCalls);
 
         public Task StopAsync()
         {
-            StopCalls++;
+            _ = Interlocked.Increment(ref _stopCalls);
             return Task.CompletedTask;
         }
 

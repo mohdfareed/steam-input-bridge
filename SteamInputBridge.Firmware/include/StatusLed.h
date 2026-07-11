@@ -5,17 +5,15 @@
 namespace SteamInputBridge {
     class StatusLed {
        public:
-        StatusLed(uint8_t pin, uint32_t inputDurationMs);
+        StatusLed(uint8_t pin, uint32_t disconnectedBlinkIntervalMs);
 
         void begin();
-        void showInput(bool hasInput, uint32_t now);
-        void update(uint32_t now);
+        void update(bool connected, uint32_t now);
 
        private:
         uint8_t _pin;
-        uint32_t _inputDurationMs;
-        uint32_t _lastInputAt = 0;
-        bool _inputActive = false;
+        uint32_t _disconnectedBlinkIntervalMs;
+        bool _active = false;
 
         void set(bool active);
     };

@@ -79,14 +79,13 @@ public sealed class BridgeServiceTests
 
     private sealed class TestGlobalShortcutListener : IGlobalShortcutListener
     {
-        public void Update(
+        public IReadOnlyList<int> Update(
             IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-            Action<int> pressed,
-            Action<int> released)
+            Action<int, bool> changed)
         {
             _ = shortcuts;
-            _ = pressed;
-            _ = released;
+            _ = changed;
+            return [];
         }
 
         public void Dispose()

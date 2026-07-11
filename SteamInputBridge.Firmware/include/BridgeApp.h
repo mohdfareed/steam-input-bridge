@@ -9,7 +9,7 @@
 namespace SteamInputBridge {
     class BridgeApp {
        public:
-        BridgeApp(uint8_t ledPin, uint32_t inputBlinkDurationMs);
+        BridgeApp(uint8_t ledPin, uint32_t disconnectedBlinkIntervalMs);
 
         void begin();
         void update(uint32_t now);
@@ -20,7 +20,8 @@ namespace SteamInputBridge {
         StatusLed _statusLed;
         uint8_t _handshakeResponse[BridgeProtocolReader::HandshakeResponseFrameSize] = {};
 
-        void readSerialFrames(uint32_t now);
-        void handleMessage(const BridgeMessage& message, uint32_t now);
+        void readSerialFrames();
+        void handleMessage(const BridgeMessage& message);
+        bool isConnected() const;
     };
 }  // namespace SteamInputBridge

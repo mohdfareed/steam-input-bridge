@@ -87,6 +87,9 @@ public sealed class SettingsValidationTests
             new ShortcutTargetSetting(ShortcutTarget.Steam, null),
             ShortcutTargetSetting.Parse("steam"));
         Assert.AreEqual(
+            new ShortcutTargetSetting(ShortcutTarget.Tray, null),
+            ShortcutTargetSetting.Parse("tray"));
+        Assert.AreEqual(
             new ShortcutTargetSetting(ShortcutTarget.ActionColor, "#80A0FF"),
             ShortcutTargetSetting.Parse(" #80a0ff "));
 

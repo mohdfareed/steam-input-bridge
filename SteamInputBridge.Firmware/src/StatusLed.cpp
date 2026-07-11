@@ -1,29 +1,31 @@
 #include "StatusLed.h"
 
 namespace SteamInputBridge {
-    StatusLed::StatusLed(uint8_t pin, uint32_t inputDurationMs) : _pin(pin), _inputDurationMs(inputDurationMs) {}
+    StatusLed::StatusLed(uint8_t pin, uint32_t disconnectedBlinkIntervalMs)
+        : _pin(pin), _disconnectedBlinkIntervalMs(disconnectedBlinkIntervalMs) {}
 
     void StatusLed::begin() {
         pinMode(_pin, OUTPUT);
-        set(false);
+        digitalWrite(_pin, LOW);
+        _active = false;
     }
 
-    void StatusLed::showInput(bool hasInput, uint32_t now) {
-        if (hasInput) {
-            _inputActive = true;
-            _lastInputAt = now;
+    void StatusLed::update(bool connected, uint32_t now) {
+        if (connected) {
+            set(true);
             return;
         }
 
-        _inputActive = false;
-        set(false);
-    }
-
-    void StatusLed::update(uint32_t now) {
-        const bool active = _inputActive && now - _lastInputAt < _inputDurationMs;
+        const bool active = ((now / _disconnectedBlinkIntervalMs) % 2) == 0;
         set(active);
-        _inputActive = active;
     }
 
-    void StatusLed::set(bool active) { digitalWrite(_pin, active ? HIGH : LOW); }
+    void StatusLed::set(bool active) {
+        if (_active == active) {
+            return;
+        }
+
+        digitalWrite(_pin, active ? HIGH : LOW);
+        _active = active;
+    }
 }  // namespace SteamInputBridge

@@ -16,7 +16,6 @@ internal sealed class ProfilesMenuSection
 
     public ToolStripMenuItem Build(
         IReadOnlyList<ProfileStatus> profiles,
-        string? lastActiveProfileId,
         IReadOnlyList<BridgeShortcutStatus> activeShortcuts,
         Func<uint, Task> openSteamConfig,
         Action<Exception> onError,
@@ -34,7 +33,6 @@ internal sealed class ProfilesMenuSection
         {
             _ = menu.DropDownItems.Add(CreateProfileMenu(
                 profile,
-                IsLastActive(profile, lastActiveProfileId),
                 activeShortcuts,
                 openSteamConfig,
                 onError,
@@ -46,14 +44,13 @@ internal sealed class ProfilesMenuSection
 
     public void Update(
         IReadOnlyList<ProfileStatus> profiles,
-        string? lastActiveProfileId,
         IReadOnlyList<BridgeShortcutStatus> activeShortcuts)
     {
         foreach (ProfileStatus profile in profiles)
         {
             if (_profiles.TryGetValue(profile.Id, out ProfileMenuBinding? items))
             {
-                items.Update(profile, IsLastActive(profile, lastActiveProfileId), activeShortcuts);
+                items.Update(profile, activeShortcuts);
             }
         }
     }
@@ -84,14 +81,13 @@ internal sealed class ProfilesMenuSection
 
     private ToolStripMenuItem CreateProfileMenu(
         ProfileStatus profile,
-        bool lastActive,
         IReadOnlyList<BridgeShortcutStatus> activeShortcuts,
         Func<uint, Task> openSteamConfig,
         Action<Exception> onError,
         Action<Guid> stopClient)
     {
         ToolStripMenuItem menu = TrayMenuItems.Menu(profile.Definition.Title);
-        SetProfileCheckMark(menu, profile, lastActive);
+        SetProfileCheckMark(menu, profile);
 
         ToolStripMenuItem appId = TrayMenuItems.Item("Steam app ID", TrayMenuItems.Number(profile.EffectiveSteamAppId));
         ToolStripMenuItem openConfig = CreateOpenConfigItem(profile, openSteamConfig, onError);
@@ -134,11 +130,6 @@ internal sealed class ProfilesMenuSection
             : TrayMenuItems.Disabled("Open Steam Input config");
     }
 
-    private static bool IsLastActive(ProfileStatus profile, string? lastActiveProfileId)
-    {
-        return string.Equals(profile.Id, lastActiveProfileId, StringComparison.OrdinalIgnoreCase);
-    }
-
     private static bool HasClient(ProfileStatus profile)
     {
         return profile.ClientProcessId.HasValue;
@@ -149,9 +140,9 @@ internal sealed class ProfilesMenuSection
         return profile.GameProcessIds.Count > 0;
     }
 
-    private static void SetProfileCheckMark(ToolStripMenuItem menu, ProfileStatus profile, bool lastActive)
+    private static void SetProfileCheckMark(ToolStripMenuItem menu, ProfileStatus profile)
     {
-        if (lastActive)
+        if (profile.Active)
         {
             TrayMenuItems.SetGreenCheckMark(menu, HasClient(profile));
         }
@@ -170,10 +161,9 @@ internal sealed class ProfilesMenuSection
     {
         public void Update(
             ProfileStatus profile,
-            bool lastActive,
             IReadOnlyList<BridgeShortcutStatus> activeShortcuts)
         {
-            SetProfileCheckMark(Menu, profile, lastActive);
+            SetProfileCheckMark(Menu, profile);
             TrayMenuItems.SetValue(AppId, TrayMenuItems.Number(profile.EffectiveSteamAppId));
             TrayMenuItems.SetValue(Client, TrayMenuItems.Number(profile.ClientProcessId));
             TrayMenuItems.SetCheckMark(Client, HasClient(profile));

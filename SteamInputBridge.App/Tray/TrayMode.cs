@@ -1,7 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using SteamInputBridge.App.Host;
 using SteamInputBridge.App.Tray.Menu;
 using SteamInputBridge.App.Tray.Overlay;
+using SteamInputBridge.Hosting;
 using SteamInputBridge.Hosting.Server;
 using SteamInputBridge.Microphone;
 using SteamInputBridge.Outputs.Teensy;
@@ -59,6 +60,8 @@ internal sealed class TrayContext : IDisposable
             EnvironmentLogMessage);
 
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(5);
+    private static readonly MethodInfo? ShowNotifyIconContextMenu =
+        typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
     private static string AppName => "Steam Input Bridge";
 
     private readonly IHost _server = AppHost.CreateServer();
@@ -74,7 +77,7 @@ internal sealed class TrayContext : IDisposable
     private readonly TrayActions _actions;
     private readonly TrayMenu _menu;
 
-    private string? _lastActiveProfileId;
+    private bool _trayShortcutPressed;
     private bool _disposed;
     private bool _shutdownStarted;
 
@@ -215,7 +218,6 @@ internal sealed class TrayContext : IDisposable
         _menu.Menu.Opening += OnMenuOpening;
         _runtime.Bridge.StatusChanged += OnServerStatusChanged;
         _runtime.Profiles.ProfilesChanged += OnProfilesChanged;
-        _runtime.Profiles.ActiveProfileChanged += OnActiveProfileChanged;
         _runtime.Shortcuts.StatusChanged += OnShortcutStatusChanged;
         _runtime.Microphone.StatusChanged += OnDiagnosticsChanged;
         _runtime.ActionColor.ColorChanged += OnDiagnosticsChanged;
@@ -228,7 +230,6 @@ internal sealed class TrayContext : IDisposable
         _runtime.ActionColor.ColorChanged -= OnDiagnosticsChanged;
         _runtime.Microphone.StatusChanged -= OnDiagnosticsChanged;
         _runtime.Shortcuts.StatusChanged -= OnShortcutStatusChanged;
-        _runtime.Profiles.ActiveProfileChanged -= OnActiveProfileChanged;
         _runtime.Profiles.ProfilesChanged -= OnProfilesChanged;
         _runtime.Bridge.StatusChanged -= OnServerStatusChanged;
         _menu.Menu.Opening -= OnMenuOpening;
@@ -259,6 +260,7 @@ internal sealed class TrayContext : IDisposable
     {
         _ = sender;
         _ = args;
+        ShowTrayMenuFromShortcut();
         QueueMenuStateUpdate();
     }
 
@@ -273,18 +275,6 @@ internal sealed class TrayContext : IDisposable
     {
         _ = sender;
         _ = args;
-        QueueMenuStateUpdate();
-    }
-
-    private void OnActiveProfileChanged(object? sender, ActiveProfileChangedEventArgs args)
-    {
-        _ = sender;
-        if (args.ActiveProfile is null)
-        {
-            return;
-        }
-
-        _lastActiveProfileId = args.ActiveProfile.Id;
         QueueMenuStateUpdate();
     }
 
@@ -322,39 +312,54 @@ internal sealed class TrayContext : IDisposable
         _menu.Rebuild();
     }
 
-    private TrayMenuState CurrentMenuState()
+    private void ShowTrayMenuFromShortcut()
     {
-        IReadOnlyList<ProfileStatus> profiles = _runtime.Profiles.Profiles;
-        if (!HasConnectedProfile(profiles, _lastActiveProfileId))
+        bool pressed = false;
+        foreach (BridgeShortcutStatus shortcut in _runtime.Shortcuts.Status)
         {
-            _lastActiveProfileId = null;
+            if (shortcut.Pressed &&
+                string.Equals(shortcut.Target, nameof(ShortcutTarget.Tray), StringComparison.OrdinalIgnoreCase))
+            {
+                pressed = true;
+                break;
+            }
         }
 
+        bool toggle = pressed && !_trayShortcutPressed;
+        _trayShortcutPressed = pressed;
+        if (!toggle)
+        {
+            return;
+        }
+
+        _ = WpfApplication.Current.Dispatcher.BeginInvoke(new Action(ToggleTrayMenuFromShortcut));
+    }
+
+    private void ToggleTrayMenuFromShortcut()
+    {
+        if (_disposed || _shutdownStarted)
+        {
+            return;
+        }
+
+        if (_menu.Menu.Visible)
+        {
+            _menu.Menu.Close(ToolStripDropDownCloseReason.CloseCalled);
+            return;
+        }
+
+        RebuildMenu();
+        _ = ShowNotifyIconContextMenu?.Invoke(_tray, null);
+    }
+
+    private TrayMenuState CurrentMenuState()
+    {
         return new(
-            profiles,
-            _lastActiveProfileId,
+            _runtime.Profiles.Profiles,
             _runtime.Bridge.Status,
             _runtime.Microphone.GetStatus(),
             _runtime.ActionColor.Color,
             TrayActions.StartupEnabled);
-    }
-
-    private static bool HasConnectedProfile(IReadOnlyList<ProfileStatus> profiles, string? profileId)
-    {
-        if (string.IsNullOrWhiteSpace(profileId))
-        {
-            return false;
-        }
-
-        foreach (ProfileStatus profile in profiles)
-        {
-            if (profile.ClientProcessId.HasValue && string.Equals(profile.Id, profileId, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void LogAppEnvironment()

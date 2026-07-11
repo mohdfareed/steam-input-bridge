@@ -21,7 +21,7 @@ internal sealed class StatusOverlayWindow : Window
     private const double GlowShadowDepth = 0;
 
     private const double EdgeMargin = DotSize / 2;
-    private const double WindowWidth = (DotSize * 2) + DotGap + EdgeMargin + GlowPadding;
+    private const double WindowWidth = (DotSize * 2) + DotGap + (EdgeMargin * 2);
     private const double WindowHeight = DotSize + EdgeMargin + GlowPadding;
 
     private const string MutedColor = "#FF9F0A";
@@ -101,7 +101,7 @@ internal sealed class StatusOverlayWindow : Window
 
     private void LayoutDots()
     {
-        double rightDotLeft = WindowWidth - GlowPadding - DotSize;
+        double rightDotLeft = WindowWidth - EdgeMargin - DotSize;
         if (_actionDot.Visibility == Visibility.Visible && _microphoneDot.Visibility == Visibility.Visible)
         {
             Canvas.SetLeft(_actionDot, rightDotLeft - DotGap - DotSize);

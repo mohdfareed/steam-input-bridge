@@ -105,6 +105,25 @@ public sealed class ShortcutServiceTests
         Assert.HasCount(0, listener.Registrations);
     }
 
+    [TestMethod]
+    public async Task RegistrationPublishesOnlyHeldStateShortcuts()
+    {
+        using TestShortcutRuntime runtime = await TestShortcutRuntime.CreateStartedAsync(SettingsWithShortcuts())
+            .ConfigureAwait(false);
+        using TestGlobalShortcutListener listener = new();
+        using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
+        List<ShortcutEventArgs> events = [];
+        service.Shortcut += (_, args) => events.Add(args);
+        listener.CurrentPressed.Add(1);
+
+        await service.StartAsync(default).ConfigureAwait(false);
+
+        Assert.HasCount(1, events);
+        Assert.AreEqual(ShortcutTarget.Microphone, events[0].Target.Target);
+        Assert.AreEqual(ShortcutValue.Enable, events[0].Action);
+        Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);
+    }
+
     private static SteamInputBridgeSettings SettingsWithShortcuts()
     {
         SteamInputBridgeSettings settings = ValidBaseSettings();
@@ -179,29 +198,29 @@ public sealed class ShortcutServiceTests
 
     private sealed class TestGlobalShortcutListener : IGlobalShortcutListener
     {
-        private Action<int>? _pressed;
-        private Action<int>? _released;
+        private Action<int, bool>? _changed;
 
         public IReadOnlyList<KeyboardShortcutRegistration> Registrations { get; private set; } = [];
 
-        public void Update(
+        public List<int> CurrentPressed { get; } = [];
+
+        public IReadOnlyList<int> Update(
             IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-            Action<int> pressed,
-            Action<int> released)
+            Action<int, bool> changed)
         {
             Registrations = shortcuts;
-            _pressed = pressed;
-            _released = released;
+            _changed = changed;
+            return [.. CurrentPressed];
         }
 
         public void Press(int id)
         {
-            _pressed?.Invoke(id);
+            _changed?.Invoke(id, true);
         }
 
         public void Release(int id)
         {
-            _released?.Invoke(id);
+            _changed?.Invoke(id, false);
         }
 
         public void Dispose()
