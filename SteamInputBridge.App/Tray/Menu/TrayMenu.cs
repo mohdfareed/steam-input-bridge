@@ -21,6 +21,7 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
     private readonly ShortcutsMenuSection _shortcuts = new();
     private readonly DiagnosticsMenuSection _diagnostics = new();
 
+    private ToolStripMenuItem? _activeClient;
     private ToolStripMenuItem? _startupItem;
     private ToolStripMenuItem? _teensy;
     private ToolStripMenuItem? _status;
@@ -67,7 +68,13 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
         try
         {
             _startupItem = null;
+            _activeClient = null;
             Menu.Items.Clear();
+
+            _activeClient = TrayMenuItems.Disabled("Active client");
+            TrayMenuItems.SetValue(_activeClient, FormatActiveClient(state.Profiles));
+            _ = Menu.Items.Add(_activeClient);
+            _ = Menu.Items.Add(new ToolStripSeparator());
 
             // Profiles and shortcuts
             _ = Menu.Items.Add(_profiles.Build(
@@ -135,6 +142,11 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
 
     private void UpdateLiveItems(TrayMenuState state)
     {
+        if (_activeClient is not null)
+        {
+            TrayMenuItems.SetValue(_activeClient, FormatActiveClient(state.Profiles));
+        }
+
         _profiles.Update(state.Profiles, state.ServerStatus.Shortcuts);
         _shortcuts.Update(state.ServerStatus.Shortcuts);
         _diagnostics.Update(state.ServerStatus, state.Microphone, state.ActionColor);
@@ -190,5 +202,20 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
         return status.Connected && !string.IsNullOrWhiteSpace(status.ConnectedPort)
             ? $"Connected ({status.ConnectedPort})"
             : status.State;
+    }
+
+    private static string FormatActiveClient(IReadOnlyList<ProfileStatus> profiles)
+    {
+        foreach (ProfileStatus profile in profiles)
+        {
+            if (!profile.Active)
+            {
+                continue;
+            }
+
+            return profile.Definition.Title ?? profile.Id;
+        }
+
+        return "None";
     }
 }
