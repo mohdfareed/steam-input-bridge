@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 using Microsoft.Extensions.Logging.Abstractions;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Profiles;
@@ -26,10 +28,14 @@ public sealed class ShortcutServiceTests
         service.Shortcut += (_, args) => events.Add(args);
 
         await service.StartAsync(default).ConfigureAwait(false);
-        listener.Press(1);
-        listener.Release(1);
+        listener.Press(Keys.ControlKey);
+        listener.Press(Keys.Menu);
+        listener.Press(Keys.F1);
+        await WaitUntilAsync(() => events.Count == 2).ConfigureAwait(false);
+        listener.Release(Keys.F1);
+        await WaitUntilAsync(() => events.Count == 3).ConfigureAwait(false);
 
-        Assert.HasCount(1, listener.Registrations);
+        Assert.IsTrue(listener.ObservedKeys.Contains((ushort)Keys.F1));
         Assert.HasCount(2, service.Status);
         Assert.IsFalse(service.Status[0].Pressed);
         Assert.HasCount(3, events);
@@ -49,11 +55,14 @@ public sealed class ShortcutServiceTests
         using TestGlobalShortcutListener listener = new();
         using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
         await service.StartAsync(default).ConfigureAwait(false);
-        listener.Press(1);
+        listener.Press(Keys.ControlKey);
+        listener.Press(Keys.Menu);
+        listener.Press(Keys.F1);
+        await WaitUntilAsync(() => service.Status[0].Pressed).ConfigureAwait(false);
 
         runtime.Monitor.Set(SettingsWithShortcut("Alt+F2"));
 
-        Assert.HasCount(1, listener.Registrations);
+        Assert.IsTrue(listener.ObservedKeys.Contains((ushort)Keys.F2));
         Assert.AreEqual("Alt+F2", service.Status[0].Keys);
         Assert.IsFalse(service.Status[0].Pressed);
     }
@@ -67,19 +76,18 @@ public sealed class ShortcutServiceTests
         using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
 
         await service.StartAsync(default).ConfigureAwait(false);
-        Assert.HasCount(1, listener.Registrations);
-        Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
+        Assert.IsTrue(listener.ObservedKeys.Contains((ushort)Keys.F1));
+        Assert.IsFalse(listener.ObservedKeys.Contains((ushort)Keys.F2));
 
         await runtime.ActivateAsync("game").ConfigureAwait(false);
 
-        Assert.HasCount(2, listener.Registrations);
-        Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
-        Assert.AreEqual("F2", listener.Registrations[1].Shortcut.ToString());
+        Assert.IsTrue(listener.ObservedKeys.Contains((ushort)Keys.F1));
+        Assert.IsTrue(listener.ObservedKeys.Contains((ushort)Keys.F2));
 
         await runtime.DeactivateAsync().ConfigureAwait(false);
 
-        Assert.HasCount(1, listener.Registrations);
-        Assert.AreEqual("F1", listener.Registrations[0].Shortcut.ToString());
+        Assert.IsTrue(listener.ObservedKeys.Contains((ushort)Keys.F1));
+        Assert.IsFalse(listener.ObservedKeys.Contains((ushort)Keys.F2));
     }
 
     [TestMethod]
@@ -94,7 +102,8 @@ public sealed class ShortcutServiceTests
         List<ShortcutEventArgs> events = [];
         service.Shortcut += (_, args) => events.Add(args);
         await service.StartAsync(default).ConfigureAwait(false);
-        listener.Press(1);
+        listener.Press(Keys.F2);
+        await WaitUntilAsync(() => events.Count == 1).ConfigureAwait(false);
 
         await runtime.DeactivateAsync().ConfigureAwait(false);
         await WaitUntilAsync(() => events.Count == 2).ConfigureAwait(false);
@@ -102,7 +111,7 @@ public sealed class ShortcutServiceTests
         Assert.HasCount(2, events);
         Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);
         Assert.AreEqual(ShortcutPhase.Released, events[1].Phase);
-        Assert.HasCount(0, listener.Registrations);
+        Assert.IsFalse(listener.ObservedKeys.Contains((ushort)Keys.F2));
     }
 
     [TestMethod]
@@ -114,13 +123,75 @@ public sealed class ShortcutServiceTests
         using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
         List<ShortcutEventArgs> events = [];
         service.Shortcut += (_, args) => events.Add(args);
-        listener.CurrentPressed.Add(1);
+        listener.Hold(Keys.ControlKey);
+        listener.Hold(Keys.Menu);
+        listener.Hold(Keys.F1);
 
         await service.StartAsync(default).ConfigureAwait(false);
 
         Assert.HasCount(1, events);
         Assert.AreEqual(ShortcutTarget.Microphone, events[0].Target.Target);
         Assert.AreEqual(ShortcutValue.Enable, events[0].Action);
+        Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);
+    }
+
+    [TestMethod]
+    public async Task PlainShortcutPressesWhenExtraModifierReleasesWhileMainKeyIsHeld()
+    {
+        using TestShortcutRuntime runtime = await TestShortcutRuntime.CreateStartedAsync(SettingsWithShortcut("F1"))
+            .ConfigureAwait(false);
+        using TestGlobalShortcutListener listener = new();
+        using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
+        List<ShortcutEventArgs> events = [];
+        service.Shortcut += (_, args) => events.Add(args);
+        await service.StartAsync(default).ConfigureAwait(false);
+
+        listener.Press(Keys.Menu);
+        listener.Press(Keys.F1);
+        listener.Release(Keys.Menu);
+
+        await WaitUntilAsync(() => events.Count == 1).ConfigureAwait(false);
+        Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);
+    }
+
+    [TestMethod]
+    public async Task PressedShortcutStaysPressedWhenExtraModifierIsPressed()
+    {
+        using TestShortcutRuntime runtime = await TestShortcutRuntime.CreateStartedAsync(SettingsWithShortcut("F1"))
+            .ConfigureAwait(false);
+        using TestGlobalShortcutListener listener = new();
+        using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
+        List<ShortcutEventArgs> events = [];
+        service.Shortcut += (_, args) => events.Add(args);
+        await service.StartAsync(default).ConfigureAwait(false);
+
+        listener.Press(Keys.F1);
+        await WaitUntilAsync(() => events.Count == 1).ConfigureAwait(false);
+        listener.Press(Keys.Menu);
+        await Task.Delay(50).ConfigureAwait(false);
+        Assert.IsTrue(service.Status[0].Pressed);
+        listener.Release(Keys.F1);
+        await WaitUntilAsync(() => !service.Status[0].Pressed).ConfigureAwait(false);
+
+        Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);
+        Assert.HasCount(1, events);
+    }
+
+    [TestMethod]
+    public async Task GenericModifierShortcutAcceptsEitherSide()
+    {
+        using TestShortcutRuntime runtime = await TestShortcutRuntime.CreateStartedAsync(SettingsWithShortcut("Ctrl+F1"))
+            .ConfigureAwait(false);
+        using TestGlobalShortcutListener listener = new();
+        using ShortcutService service = new(runtime.Settings, runtime.Profiles, listener, NullLogger<ShortcutService>.Instance);
+        List<ShortcutEventArgs> events = [];
+        service.Shortcut += (_, args) => events.Add(args);
+        await service.StartAsync(default).ConfigureAwait(false);
+
+        listener.Press(Keys.RControlKey);
+        listener.Press(Keys.F1);
+
+        await WaitUntilAsync(() => events.Count == 1).ConfigureAwait(false);
         Assert.AreEqual(ShortcutPhase.Pressed, events[0].Phase);
     }
 
@@ -198,29 +269,39 @@ public sealed class ShortcutServiceTests
 
     private sealed class TestGlobalShortcutListener : IGlobalShortcutListener
     {
-        private Action<int, bool>? _changed;
+        private readonly HashSet<ushort> _down = [];
+        private Action<ushort, bool>? _changed;
 
-        public IReadOnlyList<KeyboardShortcutRegistration> Registrations { get; private set; } = [];
+        public IReadOnlyCollection<ushort> ObservedKeys { get; private set; } = [];
 
-        public List<int> CurrentPressed { get; } = [];
-
-        public IReadOnlyList<int> Update(
-            IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-            Action<int, bool> changed)
+        public void Update(IReadOnlyCollection<ushort> observedVirtualKeys, Action<ushort, bool> changed)
         {
-            Registrations = shortcuts;
+            ObservedKeys = [.. observedVirtualKeys];
             _changed = changed;
-            return [.. CurrentPressed];
         }
 
-        public void Press(int id)
+        public bool IsKeyDown(ushort virtualKey)
         {
-            _changed?.Invoke(id, true);
+            return _down.Contains(virtualKey);
         }
 
-        public void Release(int id)
+        public void Hold(Keys key)
         {
-            _changed?.Invoke(id, false);
+            _ = _down.Add((ushort)key);
+        }
+
+        public void Press(Keys key)
+        {
+            ushort virtualKey = (ushort)key;
+            _ = _down.Add(virtualKey);
+            _changed?.Invoke(virtualKey, true);
+        }
+
+        public void Release(Keys key)
+        {
+            ushort virtualKey = (ushort)key;
+            _ = _down.Remove(virtualKey);
+            _changed?.Invoke(virtualKey, false);
         }
 
         public void Dispose()

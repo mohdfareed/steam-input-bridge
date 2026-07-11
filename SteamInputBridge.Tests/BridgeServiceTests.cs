@@ -79,13 +79,16 @@ public sealed class BridgeServiceTests
 
     private sealed class TestGlobalShortcutListener : IGlobalShortcutListener
     {
-        public IReadOnlyList<int> Update(
-            IReadOnlyList<KeyboardShortcutRegistration> shortcuts,
-            Action<int, bool> changed)
+        public void Update(IReadOnlyCollection<ushort> observedVirtualKeys, Action<ushort, bool> changed)
         {
-            _ = shortcuts;
+            _ = observedVirtualKeys;
             _ = changed;
-            return [];
+        }
+
+        public bool IsKeyDown(ushort virtualKey)
+        {
+            _ = virtualKey;
+            return false;
         }
 
         public void Dispose()

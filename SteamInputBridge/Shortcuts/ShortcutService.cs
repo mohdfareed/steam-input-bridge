@@ -12,25 +12,33 @@ using SteamInputBridge.Shortcuts.Runtime;
 
 namespace SteamInputBridge.Shortcuts;
 
-/// <summary>Registers configured shortcuts and applies shortcut target behavior.</summary>
-public sealed class ShortcutService : IHostedService, IDisposable, IShortcutSource
+/// <summary>Registers configured shortcuts, tracks pressed shortcut state, and publishes shortcut actions.</summary>
+public sealed partial class ShortcutService : IHostedService, IDisposable, IShortcutSource
 {
     private readonly SettingsService _settings;
     private readonly ActiveProfileService _profiles;
     private readonly IGlobalShortcutListener _listener;
     private readonly ILogger<ShortcutService> _logger;
     private readonly Lock _gate = new();
-    private IReadOnlyDictionary<int, IReadOnlyList<ShortcutEntry>> _shortcuts = new Dictionary<int, IReadOnlyList<ShortcutEntry>>();
+    private readonly Lock _queueGate = new();
+    private readonly Queue<KeyChange> _pendingKeys = [];
+    private readonly Dictionary<int, KeyboardShortcut> _shortcutKeys = [];
+    private readonly Dictionary<int, IReadOnlyList<ShortcutEntry>> _shortcutEntries = [];
+    private readonly HashSet<ushort> _downKeys = [];
+    private readonly Dictionary<ushort, long> _downAt = [];
     private readonly HashSet<int> _pressedShortcuts = [];
+    private readonly HashSet<int> _desiredShortcuts = [];
+    private readonly List<int> _scratchShortcutIds = [];
+    private int _processingPendingKeys;
+    private int _registrationVersion;
     private bool _disposed;
 
     /// <summary>Creates the shortcut service.</summary>
     public ShortcutService(
         SettingsService settings,
         ActiveProfileService profiles,
-        GlobalShortcutListener listener,
         ILogger<ShortcutService> logger)
-        : this(settings, profiles, (IGlobalShortcutListener)listener, logger)
+        : this(settings, profiles, new GlobalShortcutListener(), logger)
     {
     }
 
@@ -52,7 +60,7 @@ public sealed class ShortcutService : IHostedService, IDisposable, IShortcutSour
     }
 
     // MARK: Lifecycle
-    // ========================================================================
+    // ============================================================================
 
     internal event EventHandler<ShortcutEventArgs>? Shortcut;
 
@@ -86,7 +94,7 @@ public sealed class ShortcutService : IHostedService, IDisposable, IShortcutSour
         _ = cancellationToken;
         _settings.Changed -= OnSettingsChanged;
         _profiles.ActiveProfileChanged -= OnActiveProfileChanged;
-        _listener.Update([], static _ => { }, static _ => { });
+        _listener.Update([], static (_, _) => { });
         return Task.CompletedTask;
     }
 
@@ -105,7 +113,7 @@ public sealed class ShortcutService : IHostedService, IDisposable, IShortcutSour
     }
 
     // MARK: Settings
-    // ========================================================================
+    // ============================================================================
 
     private void OnSettingsChanged(object? sender, ApplicationSettingsChangedEventArgs args)
     {
@@ -122,192 +130,141 @@ public sealed class ShortcutService : IHostedService, IDisposable, IShortcutSour
 
     private void ApplySettings(SteamInputBridgeSettings settings)
     {
-        List<ShortcutEntry> shortcuts = ActiveShortcuts(settings);
-        ShortcutBindingSet bindings = ShortcutBindingSet.Create(shortcuts);
-        List<(int Id, ShortcutEntry Shortcut)> releases;
+        Dictionary<KeyboardShortcut, int> idsByShortcut = [];
+        Dictionary<int, KeyboardShortcut> shortcutKeys = [];
+        Dictionary<int, List<ShortcutEntry>> entriesById = [];
+        List<ShortcutEntry> activeShortcuts = [.. settings.Shortcuts];
+        string? profileId = _profiles.ActiveProfile?.Id;
+        if (!string.IsNullOrWhiteSpace(profileId) && settings.Games.TryGetValue(profileId, out GameProfile? profile))
+        {
+            activeShortcuts.AddRange(profile.Shortcuts);
+        }
+
+        foreach (ShortcutEntry shortcut in activeShortcuts)
+        {
+            KeyboardShortcut keys = KeyboardShortcutParser.Parse(shortcut.Keys);
+            if (!idsByShortcut.TryGetValue(keys, out int id))
+            {
+                id = idsByShortcut.Count + 1;
+                idsByShortcut[keys] = id;
+                shortcutKeys[id] = keys;
+                entriesById[id] = [];
+            }
+
+            entriesById[id].Add(shortcut);
+        }
+
+        Dictionary<int, IReadOnlyList<ShortcutEntry>> shortcutEntries = new(entriesById.Count);
+        foreach ((int id, List<ShortcutEntry> entries) in entriesById)
+        {
+            shortcutEntries[id] = entries;
+        }
+
+        List<(int Id, ShortcutEntry Entry, ShortcutPhase Phase)> releases = [];
+        int version = Interlocked.Increment(ref _registrationVersion);
+        lock (_queueGate)
+        {
+            _pendingKeys.Clear();
+        }
+
         lock (_gate)
         {
-            releases = PressedReleaseShortcuts();
-            _shortcuts = bindings.Shortcuts;
+            foreach (int id in _pressedShortcuts)
+            {
+                if (!_shortcutEntries.TryGetValue(id, out IReadOnlyList<ShortcutEntry>? entries))
+                {
+                    continue;
+                }
+
+                foreach (ShortcutEntry entry in entries)
+                {
+                    if (entry.Action is ShortcutValue.Enable or ShortcutValue.Disable)
+                    {
+                        releases.Add((id, entry, ShortcutPhase.Released));
+                    }
+                }
+            }
+
+            _shortcutKeys.Clear();
+            foreach ((int id, KeyboardShortcut keys) in shortcutKeys)
+            {
+                _shortcutKeys[id] = keys;
+            }
+
+            _shortcutEntries.Clear();
+            foreach ((int id, IReadOnlyList<ShortcutEntry> entries) in shortcutEntries)
+            {
+                _shortcutEntries[id] = entries;
+            }
+
+            _downKeys.Clear();
+            _downAt.Clear();
             _pressedShortcuts.Clear();
+            _desiredShortcuts.Clear();
         }
 
-        foreach ((int id, ShortcutEntry shortcut) in releases)
+        foreach ((int id, ShortcutEntry entry, ShortcutPhase phase) in releases)
         {
-            Publish(id, shortcut, ShortcutPhase.Released);
+            if (entry.Target.HasValue)
+            {
+                Shortcut?.Invoke(this, new(id, entry.Keys, entry.Target.Value, entry.Action, phase));
+            }
         }
 
-        StatusChanged?.Invoke(this, EventArgs.Empty);
+        HashSet<ushort> observedKeys = [];
+        foreach (KeyboardShortcut shortcut in shortcutKeys.Values)
+        {
+            _ = observedKeys.Add(shortcut.VirtualKey);
+        }
+
+        AddModifierKeys(observedKeys);
 
         try
         {
-            _listener.Update(bindings.Registrations, OnShortcutPressed, OnShortcutReleased);
-            LogShortcutsRegistered(_logger, bindings.Registrations.Count, null);
+            _listener.Update(observedKeys, OnKeyChanged);
+            LogShortcutsRegistered(_logger, shortcutKeys.Count, null);
         }
         catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
         {
             LogShortcutRegistrationFailed(_logger, exception.Message, null);
         }
-    }
 
-    private List<ShortcutEntry> ActiveShortcuts(SteamInputBridgeSettings settings)
-    {
-        List<ShortcutEntry> shortcuts = [.. settings.Shortcuts];
-
-        string? profileId = _profiles.ActiveProfile?.Id;
-        if (!string.IsNullOrWhiteSpace(profileId) &&
-            settings.Games.TryGetValue(profileId, out GameProfile? profile))
+        List<(int Id, ShortcutEntry Entry, ShortcutPhase Phase)> currentPresses = [];
+        lock (_gate)
         {
-            foreach (ShortcutEntry shortcut in profile.Shortcuts)
+            if (version == Volatile.Read(ref _registrationVersion))
             {
-                shortcuts.Add(shortcut);
-            }
-        }
+                SeedCurrentlyDownKeys();
+                _desiredShortcuts.Clear();
+                AddDesiredPressedShortcuts();
 
-        return shortcuts;
-    }
-
-    private List<(int Id, ShortcutEntry Shortcut)> PressedReleaseShortcuts()
-    {
-        List<(int Id, ShortcutEntry Shortcut)> releases = [];
-        foreach (int id in _pressedShortcuts)
-        {
-            if (!_shortcuts.TryGetValue(id, out IReadOnlyList<ShortcutEntry>? shortcuts))
-            {
-                continue;
-            }
-
-            foreach (ShortcutEntry shortcut in shortcuts)
-            {
-                if (shortcut.Action is ShortcutValue.Enable or ShortcutValue.Disable)
+                foreach (int id in _desiredShortcuts)
                 {
-                    releases.Add((id, shortcut));
-                }
-            }
-        }
-
-        return releases;
-    }
-
-    // MARK: Shortcuts
-    // ========================================================================
-
-    private void OnShortcutPressed(int id)
-    {
-        if (!TryGetShortcuts(id, out IReadOnlyList<ShortcutEntry> shortcuts))
-        {
-            return;
-        }
-
-        bool changed;
-        lock (_gate)
-        {
-            changed = _pressedShortcuts.Add(id);
-        }
-
-        foreach (ShortcutEntry shortcut in shortcuts)
-        {
-            Publish(id, shortcut, ShortcutPhase.Pressed);
-        }
-
-        if (changed)
-        {
-            StatusChanged?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    private void OnShortcutReleased(int id)
-    {
-        if (!TryGetShortcuts(id, out IReadOnlyList<ShortcutEntry> shortcuts))
-        {
-            return;
-        }
-
-        bool changed;
-        lock (_gate)
-        {
-            changed = _pressedShortcuts.Remove(id);
-        }
-
-        foreach (ShortcutEntry shortcut in shortcuts)
-        {
-            if (shortcut.Action is ShortcutValue.Enable or ShortcutValue.Disable)
-            {
-                Publish(id, shortcut, ShortcutPhase.Released);
-            }
-        }
-
-        if (changed)
-        {
-            StatusChanged?.Invoke(this, EventArgs.Empty);
-        }
-    }
-
-    private bool TryGetShortcuts(int id, out IReadOnlyList<ShortcutEntry> shortcuts)
-    {
-        lock (_gate)
-        {
-            if (_shortcuts.TryGetValue(id, out shortcuts!))
-            {
-                return true;
-            }
-        }
-
-        shortcuts = [];
-        return false;
-    }
-
-    private void Publish(int id, ShortcutEntry shortcut, ShortcutPhase phase)
-    {
-        if (!shortcut.Target.HasValue)
-        {
-            return;
-        }
-
-        Shortcut?.Invoke(this, new(id, shortcut.Keys, shortcut.Target.Value, shortcut.Action, phase));
-    }
-
-    // MARK: Status
-    // ========================================================================
-
-    private List<BridgeShortcutStatus> GetStatus()
-    {
-        lock (_gate)
-        {
-            List<BridgeShortcutStatus> status = [];
-            foreach ((int shortcutId, IReadOnlyList<ShortcutEntry> entries) in _shortcuts)
-            {
-                foreach (ShortcutEntry entry in entries)
-                {
-                    if (!entry.Target.HasValue)
+                    _ = _pressedShortcuts.Add(id);
+                    if (!_shortcutEntries.TryGetValue(id, out IReadOnlyList<ShortcutEntry>? entries))
                     {
                         continue;
                     }
 
-                    status.Add(new(
-                        entry.Keys,
-                        entry.Target.Value.ToString(),
-                        entry.Action.ToString(),
-                        _pressedShortcuts.Contains(shortcutId)));
+                    foreach (ShortcutEntry entry in entries)
+                    {
+                        if (entry.Action is ShortcutValue.Enable or ShortcutValue.Disable)
+                        {
+                            currentPresses.Add((id, entry, ShortcutPhase.Pressed));
+                        }
+                    }
                 }
             }
-
-            return status;
         }
+
+        foreach ((int id, ShortcutEntry entry, ShortcutPhase phase) in currentPresses)
+        {
+            if (entry.Target.HasValue)
+            {
+                Shortcut?.Invoke(this, new(id, entry.Keys, entry.Target.Value, entry.Action, phase));
+            }
+        }
+
+        StatusChanged?.Invoke(this, EventArgs.Empty);
     }
-
-    // MARK: Logging
-    // ========================================================================
-
-    private static readonly Action<ILogger, int, Exception?> LogShortcutsRegistered =
-        LoggerMessage.Define<int>(
-            LogLevel.Information,
-            new EventId(1, nameof(LogShortcutsRegistered)),
-            "Registered {ShortcutCount} keyboard shortcut(s).");
-
-    private static readonly Action<ILogger, string, Exception?> LogShortcutRegistrationFailed =
-        LoggerMessage.Define<string>(
-            LogLevel.Warning,
-            new EventId(2, nameof(LogShortcutRegistrationFailed)),
-            "Keyboard shortcut registration failed: {Message}");
 }

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Shortcuts;
-using SteamInputBridge.Shortcuts.Runtime;
 
 namespace SteamInputBridge.Tests;
 

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using SteamInputBridge.Hosting;
 
 namespace SteamInputBridge.Shortcuts;
 
@@ -19,6 +21,9 @@ public enum ShortcutTarget
 
     /// <summary>Steam Input controller configurator.</summary>
     Steam,
+
+    /// <summary>Tray app menu.</summary>
+    Tray,
 }
 
 /// <summary>State applied when a shortcut is pressed.</summary>
@@ -32,6 +37,37 @@ public enum ShortcutValue
 
     /// <summary>Toggle the target between enabled and disabled.</summary>
     Toggle,
+}
+
+internal enum ShortcutPhase
+{
+    Pressed,
+    Released,
+}
+
+internal sealed class ShortcutEventArgs(
+    int shortcutId,
+    string keys,
+    ShortcutTargetSetting target,
+    ShortcutValue action,
+    ShortcutPhase phase) : EventArgs
+{
+    public int ShortcutId { get; } = shortcutId;
+
+    public string Keys { get; } = keys;
+
+    public ShortcutTargetSetting Target { get; } = target;
+
+    public ShortcutValue Action { get; } = action;
+
+    public ShortcutPhase Phase { get; } = phase;
+}
+
+internal interface IShortcutSource
+{
+    event EventHandler<ShortcutEventArgs>? Shortcut;
+
+    IReadOnlyList<BridgeShortcutStatus> Status { get; }
 }
 
 /// <summary>Shortcut target setting value.</summary>

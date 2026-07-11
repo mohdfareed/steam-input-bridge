@@ -5,7 +5,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Profiles;
 using SteamInputBridge.Shortcuts;
-using SteamInputBridge.Shortcuts.Runtime;
 
 namespace SteamInputBridge.Steam;
 

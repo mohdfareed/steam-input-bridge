@@ -118,8 +118,6 @@ internal readonly record struct KeyboardShortcut(KeyboardShortcutModifiers Modif
     }
 }
 
-internal sealed record KeyboardShortcutRegistration(int Id, KeyboardShortcut Shortcut);
-
 internal static class KeyboardShortcutParser
 {
     public static KeyboardShortcut Parse(string value)

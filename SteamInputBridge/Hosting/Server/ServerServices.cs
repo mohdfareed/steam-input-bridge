@@ -40,7 +40,6 @@ public static class ServerServices
         _ = services.AddHostedService(static services => services.GetRequiredService<ActiveProfileService>());
 
         // Shortcuts and shortcut-driven features
-        _ = services.AddSingleton<GlobalShortcutListener>();
         _ = services.AddSingleton<ShortcutService>();
         _ = services.AddHostedService(static services => services.GetRequiredService<ShortcutService>());
         _ = services.AddSingleton(static services => new ActionColorService(services.GetRequiredService<ShortcutService>()));
