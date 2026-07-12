@@ -13,7 +13,7 @@ public sealed class ProfileClientsService : IDisposable
 {
     private readonly ProfileCatalogService _profiles;
     private readonly ILogger<ProfileClientsService> _logger;
-    private readonly Func<int, ReceiverWindowActivationResult> _activateReceiver;
+    private readonly Func<int, WindowActivationResult> _activateReceiver;
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, ConnectedProfileClient> _clients = [];
     private readonly Dictionary<Guid, ProfileReceiverSession> _sessions = [];
@@ -28,7 +28,7 @@ public sealed class ProfileClientsService : IDisposable
     internal ProfileClientsService(
         ProfileCatalogService profiles,
         ILogger<ProfileClientsService> logger,
-        Func<int, ReceiverWindowActivationResult> activateReceiver)
+        Func<int, WindowActivationResult> activateReceiver)
     {
         ArgumentNullException.ThrowIfNull(profiles);
         ArgumentNullException.ThrowIfNull(logger);

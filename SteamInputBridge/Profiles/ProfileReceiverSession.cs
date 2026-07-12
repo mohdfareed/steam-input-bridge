@@ -19,7 +19,7 @@ internal sealed class ProfileReceiverSession : IDisposable
 
     private readonly GameProfile _definition;
     private readonly IBridgeClientApi _control;
-    private readonly Func<int, ReceiverWindowActivationResult> _activateReceiver;
+    private readonly Func<int, WindowActivationResult> _activateProcess;
     private readonly Func<IReadOnlyList<string>, HashSet<int>> _findReceivers;
     private readonly ILogger<ProfileClientsService> _logger;
     private readonly Action _receiversChanged;
@@ -36,7 +36,7 @@ internal sealed class ProfileReceiverSession : IDisposable
         string profileId,
         GameProfile definition,
         IBridgeClientApi control,
-        Func<int, ReceiverWindowActivationResult> activateReceiver,
+        Func<int, WindowActivationResult> activateReceiver,
         ILogger<ProfileClientsService> logger,
         Action receiversChanged,
         Func<IReadOnlyList<string>, HashSet<int>>? findReceivers = null)
@@ -44,7 +44,7 @@ internal sealed class ProfileReceiverSession : IDisposable
         ProfileId = profileId;
         _definition = definition;
         _control = control;
-        _activateReceiver = activateReceiver;
+        _activateProcess = activateReceiver;
         _findReceivers = findReceivers ?? FindReceivers;
         _logger = logger;
         _receiversChanged = receiversChanged;
@@ -136,6 +136,7 @@ internal sealed class ProfileReceiverSession : IDisposable
             {
                 HashSet<int> observedReceivers = _findReceivers(_definition.ReceiverProcesses);
                 int[] receiverProcessIds;
+                bool receiverSeen;
                 bool changed;
                 bool stopClient;
                 lock (_gate)
@@ -149,7 +150,19 @@ internal sealed class ProfileReceiverSession : IDisposable
                     _activationCompleted.IntersectWith(_receivers);
                     _windowNotFoundLogged.IntersectWith(_receivers);
                     receiverProcessIds = [.. _receivers.Where(processId => !_activationCompleted.Contains(processId))];
+                    receiverSeen = _receiverSeen;
                     changed = !previous.SetEquals(_receivers);
+                }
+
+                // The launcher is only a temporary focus target. Receivers remain the tracked game lifetime.
+                if (!receiverSeen && !string.IsNullOrWhiteSpace(_definition.Executable))
+                {
+                    HashSet<int> launcherProcessIds = [];
+                    AddProcessIds(launcherProcessIds, _definition.Executable);
+                    foreach (int launcherProcessId in launcherProcessIds)
+                    {
+                        _ = _activateProcess(launcherProcessId);
+                    }
                 }
 
                 ActivateReceivers(receiverProcessIds);
@@ -181,8 +194,8 @@ internal sealed class ProfileReceiverSession : IDisposable
     {
         foreach (int receiverProcessId in receiverProcessIds)
         {
-            ReceiverWindowActivationResult result = _activateReceiver(receiverProcessId);
-            if (result == ReceiverWindowActivationResult.WindowNotFound)
+            WindowActivationResult result = _activateProcess(receiverProcessId);
+            if (result == WindowActivationResult.WindowNotFound)
             {
                 lock (_gate)
                 {
@@ -205,11 +218,11 @@ internal sealed class ProfileReceiverSession : IDisposable
                 _ = _activationCompleted.Add(receiverProcessId);
             }
 
-            if (result == ReceiverWindowActivationResult.Activated)
+            if (result == WindowActivationResult.Activated)
             {
                 LogReceiverActivationSucceeded(_logger, ProfileId, receiverProcessId, null);
             }
-            else if (result == ReceiverWindowActivationResult.Rejected)
+            else if (result == WindowActivationResult.Rejected)
             {
                 LogReceiverActivationRejected(_logger, ProfileId, receiverProcessId, null);
             }
@@ -221,29 +234,34 @@ internal sealed class ProfileReceiverSession : IDisposable
         HashSet<int> processIds = [];
         foreach (string processName in processNames)
         {
-            string normalized = Path.GetFileNameWithoutExtension(processName.Trim());
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                continue;
-            }
-
-            foreach (Process process in Process.GetProcessesByName(normalized))
-            {
-                try
-                {
-                    _ = processIds.Add(process.Id);
-                }
-                catch (InvalidOperationException)
-                {
-                }
-                finally
-                {
-                    process.Dispose();
-                }
-            }
+            AddProcessIds(processIds, processName);
         }
 
         return processIds;
+    }
+
+    private static void AddProcessIds(HashSet<int> processIds, string processName)
+    {
+        string normalized = Path.GetFileNameWithoutExtension(processName.Trim());
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return;
+        }
+
+        foreach (Process process in Process.GetProcessesByName(normalized))
+        {
+            try
+            {
+                _ = processIds.Add(process.Id);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
     }
 
     private static readonly Action<ILogger, string, string, Exception?> LogProfileSessionFailed =

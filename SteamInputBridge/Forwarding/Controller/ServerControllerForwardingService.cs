@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Profiles;
+using StreamJsonRpc;
 
 namespace SteamInputBridge.Forwarding.Controller;
 
@@ -82,7 +83,7 @@ public sealed class ServerControllerForwardingService(
         {
             await connection.Control.SetActiveAsync(active).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
+        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException or ConnectionLostException)
         {
             LogActiveStateUpdateFailed(logger, connection.ProfileId, connection.ConnectionId, exception.Message, null);
         }

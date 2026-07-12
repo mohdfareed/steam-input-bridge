@@ -78,6 +78,11 @@ avoid repeating past mistakes.
 - Prefer deleting or simplifying existing layers over adding new abstractions.
 - Default to direct pass-through over abstraction layers unless the abstraction
   removes real complexity or matches an existing local pattern.
+- For narrow behavior changes, start with the smallest inline edit in the owning
+  method. Add helper methods, fields, test seams, logging state, or model types
+  only after the inline version is clearly worse. If a change starts adding
+  state just to remember whether logging happened, whether a helper was called,
+  or whether a test can observe an internal step, stop and simplify.
 - Use dependency-backed Windows plumbing by default: Vanara for Win32/CoreAudio
   and NHotkey for global hotkey registration.
   Keep manual interop only for hot paths or behavior the library does not cover
@@ -150,6 +155,10 @@ avoid repeating past mistakes.
   routing constraints. Do not hide intent behind tiny helper methods.
 - Do not add private helpers that only wrap a constructor, null check, simple
   property access, or one obvious call.
+- Prefer a short comment plus inline code over "self-documenting" helper chains
+  for one-off logic. A helper must earn its existence by removing meaningful
+  duplication, isolating an external API quirk, or making a genuinely complex
+  block easier to read.
 - Do not create custom app error dialogs. The app error dialog must stay on the
   native dialog path unless the user explicitly approves replacing that model.
 
@@ -174,6 +183,9 @@ avoid repeating past mistakes.
 - Do not run multiple `dotnet build` or `dotnet test` commands in parallel for
   the same configuration.
 - Tests should cover behavior and mapping, not private implementation shape.
+- Do not distort production code to make a unit test convenient. If a behavior
+  can only be tested by adding production-only indirection, either test a
+  broader observable behavior or call out the manual verification gap.
 - Keep tests in useful tiers:
   - Normal tests are deterministic and local/fake-output friendly.
   - Dependency tests are opt-in and require external drivers or services.
@@ -187,6 +199,9 @@ avoid repeating past mistakes.
 - Keep explanations concise and concrete.
 - Use explicit `using` directives.
 - Use clear names instead of over-general names.
+- Name state by the concept it represents, not by the incidental trigger path.
+  Avoid sentence-like names such as `StopXWhenYHappens`; prefer ownership or
+  state names such as `OwnsReceivers`, `ReceiversOwned`, or `KeepReceiversAlive`.
 - Do not spread method, constructor, or attribute arguments over multiple lines
   unless the line would approach 120 characters or the split clearly improves
   readability.

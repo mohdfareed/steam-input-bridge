@@ -113,7 +113,7 @@ public sealed class ProfileServicesTests
             processId =>
             {
                 activatedProcessIds.Enqueue(processId);
-                return ReceiverWindowActivationResult.Activated;
+                return WindowActivationResult.Activated;
             });
 
         _ = await clients
@@ -137,8 +137,8 @@ public sealed class ProfileServicesTests
             {
                 activationAttempts.Enqueue(processId);
                 return activationAttempts.Count == 1
-                    ? ReceiverWindowActivationResult.WindowNotFound
-                    : ReceiverWindowActivationResult.Activated;
+                    ? WindowActivationResult.WindowNotFound
+                    : WindowActivationResult.Activated;
             });
 
         _ = await clients
@@ -165,7 +165,7 @@ public sealed class ProfileServicesTests
             processId =>
             {
                 activatedProcessIds.Enqueue(processId);
-                return ReceiverWindowActivationResult.Activated;
+                return WindowActivationResult.Activated;
             });
 
         _ = await clients
@@ -195,8 +195,8 @@ public sealed class ProfileServicesTests
             {
                 attempts++;
                 return attempts == 1
-                    ? ReceiverWindowActivationResult.WindowNotFound
-                    : ReceiverWindowActivationResult.Rejected;
+                    ? WindowActivationResult.WindowNotFound
+                    : WindowActivationResult.Rejected;
             });
 
         _ = await clients
@@ -219,7 +219,7 @@ public sealed class ProfileServicesTests
             "game",
             profile,
             control,
-            _ => ReceiverWindowActivationResult.Activated,
+            _ => WindowActivationResult.Activated,
             NullLogger<ProfileClientsService>.Instance,
             static () => { },
             _ => receiverRunning ? [4321] : []);

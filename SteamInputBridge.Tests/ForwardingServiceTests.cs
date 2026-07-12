@@ -14,6 +14,7 @@ using SteamInputBridge.Profiles;
 using SteamInputBridge.Settings;
 using SteamInputBridge.Shortcuts;
 using SteamInputBridge.Shortcuts.Runtime;
+using StreamJsonRpc;
 
 namespace SteamInputBridge.Tests;
 
@@ -83,6 +84,25 @@ public sealed class ForwardingServiceTests
         await service.StopAsync(default).ConfigureAwait(false);
         Assert.IsFalse(runtime.ActiveClient.SetActiveCalls[^1]);
         Assert.IsFalse(runtime.InactiveClient.SetActiveCalls[^1]);
+    }
+
+    [TestMethod]
+    public async Task ServerControllerForwardingIgnoresLostClientWhenStopping()
+    {
+        using TestProfileRuntime runtime = await TestProfileRuntime.CreateStartedAsync(MouseOutput.None)
+            .ConfigureAwait(false);
+        ServerControllerForwardingService service = new(
+            runtime.ActiveProfiles,
+            runtime.Clients,
+            NullLogger<ServerControllerForwardingService>.Instance);
+
+        await service.StartAsync(default).ConfigureAwait(false);
+        await runtime.WaitForActiveProfileAsync().ConfigureAwait(false);
+        await WaitUntilAsync(() => runtime.ActiveClient.SetActiveCalls.Contains(true)).ConfigureAwait(false);
+
+        runtime.ActiveClient.SetActiveException = new ConnectionLostException("lost");
+
+        await service.StopAsync(default).ConfigureAwait(false);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -281,6 +301,8 @@ public sealed class ForwardingServiceTests
     {
         public List<bool> SetActiveCalls { get; } = [];
 
+        public Exception? SetActiveException { get; set; }
+
         public Task StopAsync()
         {
             return Task.CompletedTask;
@@ -296,6 +318,11 @@ public sealed class ForwardingServiceTests
 
         public Task SetActiveAsync(bool active)
         {
+            if (SetActiveException is not null)
+            {
+                throw SetActiveException;
+            }
+
             SetActiveCalls.Add(active);
             return Task.CompletedTask;
         }

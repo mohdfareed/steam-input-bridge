@@ -4,7 +4,7 @@ using static Vanara.PInvoke.User32;
 
 namespace SteamInputBridge.Profiles;
 
-internal enum ReceiverWindowActivationResult
+internal enum WindowActivationResult
 {
     WindowNotFound,
     Activated,
@@ -15,12 +15,12 @@ internal enum ReceiverWindowActivationResult
 [SupportedOSPlatform("windows")]
 internal static class ReceiverWindowActivator
 {
-    public static ReceiverWindowActivationResult TryActivate(int processId)
+    public static WindowActivationResult TryActivate(int processId)
     {
         HWND window = FindReceiverWindow(processId);
         if (window.IsNull)
         {
-            return ReceiverWindowActivationResult.WindowNotFound;
+            return WindowActivationResult.WindowNotFound;
         }
 
         uint currentThreadId = Kernel32.GetCurrentThreadId();
@@ -51,8 +51,8 @@ internal static class ReceiverWindowActivator
         }
 
         return ForegroundProcessId() == processId
-            ? ReceiverWindowActivationResult.Activated
-            : ReceiverWindowActivationResult.Rejected;
+            ? WindowActivationResult.Activated
+            : WindowActivationResult.Rejected;
     }
 
     private static HWND FindReceiverWindow(int processId)
