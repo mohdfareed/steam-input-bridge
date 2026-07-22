@@ -34,6 +34,7 @@ public static class SettingsValidation
         {
             ValidateViiper(settings.Viiper, failures);
             ValidateTeensy(settings.Teensy, failures);
+            ValidateMouseSensitivity("mouseSensitivity", settings.MouseSensitivity, failures);
             ValidateShortcuts("shortcuts", settings.Shortcuts, failures);
             ValidateProfiles(settings.Games, failures);
         }
@@ -141,6 +142,14 @@ public static class SettingsValidation
                 failures.Add($"games:{profileId}:mouseInput is invalid.");
             }
 
+            if (profile.MouseSensitivity.HasValue)
+            {
+                ValidateMouseSensitivity(
+                    $"games:{profileId}:mouseSensitivity",
+                    profile.MouseSensitivity.Value,
+                    failures);
+            }
+
             ValidateShortcuts($"games:{profileId}:shortcuts", profile.Shortcuts, failures);
         }
     }
@@ -164,6 +173,14 @@ public static class SettingsValidation
         }
 
         return int.TryParse(value[3..], out int number) && number > 0;
+    }
+
+    private static void ValidateMouseSensitivity(string path, double sensitivity, List<string> failures)
+    {
+        if (!double.IsFinite(sensitivity) || sensitivity <= 0)
+        {
+            failures.Add($"{path} must be a finite value greater than zero.");
+        }
     }
 
     private static bool IsValidTarget(ShortcutTargetSetting target)

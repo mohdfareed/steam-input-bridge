@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.Configuration;
+using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Outputs.Controller;
 using SteamInputBridge.Outputs.Mouse;
 using SteamInputBridge.Settings;
@@ -18,6 +19,7 @@ public sealed class SettingsValidationTests
         settings.Viiper.Host = "";
         settings.Viiper.Port = 70_000;
         settings.Teensy.Port = "USB1";
+        settings.MouseSensitivity = 0;
         settings.Shortcuts.Add(new ShortcutEntry
         {
             Keys = "Ctrl+Alt",
@@ -32,6 +34,7 @@ public sealed class SettingsValidationTests
             ControllerOutput = (ControllerOutput)99,
             MouseOutput = (MouseOutput)99,
             MouseInput = (MouseInputMode)99,
+            MouseSensitivity = double.PositiveInfinity,
         };
         settings.Games["bad"].Shortcuts.Add(new ShortcutEntry
         {
@@ -49,6 +52,7 @@ public sealed class SettingsValidationTests
         StringAssert.Contains(errors, "viiper:host is required.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "viiper:port must be between 1 and 65535.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "teensy:port must be a COM port name such as COM5.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "mouseSensitivity must be a finite value greater than zero.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:keys is invalid", StringComparison.Ordinal);
         StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:target is required.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "shortcuts:F13:target is required.", StringComparison.Ordinal);
@@ -57,6 +61,10 @@ public sealed class SettingsValidationTests
         StringAssert.Contains(errors, "games:bad:controllerOutput is invalid.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:mouseOutput is invalid.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:mouseInput is invalid.", StringComparison.Ordinal);
+        StringAssert.Contains(
+            errors,
+            "games:bad:mouseSensitivity must be a finite value greater than zero.",
+            StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:shortcuts:Ctrl+Alt:keys is invalid", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:shortcuts:Ctrl+Alt:target is required.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:shortcuts:F14:target is required.", StringComparison.Ordinal);
@@ -135,5 +143,29 @@ public sealed class SettingsValidationTests
         configuration.GetSection(SteamInputBridgeSettings.SectionName).Bind(settings);
 
         Assert.AreEqual(MouseInputMode.Steam, settings.Games["test"].MouseInput);
+    }
+
+    [TestMethod]
+    public void ConfigurationBindsAndResolvesMouseSensitivity()
+    {
+        Dictionary<string, string?> values = new()
+        {
+            ["SteamInputBridge:MouseSensitivity"] = "4200",
+            ["SteamInputBridge:Games:default:ReceiverProcesses:0"] = "Default.exe",
+            ["SteamInputBridge:Games:override:ReceiverProcesses:0"] = "Override.exe",
+            ["SteamInputBridge:Games:override:MouseSensitivity"] = "5100",
+        };
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build();
+        SteamInputBridgeSettings settings = new();
+
+        configuration.GetSection(SteamInputBridgeSettings.SectionName).Bind(settings);
+
+        Assert.AreEqual(4200, settings.MouseSensitivity);
+        Assert.IsNull(settings.Games["default"].MouseSensitivity);
+        Assert.AreEqual(5100, settings.Games["override"].MouseSensitivity);
+        Assert.AreEqual(4200, ClientSteamMouseForwardingService.ResolveMouseSensitivity(settings, "default"));
+        Assert.AreEqual(5100, ClientSteamMouseForwardingService.ResolveMouseSensitivity(settings, "override"));
     }
 }

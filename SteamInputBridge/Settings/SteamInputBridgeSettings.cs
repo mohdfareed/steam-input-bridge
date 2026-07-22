@@ -25,6 +25,9 @@ public sealed class SteamInputBridgeSettings
     /// <summary>Steam integration settings.</summary>
     public SteamSettings Steam { get; set; } = new();
 
+    /// <summary>Default full-stick Steam mouse speed in pixels per second.</summary>
+    public double MouseSensitivity { get; set; } = 4_000.0;
+
     /// <summary>Global keyboard shortcut settings.</summary>
     public Collection<ShortcutEntry> Shortcuts { get; } = [];
 
@@ -123,6 +126,9 @@ public sealed class GameProfile
 
     /// <summary>Source used for mouse forwarding.</summary>
     public MouseInputMode MouseInput { get; set; } = MouseInputMode.Windows;
+
+    /// <summary>Optional full-stick Steam mouse speed overriding the application default.</summary>
+    public double? MouseSensitivity { get; set; }
 
     /// <summary>Keyboard shortcuts active only while this profile is active.</summary>
     public Collection<ShortcutEntry> Shortcuts { get; } = [];

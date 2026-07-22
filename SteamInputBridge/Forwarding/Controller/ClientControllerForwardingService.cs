@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -27,9 +26,11 @@ public sealed class ClientControllerForwardingService(
 {
     private static readonly TimeSpan ControllerEventWaitTimeout = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan SteamMouseTickInterval = TimeSpan.FromMilliseconds(4);
+    private const long NanosecondsPerTimeSpanTick = 100;
 
     private readonly Lock _gate = new();
     private readonly Dictionary<ulong, ControllerRoute> _routes = [];
+    private long _lastSteamMouseOutput;
     private bool _active;
 
     // MARK: Publics
@@ -47,6 +48,7 @@ public sealed class ClientControllerForwardingService(
             }
 
             _active = active;
+            Volatile.Write(ref _lastSteamMouseOutput, 0);
             if (!active)
             {
                 clear = [];
@@ -111,7 +113,6 @@ public sealed class ClientControllerForwardingService(
             await RefreshRoutesAsync(stoppingToken).ConfigureAwait(false);
             bool steamMouse = MouseInputKind() == MouseInputMode.Steam;
             TimeSpan eventWaitTimeout = steamMouse ? SteamMouseTickInterval : ControllerEventWaitTimeout;
-            long lastMouseTick = Stopwatch.GetTimestamp();
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -126,9 +127,7 @@ public sealed class ClientControllerForwardingService(
 
                 if (steamMouse)
                 {
-                    long now = Stopwatch.GetTimestamp();
-                    TickSteamMouse(Stopwatch.GetElapsedTime(lastMouseTick, now));
-                    lastMouseTick = now;
+                    TickHeldSteamMouse();
                 }
             }
         }
@@ -159,16 +158,15 @@ public sealed class ClientControllerForwardingService(
 
         foreach (ControllerRoute route in SnapshotRoutes())
         {
-            if (!route.Source.IsStateEvent(sdlEvent))
+            if (!route.Source.TryReadStateEvent(sdlEvent, out ControllerState state, out ulong timestamp))
             {
                 continue;
             }
 
             if (IsActive())
             {
-                ControllerState state = route.Source.ReadState();
                 route.Output?.Send(in state);
-                mouse.Send(route.SteamHandle, in state, TimeSpan.Zero);
+                SendSteamMouseUpdate(route.SteamHandle, in state, timestamp);
             }
 
             break;
@@ -183,18 +181,59 @@ public sealed class ClientControllerForwardingService(
         }
     }
 
-    private void TickSteamMouse(TimeSpan elapsed)
+    private void SendSteamMouseUpdate(ulong controllerHandle, in ControllerState state, ulong timestamp)
+    {
+        if (PrimaryControllerHandle() != controllerHandle)
+        {
+            return;
+        }
+
+        long now = checked((long)timestamp);
+        long previous = Interlocked.Exchange(ref _lastSteamMouseOutput, now);
+        mouse.Send(controllerHandle, in state, Elapsed(previous, now));
+    }
+
+    private void TickHeldSteamMouse()
     {
         if (!IsActive())
         {
             return;
         }
 
-        foreach (ControllerRoute route in SnapshotRoutes())
+        long previous = Volatile.Read(ref _lastSteamMouseOutput);
+        long now = checked((long)SDL.GetTicksNS());
+        if (previous == 0)
+        {
+            _ = Interlocked.CompareExchange(ref _lastSteamMouseOutput, now, 0);
+            return;
+        }
+
+        TimeSpan elapsed = Elapsed(previous, now);
+        if (elapsed < SteamMouseTickInterval ||
+            Interlocked.CompareExchange(ref _lastSteamMouseOutput, now, previous) != previous)
+        {
+            return;
+        }
+
+        ulong? primary = PrimaryControllerHandle();
+        if (!primary.HasValue)
+        {
+            return;
+        }
+
+        ControllerRoute? route = FindRoute(primary.Value);
+        if (route is not null)
         {
             ControllerState state = route.Source.ReadState();
             mouse.Send(route.SteamHandle, in state, elapsed);
         }
+    }
+
+    private static TimeSpan Elapsed(long previous, long now)
+    {
+        return previous == 0 || now <= previous
+            ? TimeSpan.Zero
+            : TimeSpan.FromTicks((now - previous) / NanosecondsPerTimeSpanTick);
     }
 
     // MARK: Route Management

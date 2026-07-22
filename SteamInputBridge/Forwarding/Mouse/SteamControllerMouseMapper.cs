@@ -7,13 +7,18 @@ namespace SteamInputBridge.Forwarding.Mouse;
 /// <summary>Maps Steam Input virtual controller state to mouse reports.</summary>
 internal sealed class SteamControllerMouseMapper
 {
-    // Steam controls the stick amplitude; this is only the linear stick-to-pixel conversion.
-    private const double MouseSensitivity = 4_000.0; // Pixels per second at full stick.
-
+    private double _sensitivity;
     private MouseButtons _buttons;
     private ControllerButtons _controllerButtons;
+    private short _rightX;
+    private short _rightY;
     private double _remainingX;
     private double _remainingY;
+
+    public SteamControllerMouseMapper(double sensitivity)
+    {
+        SetSensitivity(sensitivity);
+    }
 
     public bool TryMap(in ControllerState state, TimeSpan elapsed, out MouseReport report)
     {
@@ -33,8 +38,9 @@ internal sealed class SteamControllerMouseMapper
             buttons |= MouseButtons.Middle;
         }
 
-        _remainingX += NormalizeAxis(state.RightX) * MouseSensitivity * elapsed.TotalSeconds;
-        _remainingY += NormalizeAxis(state.RightY) * MouseSensitivity * elapsed.TotalSeconds;
+        // The elapsed interval belongs to the state held before this update arrived.
+        _remainingX += NormalizeAxis(_rightX) * _sensitivity * elapsed.TotalSeconds;
+        _remainingY += NormalizeAxis(_rightY) * _sensitivity * elapsed.TotalSeconds;
         int deltaX = (int)_remainingX;
         int deltaY = (int)_remainingY;
         _remainingX -= deltaX;
@@ -56,6 +62,8 @@ internal sealed class SteamControllerMouseMapper
         bool changed = buttons != _buttons || deltaX != 0 || deltaY != 0 || wheelDelta != 0;
         _buttons = buttons;
         _controllerButtons = state.Buttons;
+        _rightX = state.RightX;
+        _rightY = state.RightY;
         report = new(buttons, deltaX, deltaY, wheelDelta);
         return changed;
     }
@@ -64,8 +72,20 @@ internal sealed class SteamControllerMouseMapper
     {
         _buttons = MouseButtons.None;
         _controllerButtons = ControllerButtons.None;
+        _rightX = 0;
+        _rightY = 0;
         _remainingX = 0;
         _remainingY = 0;
+    }
+
+    public void SetSensitivity(double sensitivity)
+    {
+        if (!double.IsFinite(sensitivity) || sensitivity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sensitivity));
+        }
+
+        _sensitivity = sensitivity;
     }
 
     private static double NormalizeAxis(short value)

@@ -23,7 +23,8 @@ public sealed class ClientSteamMouseForwardingService(
 
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly Lock _gate = new();
-    private readonly SteamControllerMouseMapper _mapper = new();
+    private readonly SteamControllerMouseMapper _mapper = new(
+        ResolveMouseSensitivity(settings.Current, options.ProfileId));
     private IMouseOutput? _output;
     private TeensyMouseOutputService? _teensy;
     private ulong? _controllerHandle;
@@ -63,6 +64,7 @@ public sealed class ClientSteamMouseForwardingService(
                     await output.ClearAsync(cancellationToken).ConfigureAwait(false);
                     lock (_gate)
                     {
+                        _mapper.SetSensitivity(ResolveMouseSensitivity(settings.Current, options.ProfileId));
                         _mapper.Reset();
                         _output = output;
                     }
@@ -272,6 +274,14 @@ public sealed class ClientSteamMouseForwardingService(
         return settings.Current.Games.TryGetValue(options.ProfileId, out GameProfile? profile)
             ? profile
             : null;
+    }
+
+    internal static double ResolveMouseSensitivity(SteamInputBridgeSettings settings, string profileId)
+    {
+        return settings.Games.TryGetValue(profileId, out GameProfile? profile) &&
+            profile.MouseSensitivity.HasValue
+            ? profile.MouseSensitivity.Value
+            : settings.MouseSensitivity;
     }
 
     private static void Clear(IMouseOutput? output)
