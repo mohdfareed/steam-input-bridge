@@ -44,8 +44,11 @@ public sealed class ForwardingServiceTests
         TestMouseOutput output = outputFactory.Outputs[0];
         int initialClearCalls = output.ClearCalls;
         input.Send(new MouseInput(new(MouseButtons.Left, 3, 4, 0), DeviceName: null));
+        input.Send(new MouseInput(MouseReport.Empty, DeviceName: null));
 
-        Assert.HasCount(1, output.Sent);
+        Assert.HasCount(2, output.Sent);
+        Assert.AreEqual(MouseButtons.Left, output.Sent[0].Report.Buttons);
+        Assert.AreEqual(MouseButtons.None, output.Sent[1].Report.Buttons);
 
         shortcuts.Raise(
             1,
@@ -54,7 +57,7 @@ public sealed class ForwardingServiceTests
             ShortcutPhase.Pressed);
         input.Send(new MouseInput(new(MouseButtons.Right, 5, 6, 0), DeviceName: null));
 
-        Assert.HasCount(1, output.Sent);
+        Assert.HasCount(2, output.Sent);
         Assert.AreEqual(initialClearCalls + 1, output.ClearCalls);
         Assert.IsFalse(service.Status.PointerEnabled);
 

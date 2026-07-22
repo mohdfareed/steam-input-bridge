@@ -43,10 +43,7 @@ public sealed partial class ServerMouseForwardingService
         }
 
         ProfileStatus? activeProfile = _profiles.ActiveProfile;
-        if (output is null ||
-            !pointerEnabled ||
-            input.Report.IsEmpty ||
-            activeProfile?.Definition.MouseOutput != outputKind)
+        if (output is null || !pointerEnabled || activeProfile?.Definition.MouseOutput != outputKind)
         {
             return;
         }

@@ -34,13 +34,6 @@ public readonly record struct MouseReport(
 {
     /// <summary>Empty mouse report.</summary>
     public static MouseReport Empty => default;
-
-    /// <summary>Gets whether the report carries no input.</summary>
-    public bool IsEmpty =>
-        Buttons == MouseButtons.None &&
-        DeltaX == 0 &&
-        DeltaY == 0 &&
-        WheelDelta == 0;
 }
 
 /// <summary>Mouse report with source metadata.</summary>
