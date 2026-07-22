@@ -136,6 +136,11 @@ public static class SettingsValidation
                 failures.Add($"games:{profileId}:mouseOutput is invalid.");
             }
 
+            if (!Enum.IsDefined(profile.MouseInput))
+            {
+                failures.Add($"games:{profileId}:mouseInput is invalid.");
+            }
+
             ValidateShortcuts($"games:{profileId}:shortcuts", profile.Shortcuts, failures);
         }
     }

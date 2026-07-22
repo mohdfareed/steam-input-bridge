@@ -19,6 +19,9 @@ Steam Input profile management of non-Steam games with controller/mouse emulatio
   - This is due to controller hiding limitations preventing a clean solution to double input.
 - Mouse emulation allows Steam Input to emulate a mouse in games that require a physical mouse.
   - It supports both VIIPER and a Teensy board. Board firmware is bundled with the app.
+  - `"MouseInput": "Windows"` forwards Windows mouse input and is the default.
+  - `"MouseInput": "Steam"` maps the resolved Steam virtual controller directly in the active client:
+    right stick moves, RT/LT click left/right, RB/LB scroll down/up, and R3 middle-clicks.
 - Keyboard shortcuts allow the following actions to be mapped in Steam Input configurations:
   - `Microphone` - toggles the system microphone, with an always-on-top indicator.
   - `#RRGGBB` - adds the color to the stack of active action colors.

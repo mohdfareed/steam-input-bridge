@@ -66,15 +66,52 @@ public sealed class ForwardingServiceTests
     }
 
     [TestMethod]
+    public async Task ServerMouseForwardingTransfersOutputOwnershipToClient()
+    {
+        using TestProfileRuntime runtime = await TestProfileRuntime.CreateStartedAsync(MouseOutput.Viiper)
+            .ConfigureAwait(false);
+        TestMouseInputSource input = new();
+        TestMouseOutputFactory outputFactory = new();
+        await using ServerMouseForwardingService service = new(
+            runtime.ActiveProfiles,
+            new TestShortcutSource(),
+            new TestMouseInputSourceFactory(input),
+            outputFactory,
+            NullLogger<ServerMouseForwardingService>.Instance);
+
+        await service.StartAsync(default).ConfigureAwait(false);
+        await WaitUntilAsync(() => outputFactory.Outputs.Count == 1).ConfigureAwait(false);
+
+        TestMouseOutput serverOutput = outputFactory.Outputs[0];
+        await service.SetClientOwnsOutputAsync(
+                clientOwnsOutput: true,
+                clientUsesTeensy: false)
+            .ConfigureAwait(false);
+
+        Assert.IsTrue(serverOutput.Disposed);
+        Assert.IsFalse(service.Status.OutputConnected);
+
+        await service.SetClientOwnsOutputAsync(
+                clientOwnsOutput: false,
+                clientUsesTeensy: false)
+            .ConfigureAwait(false);
+        Assert.HasCount(2, outputFactory.Outputs);
+
+        await service.StopAsync(default).ConfigureAwait(false);
+    }
+
+    [TestMethod]
     public async Task ServerControllerForwardingPublishesActiveClientOnly()
     {
         using TestProfileRuntime runtime = await TestProfileRuntime.CreateStartedAsync(
                 MouseOutput.None,
                 includeInactiveClient: true)
             .ConfigureAwait(false);
+        await using ServerMouseForwardingService mouse = CreateMouseService(runtime.ActiveProfiles);
         ServerControllerForwardingService service = new(
             runtime.ActiveProfiles,
             runtime.Clients,
+            mouse,
             NullLogger<ServerControllerForwardingService>.Instance);
 
         await service.StartAsync(default).ConfigureAwait(false);
@@ -83,6 +120,7 @@ public sealed class ForwardingServiceTests
 
         Assert.IsTrue(runtime.ActiveClient.SetActiveCalls.Contains(true));
         Assert.IsFalse(runtime.InactiveClient.SetActiveCalls.Contains(true));
+        Assert.IsTrue(runtime.ActiveClient.PointerEnabledCalls.Contains(true));
 
         await service.StopAsync(default).ConfigureAwait(false);
         Assert.IsFalse(runtime.ActiveClient.SetActiveCalls[^1]);
@@ -94,9 +132,11 @@ public sealed class ForwardingServiceTests
     {
         using TestProfileRuntime runtime = await TestProfileRuntime.CreateStartedAsync(MouseOutput.None)
             .ConfigureAwait(false);
+        await using ServerMouseForwardingService mouse = CreateMouseService(runtime.ActiveProfiles);
         ServerControllerForwardingService service = new(
             runtime.ActiveProfiles,
             runtime.Clients,
+            mouse,
             NullLogger<ServerControllerForwardingService>.Instance);
 
         await service.StartAsync(default).ConfigureAwait(false);
@@ -115,6 +155,17 @@ public sealed class ForwardingServiceTests
         {
             await Task.Delay(10, timeout.Token).ConfigureAwait(false);
         }
+    }
+
+    private static ServerMouseForwardingService CreateMouseService(ActiveProfileService profiles)
+    {
+        TestMouseInputSource input = new();
+        return new(
+            profiles,
+            new TestShortcutSource(),
+            new TestMouseInputSourceFactory(input),
+            new TestMouseOutputFactory(),
+            NullLogger<ServerMouseForwardingService>.Instance);
     }
 
     private sealed class TestMouseInputSourceFactory(TestMouseInputSource source) : IMouseInputSourceFactory
@@ -306,6 +357,8 @@ public sealed class ForwardingServiceTests
 
         public Exception? SetActiveException { get; set; }
 
+        public List<bool> PointerEnabledCalls { get; } = [];
+
         public Task StopAsync()
         {
             return Task.CompletedTask;
@@ -327,6 +380,12 @@ public sealed class ForwardingServiceTests
             }
 
             SetActiveCalls.Add(active);
+            return Task.CompletedTask;
+        }
+
+        public Task SetMousePointerEnabledAsync(bool enabled)
+        {
+            PointerEnabledCalls.Add(enabled);
             return Task.CompletedTask;
         }
     }

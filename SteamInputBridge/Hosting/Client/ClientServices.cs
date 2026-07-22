@@ -1,7 +1,9 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
 using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Outputs.Viiper.Controller;
+using SteamInputBridge.Outputs.Viiper.Mouse;
 
 namespace SteamInputBridge.Hosting.Client;
 
@@ -16,6 +18,8 @@ public static class ClientServices
 
         _ = services.AddSingleton(new ClientRunOptions(profileId));
         _ = services.AddSingleton<ViiperControllerOutputFactory>();
+        _ = services.AddSingleton<ViiperMouseOutputFactory>();
+        _ = services.AddSingleton<ClientSteamMouseForwardingService>();
         _ = services.AddSingleton<ClientControllerForwardingService>();
         _ = services.AddHostedService(static services => services.GetRequiredService<ClientControllerForwardingService>());
         _ = services.AddHostedService<BridgeClient>();

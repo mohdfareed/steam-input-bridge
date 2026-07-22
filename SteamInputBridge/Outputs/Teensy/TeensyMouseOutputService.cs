@@ -114,6 +114,13 @@ public sealed class TeensyMouseOutputService : BackgroundService
         bool changed;
         lock (_gate)
         {
+            if (_connection.IsConnected)
+            {
+                // Release held buttons before another process takes ownership of the board.
+                int bytes = TeensyProtocol.WriteMouseReport(_frame, _sequence++, MouseReport.Empty);
+                _ = _connection.TryWrite(_frame, bytes);
+            }
+
             _connectionPauseCount++;
             changed = SetConnectingLocked();
         }
@@ -167,6 +174,7 @@ public sealed class TeensyMouseOutputService : BackgroundService
             }
 
             _settings.Changed -= OnSettingsChanged;
+            _ = WriteReport(MouseReport.Empty);
             lock (_gate)
             {
                 _connection.Close();

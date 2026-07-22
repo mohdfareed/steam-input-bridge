@@ -121,6 +121,19 @@ public sealed class GameProfile
     /// <summary>Virtual pointer output.</summary>
     public MouseOutput? MouseOutput { get; set; }
 
+    /// <summary>Source used for mouse forwarding.</summary>
+    public MouseInputMode MouseInput { get; set; } = MouseInputMode.Windows;
+
     /// <summary>Keyboard shortcuts active only while this profile is active.</summary>
     public Collection<ShortcutEntry> Shortcuts { get; } = [];
+}
+
+/// <summary>Source used for mouse forwarding.</summary>
+public enum MouseInputMode
+{
+    /// <summary>Windows mouse input.</summary>
+    Windows,
+
+    /// <summary>Steam Input virtual controller state.</summary>
+    Steam,
 }

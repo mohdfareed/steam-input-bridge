@@ -4,7 +4,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Forwarding.Mouse;
+using SteamInputBridge.Outputs.Mouse;
 using SteamInputBridge.Profiles;
+using SteamInputBridge.Settings;
 using StreamJsonRpc;
 
 namespace SteamInputBridge.Forwarding.Controller;
@@ -13,8 +16,11 @@ namespace SteamInputBridge.Forwarding.Controller;
 public sealed class ServerControllerForwardingService(
     ActiveProfileService profiles,
     ProfileClientsService clients,
-    ILogger<ServerControllerForwardingService> logger) : IHostedService
+    ServerMouseForwardingService mouse,
+    ILogger<ServerControllerForwardingService> logger) : IHostedService, IDisposable
 {
+    private readonly SemaphoreSlim _publish = new(1, 1);
+
     // MARK: Lifecycle
     // ========================================================================
 
@@ -24,6 +30,7 @@ public sealed class ServerControllerForwardingService(
         _ = cancellationToken;
         profiles.ActiveProfileChanged += OnActiveProfileChanged;
         clients.ClientsChanged += OnClientsChanged;
+        mouse.PointerEnabledChanged += OnPointerEnabledChanged;
         return PublishActiveStateAsync(CancellationToken.None);
     }
 
@@ -33,6 +40,7 @@ public sealed class ServerControllerForwardingService(
         _ = cancellationToken;
         profiles.ActiveProfileChanged -= OnActiveProfileChanged;
         clients.ClientsChanged -= OnClientsChanged;
+        mouse.PointerEnabledChanged -= OnPointerEnabledChanged;
         return PublishInactiveStateAsync();
     }
 
@@ -53,27 +61,77 @@ public sealed class ServerControllerForwardingService(
         _ = PublishActiveStateAsync(CancellationToken.None);
     }
 
+    private void OnPointerEnabledChanged(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        _ = PublishPointerStateAsync(CancellationToken.None);
+    }
+
     // MARK: Implementation
     // ========================================================================
 
     private async Task PublishActiveStateAsync(CancellationToken cancellationToken)
     {
-        string? activeProfileId = profiles.ActiveProfile?.Id;
-        IReadOnlyList<ProfileClientsService.BridgeClientConnection> connections = clients.Connections;
-        foreach (ProfileClientsService.BridgeClientConnection connection in connections)
+        await _publish.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            bool active = string.Equals(connection.ProfileId, activeProfileId, StringComparison.OrdinalIgnoreCase);
-            await SetActiveAsync(connection, active).ConfigureAwait(false);
+            ProfileStatus? activeProfile = profiles.ActiveProfile;
+            string? activeProfileId = activeProfile?.Id;
+            IReadOnlyList<ProfileClientsService.BridgeClientConnection> connections = clients.Connections;
+
+            foreach (ProfileClientsService.BridgeClientConnection connection in connections)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!string.Equals(connection.ProfileId, activeProfileId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await SetActiveAsync(connection, active: false).ConfigureAwait(false);
+                }
+            }
+
+            bool clientOwnsMouse = activeProfile?.Definition.MouseInput == MouseInputMode.Steam &&
+                activeProfile.Definition.MouseOutput.HasValue;
+            bool clientUsesTeensy = clientOwnsMouse &&
+                activeProfile!.Definition.MouseOutput == MouseOutput.Teensy;
+            await mouse.SetClientOwnsOutputAsync(clientOwnsMouse, clientUsesTeensy, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (ProfileClientsService.BridgeClientConnection connection in connections)
+            {
+                if (string.Equals(connection.ProfileId, activeProfileId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await SetActiveAsync(connection, active: true).ConfigureAwait(false);
+                    await SetPointerEnabledAsync(connection, mouse.Status.PointerEnabled).ConfigureAwait(false);
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _ = _publish.Release();
         }
     }
 
     private async Task PublishInactiveStateAsync()
     {
-        IReadOnlyList<ProfileClientsService.BridgeClientConnection> connections = clients.Connections;
-        foreach (ProfileClientsService.BridgeClientConnection connection in connections)
+        await _publish.WaitAsync().ConfigureAwait(false);
+        try
         {
-            await SetActiveAsync(connection, active: false).ConfigureAwait(false);
+            IReadOnlyList<ProfileClientsService.BridgeClientConnection> connections = clients.Connections;
+            foreach (ProfileClientsService.BridgeClientConnection connection in connections)
+            {
+                await SetActiveAsync(connection, active: false).ConfigureAwait(false);
+            }
+
+            await mouse.SetClientOwnsOutputAsync(
+                    clientOwnsOutput: false,
+                    clientUsesTeensy: false,
+                    cancellationToken: CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = _publish.Release();
         }
     }
 
@@ -87,6 +145,48 @@ public sealed class ServerControllerForwardingService(
         {
             LogActiveStateUpdateFailed(logger, connection.ProfileId, connection.ConnectionId, exception.Message, null);
         }
+    }
+
+    private async Task PublishPointerStateAsync(CancellationToken cancellationToken)
+    {
+        await _publish.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            string? activeProfileId = profiles.ActiveProfile?.Id;
+            foreach (ProfileClientsService.BridgeClientConnection connection in clients.Connections)
+            {
+                if (string.Equals(connection.ProfileId, activeProfileId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await SetPointerEnabledAsync(connection, mouse.Status.PointerEnabled).ConfigureAwait(false);
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _ = _publish.Release();
+        }
+    }
+
+    private async Task SetPointerEnabledAsync(
+        ProfileClientsService.BridgeClientConnection connection,
+        bool enabled)
+    {
+        try
+        {
+            await connection.Control.SetMousePointerEnabledAsync(enabled).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or ObjectDisposedException or ConnectionLostException)
+        {
+            LogActiveStateUpdateFailed(logger, connection.ProfileId, connection.ConnectionId, exception.Message, null);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _publish.Dispose();
     }
 
     // MARK: Logging

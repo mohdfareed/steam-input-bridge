@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SDL3;
+using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Hosting.Client;
 using SteamInputBridge.Inputs.Controller;
@@ -20,9 +22,11 @@ public sealed class ClientControllerForwardingService(
     ClientRunOptions options,
     SettingsService settings,
     ViiperControllerOutputFactory outputFactory,
+    ClientSteamMouseForwardingService mouse,
     ILogger<ClientControllerForwardingService> logger) : BackgroundService, IAsyncDisposable
 {
-    private static readonly TimeSpan EventWaitTimeout = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan ControllerEventWaitTimeout = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan SteamMouseTickInterval = TimeSpan.FromMilliseconds(4);
 
     private readonly Lock _gate = new();
     private readonly Dictionary<ulong, ControllerRoute> _routes = [];
@@ -48,7 +52,10 @@ public sealed class ClientControllerForwardingService(
                 clear = [];
                 foreach (ControllerRoute route in _routes.Values)
                 {
-                    clear.Add(route.Output);
+                    if (route.Output is not null)
+                    {
+                        clear.Add(route.Output);
+                    }
                 }
             }
         }
@@ -70,7 +77,13 @@ public sealed class ClientControllerForwardingService(
             lock (_gate)
             {
                 int routeCount = _routes.Count;
-                return new(_active, routeCount, routeCount);
+                int outputCount = 0;
+                foreach (ControllerRoute route in _routes.Values)
+                {
+                    outputCount += route.Output is null ? 0 : 1;
+                }
+
+                return new(_active, routeCount, outputCount);
             }
         }
     }
@@ -87,7 +100,7 @@ public sealed class ClientControllerForwardingService(
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (ControllerOutputKind() != ControllerOutput.Xbox360)
+        if (ControllerOutputKind() != ControllerOutput.Xbox360 && MouseInputKind() != MouseInputMode.Steam)
         {
             return;
         }
@@ -96,18 +109,26 @@ public sealed class ClientControllerForwardingService(
         {
             SdlGamepadRuntime.EnsureInitialized();
             await RefreshRoutesAsync(stoppingToken).ConfigureAwait(false);
+            bool steamMouse = MouseInputKind() == MouseInputMode.Steam;
+            TimeSpan eventWaitTimeout = steamMouse ? SteamMouseTickInterval : ControllerEventWaitTimeout;
+            long lastMouseTick = Stopwatch.GetTimestamp();
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                if (!SDL.WaitEventTimeout(out SDL.Event sdlEvent, (int)EventWaitTimeout.TotalMilliseconds))
+                if (SDL.WaitEventTimeout(out SDL.Event sdlEvent, (int)eventWaitTimeout.TotalMilliseconds))
                 {
-                    continue;
+                    await ProcessEventAsync(sdlEvent, stoppingToken).ConfigureAwait(false);
+                    while (SDL.PollEvent(out SDL.Event queuedEvent))
+                    {
+                        await ProcessEventAsync(queuedEvent, stoppingToken).ConfigureAwait(false);
+                    }
                 }
 
-                await ProcessEventAsync(sdlEvent, stoppingToken).ConfigureAwait(false);
-                while (SDL.PollEvent(out SDL.Event queuedEvent))
+                if (steamMouse)
                 {
-                    await ProcessEventAsync(queuedEvent, stoppingToken).ConfigureAwait(false);
+                    long now = Stopwatch.GetTimestamp();
+                    TickSteamMouse(Stopwatch.GetElapsedTime(lastMouseTick, now));
+                    lastMouseTick = now;
                 }
             }
         }
@@ -146,7 +167,8 @@ public sealed class ClientControllerForwardingService(
             if (IsActive())
             {
                 ControllerState state = route.Source.ReadState();
-                route.Output.Send(in state);
+                route.Output?.Send(in state);
+                mouse.Send(route.SteamHandle, in state, TimeSpan.Zero);
             }
 
             break;
@@ -158,6 +180,20 @@ public sealed class ClientControllerForwardingService(
         lock (_gate)
         {
             return _active;
+        }
+    }
+
+    private void TickSteamMouse(TimeSpan elapsed)
+    {
+        if (!IsActive())
+        {
+            return;
+        }
+
+        foreach (ControllerRoute route in SnapshotRoutes())
+        {
+            ControllerState state = route.Source.ReadState();
+            mouse.Send(route.SteamHandle, in state, elapsed);
         }
     }
 
@@ -184,6 +220,7 @@ public sealed class ClientControllerForwardingService(
         }
 
         await RemoveMissingRoutesAsync(seen).ConfigureAwait(false);
+        mouse.SelectController(PrimaryControllerHandle());
     }
 
     private ControllerRoute? FindRoute(ulong steamHandle)
@@ -199,10 +236,14 @@ public sealed class ClientControllerForwardingService(
 #pragma warning disable CA2000 // Ownership transfers to the route or is disposed in the catch block.
         SdlSteamControllerSource source = SdlSteamControllerSource.Open(controller);
 #pragma warning restore CA2000
-        IControllerOutput output;
+        IControllerOutput? output = null;
         try
         {
-            output = await outputFactory.ConnectXbox360Async(controller.Name, cancellationToken).ConfigureAwait(false);
+            if (ControllerOutputKind() == ControllerOutput.Xbox360)
+            {
+                output = await outputFactory.ConnectXbox360Async(controller.Name, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch
         {
@@ -211,7 +252,10 @@ public sealed class ClientControllerForwardingService(
         }
 
         ControllerRoute route = new(controller.SteamHandle, source, output);
-        route.Output.RumbleReceived += OnRumbleReceived;
+        if (output is { } connectedOutput)
+        {
+            connectedOutput.RumbleReceived += OnRumbleReceived;
+        }
 
         lock (_gate)
         {
@@ -284,9 +328,13 @@ public sealed class ClientControllerForwardingService(
 
     private async ValueTask DisposeRouteAsync(ControllerRoute route)
     {
-        route.Output.RumbleReceived -= OnRumbleReceived;
-        route.Output.Clear();
-        await route.Output.DisposeAsync().ConfigureAwait(false);
+        if (route.Output is not null)
+        {
+            route.Output.RumbleReceived -= OnRumbleReceived;
+            route.Output.Clear();
+            await route.Output.DisposeAsync().ConfigureAwait(false);
+        }
+
         await route.Source.DisposeAsync().ConfigureAwait(false);
     }
 
@@ -323,6 +371,30 @@ public sealed class ClientControllerForwardingService(
             : null;
     }
 
+    private MouseInputMode MouseInputKind()
+    {
+        return settings.Current.Games.TryGetValue(options.ProfileId, out GameProfile? profile)
+            ? profile.MouseInput
+            : MouseInputMode.Windows;
+    }
+
+    private ulong? PrimaryControllerHandle()
+    {
+        lock (_gate)
+        {
+            ulong? primary = null;
+            foreach (ulong handle in _routes.Keys)
+            {
+                if (!primary.HasValue || handle < primary.Value)
+                {
+                    primary = handle;
+                }
+            }
+
+            return primary;
+        }
+    }
+
     // MARK: Logging
     // ========================================================================
 
@@ -335,12 +407,12 @@ public sealed class ClientControllerForwardingService(
     private sealed class ControllerRoute(
         ulong steamHandle,
         SdlSteamControllerSource source,
-        IControllerOutput output)
+        IControllerOutput? output)
     {
         public ulong SteamHandle { get; } = steamHandle;
 
         public SdlSteamControllerSource Source { get; set; } = source;
 
-        public IControllerOutput Output { get; } = output;
+        public IControllerOutput? Output { get; } = output;
     }
 }

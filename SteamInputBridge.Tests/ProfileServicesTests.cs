@@ -300,6 +300,12 @@ public sealed class ProfileServicesTests
             SetActiveCalls.Add(active);
             return Task.CompletedTask;
         }
+
+        public Task SetMousePointerEnabledAsync(bool enabled)
+        {
+            _ = enabled;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestLogger<T> : ILogger<T>

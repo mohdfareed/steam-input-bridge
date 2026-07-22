@@ -411,5 +411,11 @@ public sealed class ShortcutServiceTests
             _ = active;
             return Task.CompletedTask;
         }
+
+        public Task SetMousePointerEnabledAsync(bool enabled)
+        {
+            _ = enabled;
+            return Task.CompletedTask;
+        }
     }
 }

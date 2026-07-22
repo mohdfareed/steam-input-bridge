@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SteamInputBridge.Diagnostics;
 using SteamInputBridge.Forwarding.Controller;
+using SteamInputBridge.Forwarding.Mouse;
 using SteamInputBridge.Steam;
 using StreamJsonRpc;
 
@@ -19,6 +20,7 @@ public sealed record ClientRunOptions(string ProfileId);
 public sealed class BridgeClient(
     ClientRunOptions options,
     ClientControllerForwardingService controllers,
+    ClientSteamMouseForwardingService mouse,
     IHostApplicationLifetime lifetime,
     ILogger<BridgeClient> logger)
     : BackgroundService, IBridgeClientApi
@@ -80,9 +82,24 @@ public sealed class BridgeClient(
     }
 
     /// <inheritdoc />
-    public Task SetActiveAsync(bool active)
+    public async Task SetActiveAsync(bool active)
     {
-        controllers.SetActive(active);
+        if (active)
+        {
+            await mouse.SetActiveAsync(active: true).ConfigureAwait(false);
+            controllers.SetActive(active: true);
+        }
+        else
+        {
+            controllers.SetActive(active: false);
+            await mouse.SetActiveAsync(active: false).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task SetMousePointerEnabledAsync(bool enabled)
+    {
+        mouse.SetPointerEnabled(enabled);
         return Task.CompletedTask;
     }
 

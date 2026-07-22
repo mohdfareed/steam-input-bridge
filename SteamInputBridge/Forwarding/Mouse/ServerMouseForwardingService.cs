@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Inputs.Mouse;
 using SteamInputBridge.Outputs.Mouse;
+using SteamInputBridge.Outputs.Teensy;
 using SteamInputBridge.Profiles;
 using SteamInputBridge.Shortcuts;
 using SteamInputBridge.Shortcuts.Runtime;
@@ -19,6 +20,7 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
     private readonly IShortcutSource _shortcuts;
     private readonly IMouseInputSourceFactory _inputFactory;
     private readonly IMouseOutputFactory _outputFactory;
+    private readonly TeensyMouseOutputService? _teensy;
     private readonly ILogger<ServerMouseForwardingService> _logger;
     private readonly Lock _gate = new();
     private readonly CancellationTokenSource _stop = new();
@@ -28,6 +30,8 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
     private IMouseOutput? _output;
     private MouseOutput _outputKind = MouseOutput.None;
     private bool _pointerEnabled = true;
+    private bool _clientOwnsOutput;
+    private IDisposable? _teensyPause;
     private Task? _inputTask;
     private bool _disposed;
 
@@ -37,13 +41,15 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
         ShortcutService shortcuts,
         IMouseInputSourceFactory inputFactory,
         IMouseOutputFactory outputFactory,
+        TeensyMouseOutputService teensy,
         ILogger<ServerMouseForwardingService> logger)
         : this(
             profiles,
-            (IShortcutSource)(shortcuts ?? throw new ArgumentNullException(nameof(shortcuts))),
+            shortcuts ?? throw new ArgumentNullException(nameof(shortcuts)),
             inputFactory,
             outputFactory,
-            logger)
+            logger,
+            teensy)
     {
     }
 
@@ -52,7 +58,8 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
         IShortcutSource shortcuts,
         IMouseInputSourceFactory inputFactory,
         IMouseOutputFactory outputFactory,
-        ILogger<ServerMouseForwardingService> logger)
+        ILogger<ServerMouseForwardingService> logger,
+        TeensyMouseOutputService? teensy = null)
     {
         ArgumentNullException.ThrowIfNull(profiles);
         ArgumentNullException.ThrowIfNull(shortcuts);
@@ -65,6 +72,7 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
         _inputFactory = inputFactory;
         _outputFactory = outputFactory;
         _logger = logger;
+        _teensy = teensy;
     }
 
     // MARK: Publics
@@ -94,6 +102,39 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
                 outputConnected,
                 pointerEnabled,
                 forwarding);
+        }
+    }
+
+    /// <summary>Raised when the mouse pointer shortcut gate changes.</summary>
+    public event EventHandler? PointerEnabledChanged;
+
+    /// <summary>Transfers mouse output ownership between the server and active client.</summary>
+    public async Task SetClientOwnsOutputAsync(
+        bool clientOwnsOutput,
+        bool clientUsesTeensy,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            _clientOwnsOutput = clientOwnsOutput;
+        }
+
+        if (clientOwnsOutput)
+        {
+            await RefreshOutputAsync(cancellationToken).ConfigureAwait(false);
+            if (clientUsesTeensy && _teensyPause is null)
+            {
+                _teensyPause = _teensy?.PauseConnection();
+            }
+            else if (!clientUsesTeensy)
+            {
+                ReleaseTeensyPause();
+            }
+        }
+        else
+        {
+            ReleaseTeensyPause();
+            await RefreshOutputAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -130,6 +171,7 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
         }
 
         await DisposeOutputAsync().ConfigureAwait(false);
+        ReleaseTeensyPause();
         if (_input is not null)
         {
             await _input.DisposeAsync().ConfigureAwait(false);
@@ -153,6 +195,7 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
         _stop.Dispose();
 
         await DisposeOutputAsync().ConfigureAwait(false);
+        ReleaseTeensyPause();
         if (_input is not null)
         {
             await _input.DisposeAsync().ConfigureAwait(false);
@@ -168,6 +211,12 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
         _ = sender;
         _ = args;
         _ = RefreshOutputAsync(CancellationToken.None);
+    }
+
+    private void ReleaseTeensyPause()
+    {
+        _teensyPause?.Dispose();
+        _teensyPause = null;
     }
 
     private void OnShortcut(object? sender, ShortcutEventArgs args)
@@ -195,6 +244,7 @@ public sealed partial class ServerMouseForwardingService : IHostedService, IAsyn
         }
 
         Clear(clear);
+        PointerEnabledChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // MARK: Logging

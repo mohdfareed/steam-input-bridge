@@ -38,6 +38,9 @@ public partial interface IBridgeClientApi
 
     /// <summary>Sets whether this client is the active forwarding client.</summary>
     Task SetActiveAsync(bool active);
+
+    /// <summary>Sets whether client-owned mouse movement is enabled.</summary>
+    Task SetMousePointerEnabledAsync(bool enabled);
 }
 
 /// <summary>Current server status snapshot.</summary>

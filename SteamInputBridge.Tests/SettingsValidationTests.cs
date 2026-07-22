@@ -31,6 +31,7 @@ public sealed class SettingsValidationTests
         {
             ControllerOutput = (ControllerOutput)99,
             MouseOutput = (MouseOutput)99,
+            MouseInput = (MouseInputMode)99,
         };
         settings.Games["bad"].Shortcuts.Add(new ShortcutEntry
         {
@@ -55,6 +56,7 @@ public sealed class SettingsValidationTests
         StringAssert.Contains(errors, "games:bad:receiverProcesses is required when executable is missing.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:controllerOutput is invalid.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:mouseOutput is invalid.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "games:bad:mouseInput is invalid.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:shortcuts:Ctrl+Alt:keys is invalid", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:shortcuts:Ctrl+Alt:target is required.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:shortcuts:F14:target is required.", StringComparison.Ordinal);
@@ -115,5 +117,23 @@ public sealed class SettingsValidationTests
         Assert.HasCount(1, settings.Shortcuts);
         Assert.AreEqual(new ShortcutTargetSetting(ShortcutTarget.Microphone, null), settings.Shortcuts[0].Target);
         Assert.AreEqual(ShortcutValue.Toggle, settings.Shortcuts[0].Action);
+    }
+
+    [TestMethod]
+    public void ConfigurationBindsSteamMouseInput()
+    {
+        Dictionary<string, string?> values = new()
+        {
+            ["SteamInputBridge:Games:test:ReceiverProcesses:0"] = "Game.exe",
+            ["SteamInputBridge:Games:test:MouseInput"] = "Steam",
+        };
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build();
+        SteamInputBridgeSettings settings = new();
+
+        configuration.GetSection(SteamInputBridgeSettings.SectionName).Bind(settings);
+
+        Assert.AreEqual(MouseInputMode.Steam, settings.Games["test"].MouseInput);
     }
 }

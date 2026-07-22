@@ -56,9 +56,19 @@ public sealed partial class ServerMouseForwardingService
 
     private MouseOutput DesiredOutputKind()
     {
+        lock (_gate)
+        {
+            if (_clientOwnsOutput)
+            {
+                return MouseOutput.None;
+            }
+        }
+
         foreach (ProfileStatus profile in _profiles.Profiles)
         {
-            if (profile.ClientProcessId.HasValue && profile.Definition.MouseOutput.HasValue)
+            if (profile.ClientProcessId.HasValue &&
+                profile.Definition.MouseInput == Settings.MouseInputMode.Windows &&
+                profile.Definition.MouseOutput.HasValue)
             {
                 return profile.Definition.MouseOutput.Value;
             }
