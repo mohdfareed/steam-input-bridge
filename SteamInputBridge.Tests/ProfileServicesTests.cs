@@ -209,6 +209,14 @@ public sealed class ProfileServicesTests
     }
 
     [TestMethod]
+    [DataRow(@"C:\Riot Games\Riot Client\RiotClientServices.exe", "Riot Client.exe")]
+    [DataRow(@"C:\Games\CustomLauncher.exe", "CustomLauncher.exe")]
+    public void ProfileReceiverSessionResolvesLauncherWindowProcess(string executable, string expected)
+    {
+        Assert.AreEqual(expected, ProfileReceiverSession.ResolveLauncherWindowProcessName(executable));
+    }
+
+    [TestMethod]
     public async Task ProfileReceiverSessionStopsClientWhenTrackedReceiverExits()
     {
         GameProfile profile = new();

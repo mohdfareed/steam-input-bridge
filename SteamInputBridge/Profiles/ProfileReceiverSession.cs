@@ -158,7 +158,7 @@ internal sealed class ProfileReceiverSession : IDisposable
                 if (!receiverSeen && !string.IsNullOrWhiteSpace(_definition.Executable))
                 {
                     HashSet<int> launcherProcessIds = [];
-                    AddProcessIds(launcherProcessIds, _definition.Executable);
+                    AddProcessIds(launcherProcessIds, ResolveLauncherWindowProcessName(_definition.Executable));
                     foreach (int launcherProcessId in launcherProcessIds)
                     {
                         _ = _activateProcess(launcherProcessId);
@@ -227,6 +227,18 @@ internal sealed class ProfileReceiverSession : IDisposable
                 LogReceiverActivationRejected(_logger, ProfileId, receiverProcessId, null);
             }
         }
+    }
+
+    internal static string ResolveLauncherWindowProcessName(string executable)
+    {
+        string processName = Path.GetFileName(executable.Trim());
+        if (string.Equals(processName, "RiotClientServices.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            // RiotClientServices delegates its visible Electron window to this child process.
+            return "Riot Client.exe";
+        }
+
+        return processName;
     }
 
     private static HashSet<int> FindReceivers(IReadOnlyList<string> processNames)
