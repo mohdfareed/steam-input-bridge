@@ -268,8 +268,26 @@ public sealed class TeensyMouseOutputService : BackgroundService
                 return false;
             }
 
-            int bytes = TeensyProtocol.WriteMouseReport(_frame, _sequence++, report);
-            return !_connection.TryWrite(_frame, bytes) && SetConnectingLocked();
+            if (MouseReportSegmentation.FitsInInt16(in report))
+            {
+                int bytes = TeensyProtocol.WriteMouseReport(_frame, _sequence++, report);
+                return !_connection.TryWrite(_frame, bytes) && SetConnectingLocked();
+            }
+
+            // Keep one source report in the bounded channel, then preserve its full
+            // signed totals while serializing it into the protocol's 16-bit fields.
+            MouseReport remaining = report;
+            while (MouseReportSegmentation.HasDeltas(in remaining))
+            {
+                MouseReport segment = MouseReportSegmentation.TakeSegment(ref remaining);
+                int bytes = TeensyProtocol.WriteMouseReport(_frame, _sequence++, segment);
+                if (!_connection.TryWrite(_frame, bytes))
+                {
+                    return SetConnectingLocked();
+                }
+            }
+
+            return false;
         }
     }
 

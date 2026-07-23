@@ -92,7 +92,7 @@ public sealed class ViiperXbox360ControllerOutput : IControllerOutput
         return ViiperDeviceLifecycle.ReclaimDevicesAsync(options, DeviceDefinition, cancellationToken);
     }
 
-    private static ViiperXbox360Input MapReport(Xbox360Report report)
+    internal static ViiperXbox360Input MapReport(Xbox360Report report)
     {
         return new ViiperXbox360Input
         {

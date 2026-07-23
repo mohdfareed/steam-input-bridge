@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using SteamInputBridge.Inputs.Mouse;
 using SteamInputBridge.Outputs.Mouse;
 using SteamInputBridge.Outputs.Viiper.Shared;
+using ViiperDevice = global::Viiper.Client.ViiperDevice;
 using ViiperMouseInput = global::Viiper.Client.Devices.Mouse.MouseInput;
 
 namespace SteamInputBridge.Outputs.Viiper.Mouse;
@@ -51,9 +52,23 @@ public sealed class ViiperMouseOutput : IMouseOutput
 
     private ValueTask SendReportAsync(MouseReport report, CancellationToken cancellationToken)
     {
-        return new ValueTask(_device
-            .GetDeviceOrThrow("Mouse output is not connected.")
-            .SendAsync(MapReport(report), cancellationToken));
+        ViiperDevice device = _device.GetDeviceOrThrow("Mouse output is not connected.");
+        return MouseReportSegmentation.FitsInInt16(in report)
+            ? new ValueTask(device.SendAsync(MapReport(report), cancellationToken))
+            : SendSegmentedReportAsync(device, report, cancellationToken);
+    }
+
+    private static async ValueTask SendSegmentedReportAsync(
+        ViiperDevice device,
+        MouseReport report,
+        CancellationToken cancellationToken)
+    {
+        MouseReport remaining = report;
+        while (MouseReportSegmentation.HasDeltas(in remaining))
+        {
+            MouseReport segment = MouseReportSegmentation.TakeSegment(ref remaining);
+            await device.SendAsync(MapReport(segment), cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />

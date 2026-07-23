@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using SteamInputBridge.Inputs.Mouse;
 using SteamInputBridge.Outputs.Viiper.Mouse;
 
@@ -22,6 +24,33 @@ public sealed class ViiperMouseOutputTests
         Assert.AreEqual((short)-34, input.Dy);
         Assert.AreEqual((short)120, input.Wheel);
         Assert.AreEqual((short)0, input.Pan);
+    }
+
+    [TestMethod]
+    public void SegmentedReportsPreserveOrderedSignedTotals()
+    {
+        MouseButtons buttons = MouseButtons.Left | MouseButtons.Back;
+        MouseReport remaining = new(buttons, DeltaX: 70_000, DeltaY: -80_000, WheelDelta: 40_000);
+        List<global::Viiper.Client.Devices.Mouse.MouseInput> inputs = [];
+
+        while (MouseReportSegmentation.HasDeltas(in remaining))
+        {
+            MouseReport segment = MouseReportSegmentation.TakeSegment(ref remaining);
+            inputs.Add(ViiperMouseOutput.MapReport(segment));
+        }
+
+        Assert.HasCount(3, inputs);
+        CollectionAssert.AreEqual(
+            new short[] { short.MaxValue, short.MaxValue, 4_466 },
+            inputs.ConvertAll(x => x.Dx));
+        CollectionAssert.AreEqual(
+            new short[] { short.MinValue, short.MinValue, -14_464 },
+            inputs.ConvertAll(x => x.Dy));
+        CollectionAssert.AreEqual(new short[] { short.MaxValue, 7_233, 0 }, inputs.ConvertAll(x => x.Wheel));
+        Assert.IsTrue(inputs.TrueForAll(input => input.Buttons == (byte)buttons));
+        Assert.AreEqual(70_000, inputs.ConvertAll(x => (int)x.Dx).Sum());
+        Assert.AreEqual(-80_000, inputs.ConvertAll(x => (int)x.Dy).Sum());
+        Assert.AreEqual(40_000, inputs.ConvertAll(x => (int)x.Wheel).Sum());
     }
 
     [TestMethod]

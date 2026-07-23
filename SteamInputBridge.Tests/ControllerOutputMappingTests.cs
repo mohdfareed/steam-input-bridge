@@ -1,5 +1,6 @@
 using SteamInputBridge.Inputs.Controller;
 using SteamInputBridge.Outputs.Controller;
+using SteamInputBridge.Outputs.Viiper.Controller;
 
 namespace SteamInputBridge.Tests;
 
@@ -66,5 +67,30 @@ public sealed class ControllerOutputMappingTests
 
         Assert.AreEqual(ushort.MaxValue, rumble.LowFrequency);
         Assert.AreEqual((ushort)32896, rumble.HighFrequency);
+    }
+
+    [TestMethod]
+    public void ViiperBoundaryPreservesTheMappedXboxReportExactly()
+    {
+        ControllerState state = new(
+            ControllerButtons.South | ControllerButtons.RightShoulder,
+            LeftX: short.MinValue,
+            LeftY: short.MaxValue,
+            RightX: 12345,
+            RightY: -23456,
+            LeftTrigger: 32767,
+            RightTrigger: 16384);
+        Xbox360Report expected = ControllerOutputMapping.ToXbox360Report(in state);
+
+        global::Viiper.Client.Devices.Xbox360.Xbox360Input output =
+            ViiperXbox360ControllerOutput.MapReport(expected);
+
+        Assert.AreEqual((uint)expected.Buttons, output.Buttons);
+        Assert.AreEqual(expected.LeftTrigger, output.Lt);
+        Assert.AreEqual(expected.RightTrigger, output.Rt);
+        Assert.AreEqual(expected.LeftX, output.Lx);
+        Assert.AreEqual(expected.LeftY, output.Ly);
+        Assert.AreEqual(expected.RightX, output.Rx);
+        Assert.AreEqual(expected.RightY, output.Ry);
     }
 }

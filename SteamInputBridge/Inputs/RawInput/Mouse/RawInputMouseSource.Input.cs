@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using SteamInputBridge.Inputs.Mouse;
@@ -37,11 +38,32 @@ public sealed partial class RawInputMouseSource
                 : buttons;
     }
 
-    private static int GetWheelDelta(ushort flags, ushort buttonData)
+    internal sealed class VerticalWheelAccumulator
     {
-        return (flags & MouseWheel) == 0
-            ? 0
-            : unchecked((short)buttonData) / WheelDelta;
+        private readonly Dictionary<nint, int> _remainders = [];
+
+        public int Accumulate(nint device, ushort flags, ushort buttonData)
+        {
+            if ((flags & MouseWheel) == 0)
+            {
+                return 0;
+            }
+
+            _ = _remainders.TryGetValue(device, out int remainder);
+            int accumulated = remainder + unchecked((short)buttonData);
+            int wheelDelta = accumulated / WheelDelta;
+            int newRemainder = accumulated % WheelDelta;
+            if (newRemainder == 0)
+            {
+                _ = _remainders.Remove(device);
+            }
+            else
+            {
+                _remainders[device] = newRemainder;
+            }
+
+            return wheelDelta;
+        }
     }
 
     private static string GetDeviceName(nint device)

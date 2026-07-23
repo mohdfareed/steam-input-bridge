@@ -13,6 +13,7 @@ public sealed partial class RawInputMouseSource
     {
         private readonly Dictionary<nint, string> _deviceNames = [];
         private readonly RawInputBuffer<RawInputNative.RawInputMouseData> _inputBuffer = new();
+        private readonly VerticalWheelAccumulator _verticalWheel = new();
         private MouseButtons _currentButtons;
 
         // MARK: Publics
@@ -56,7 +57,7 @@ public sealed partial class RawInputMouseSource
 
             int deltaX = mouse.LastX;
             int deltaY = mouse.LastY;
-            int wheelDelta = GetWheelDelta(buttonFlags, buttonData);
+            int wheelDelta = _verticalWheel.Accumulate(rawInput.Header.Device, buttonFlags, buttonData);
             if (deltaX == 0 && deltaY == 0 && !hasButtonEvent && wheelDelta == 0)
             {
                 return;

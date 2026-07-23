@@ -36,6 +36,36 @@ public readonly record struct MouseReport(
     public static MouseReport Empty => default;
 }
 
+internal static class MouseReportSegmentation
+{
+    public static bool FitsInInt16(in MouseReport report)
+    {
+        return report.DeltaX is >= short.MinValue and <= short.MaxValue &&
+            report.DeltaY is >= short.MinValue and <= short.MaxValue &&
+            report.WheelDelta is >= short.MinValue and <= short.MaxValue;
+    }
+
+    public static bool HasDeltas(in MouseReport report)
+    {
+        return report.DeltaX != 0 || report.DeltaY != 0 || report.WheelDelta != 0;
+    }
+
+    public static MouseReport TakeSegment(ref MouseReport remaining)
+    {
+        int deltaX = Math.Clamp(remaining.DeltaX, short.MinValue, short.MaxValue);
+        int deltaY = Math.Clamp(remaining.DeltaY, short.MinValue, short.MaxValue);
+        int wheelDelta = Math.Clamp(remaining.WheelDelta, short.MinValue, short.MaxValue);
+
+        MouseReport segment = new(remaining.Buttons, deltaX, deltaY, wheelDelta);
+        remaining = new(
+            remaining.Buttons,
+            remaining.DeltaX - deltaX,
+            remaining.DeltaY - deltaY,
+            remaining.WheelDelta - wheelDelta);
+        return segment;
+    }
+}
+
 /// <summary>Mouse report with source metadata.</summary>
 public readonly record struct MouseInput(
     MouseReport Report,

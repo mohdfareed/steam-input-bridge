@@ -15,13 +15,13 @@ namespace SteamInputBridge.Tests;
 public sealed class TeensyMouseOutputTests
 {
     [TestMethod]
-    public void WriteMouseReportEncodesFrameAndClampsDeltas()
+    public void WriteMouseReportEncodesFrame()
     {
         byte[] frame = new byte[TeensyProtocol.FrameSize];
         MouseReport report = new(
             MouseButtons.Left | MouseButtons.Back,
-            DeltaX: int.MaxValue,
-            DeltaY: int.MinValue,
+            DeltaX: short.MaxValue,
+            DeltaY: short.MinValue,
             WheelDelta: 120);
 
         int bytes = TeensyProtocol.WriteMouseReport(frame, sequence: 7, report);
@@ -35,6 +35,15 @@ public sealed class TeensyMouseOutputTests
         Assert.AreEqual(
             TeensyProtocol.ComputeCrc16(frame.AsSpan(0, TeensyProtocol.HeaderSize + TeensyProtocol.MousePayloadSize)),
             BinaryPrimitives.ReadUInt16LittleEndian(frame.AsSpan(15)));
+    }
+
+    [TestMethod]
+    public void WriteMouseReportRejectsOutOfRangeDeltas()
+    {
+        byte[] frame = new byte[TeensyProtocol.FrameSize];
+        MouseReport report = new(MouseButtons.None, DeltaX: short.MaxValue + 1, DeltaY: 0, WheelDelta: 0);
+
+        _ = Assert.ThrowsExactly<OverflowException>(() => TeensyProtocol.WriteMouseReport(frame, sequence: 0, report));
     }
 
     [TestMethod]
@@ -179,6 +188,105 @@ public sealed class TeensyMouseOutputTests
         await context.Service.StopAsync(default).ConfigureAwait(false);
     }
 
+    [TestMethod]
+    public async Task MouseOutputWritesReportsInSubmissionOrder()
+    {
+        using TestContext context = CreateService(port: null);
+        context.Discovery.Ports.Add("COM7");
+        context.Connection.ConnectAllowed = true;
+        await context.Service.StartAsync(default).ConfigureAwait(false);
+        await WaitUntilAsync(() => context.Service.IsConnected).ConfigureAwait(false);
+
+        await using IMouseOutput output = context.Service.CreateOutput();
+        for (int deltaX = 1; deltaX <= 5; deltaX++)
+        {
+            await output.SendAsync(new MouseInput(new(MouseButtons.None, deltaX, 0, 0), DeviceName: null))
+                .ConfigureAwait(false);
+        }
+
+        await WaitUntilAsync(() => context.Connection.Writes.Count >= 5).ConfigureAwait(false);
+        IReadOnlyList<byte[]> writes = context.Connection.Writes;
+        for (int i = 0; i < 5; i++)
+        {
+            Assert.AreEqual(i + 1, BinaryPrimitives.ReadInt16LittleEndian(writes[i].AsSpan(9)));
+            Assert.AreEqual((byte)i, writes[i][5]);
+        }
+
+        await context.Service.StopAsync(default).ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    public async Task MouseOutputSegmentsOversizedReportBeforeFollowingReportAndPreservesTotals()
+    {
+        using TestContext context = CreateService(port: null);
+        context.Discovery.Ports.Add("COM7");
+        context.Connection.ConnectAllowed = true;
+        await context.Service.StartAsync(default).ConfigureAwait(false);
+        await WaitUntilAsync(() => context.Service.IsConnected).ConfigureAwait(false);
+
+        await using IMouseOutput output = context.Service.CreateOutput();
+        int writesBefore = context.Connection.Writes.Count;
+        MouseButtons buttons = MouseButtons.Left | MouseButtons.Back;
+        await output.SendAsync(new MouseInput(new(buttons, 70_000, -80_000, 40_000), DeviceName: null))
+            .ConfigureAwait(false);
+        await output.SendAsync(new MouseInput(new(MouseButtons.None, 5, 0, 0), DeviceName: null))
+            .ConfigureAwait(false);
+
+        await WaitUntilAsync(() => context.Connection.Writes.Count >= writesBefore + 4).ConfigureAwait(false);
+        IReadOnlyList<byte[]> writes = context.Connection.Writes;
+        short[] expectedX = [short.MaxValue, short.MaxValue, 4_466];
+        short[] expectedY = [short.MinValue, short.MinValue, -14_464];
+        short[] expectedWheel = [short.MaxValue, 7_233, 0];
+        int totalX = 0;
+        int totalY = 0;
+        int totalWheel = 0;
+        for (int i = 0; i < 3; i++)
+        {
+            byte[] write = writes[writesBefore + i];
+            short deltaX = BinaryPrimitives.ReadInt16LittleEndian(write.AsSpan(9));
+            short deltaY = BinaryPrimitives.ReadInt16LittleEndian(write.AsSpan(11));
+            short wheel = BinaryPrimitives.ReadInt16LittleEndian(write.AsSpan(13));
+            Assert.AreEqual((ushort)buttons, BinaryPrimitives.ReadUInt16LittleEndian(write.AsSpan(7)));
+            Assert.AreEqual(expectedX[i], deltaX);
+            Assert.AreEqual(expectedY[i], deltaY);
+            Assert.AreEqual(expectedWheel[i], wheel);
+            totalX += deltaX;
+            totalY += deltaY;
+            totalWheel += wheel;
+        }
+
+        Assert.AreEqual(70_000, totalX);
+        Assert.AreEqual(-80_000, totalY);
+        Assert.AreEqual(40_000, totalWheel);
+        Assert.AreEqual(5, BinaryPrimitives.ReadInt16LittleEndian(writes[writesBefore + 3].AsSpan(9)));
+
+        await context.Service.StopAsync(default).ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    public async Task MouseOutputIgnoresItsOwnRawInputDevice()
+    {
+        using TestContext context = CreateService(port: null);
+        context.Discovery.Ports.Add("COM7");
+        context.Connection.ConnectAllowed = true;
+        await context.Service.StartAsync(default).ConfigureAwait(false);
+        await WaitUntilAsync(() => context.Service.IsConnected).ConfigureAwait(false);
+
+        await using IMouseOutput output = context.Service.CreateOutput();
+        int writesBefore = context.Connection.Writes.Count;
+        await output.SendAsync(
+                new MouseInput(new(MouseButtons.None, 1, 0, 0), @"\\?\HID#VID_16C0&PID_0487#Teensy"))
+            .ConfigureAwait(false);
+        await output.SendAsync(new MouseInput(new(MouseButtons.None, 2, 0, 0), @"\\?\HID#VID_1234&PID_5678#Mouse"))
+            .ConfigureAwait(false);
+
+        await WaitUntilAsync(() => context.Connection.Writes.Count == writesBefore + 1).ConfigureAwait(false);
+        byte[] written = context.Connection.Writes[^1];
+        Assert.AreEqual(2, BinaryPrimitives.ReadInt16LittleEndian(written.AsSpan(9)));
+
+        await context.Service.StopAsync(default).ConfigureAwait(false);
+    }
+
     private static TestContext CreateService(string? port)
     {
         SteamInputBridgeSettings settings = new();
@@ -249,6 +357,8 @@ public sealed class TeensyMouseOutputTests
 
     private sealed class TestSerialConnection : TeensySerialConnection
     {
+        private readonly Lock _gate = new();
+        private readonly List<byte[]> _writes = [];
         private readonly TaskCompletionSource _writeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _releaseWrites = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private bool _isConnected;
@@ -264,7 +374,27 @@ public sealed class TeensyMouseOutputTests
 
         public override string? PortName => _portName;
 
-        public byte[] LastWrite { get; private set; } = [];
+        public byte[] LastWrite
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _writes.Count == 0 ? [] : _writes[^1];
+                }
+            }
+        }
+
+        public IReadOnlyList<byte[]> Writes
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _writes];
+                }
+            }
+        }
 
         public override bool TryConnect(IReadOnlyList<string> candidatePorts)
         {
@@ -291,7 +421,11 @@ public sealed class TeensyMouseOutputTests
                 _ = _releaseWrites.Task.Wait(TimeSpan.FromSeconds(3));
             }
 
-            LastWrite = frame[..bytes];
+            lock (_gate)
+            {
+                _writes.Add(frame[..bytes]);
+            }
+
             return true;
         }
 

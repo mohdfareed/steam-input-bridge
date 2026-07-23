@@ -13,14 +13,14 @@ public sealed class SdlSteamControllerSource : IAsyncDisposable
     private const uint RumbleHoldDurationMilliseconds = uint.MaxValue;
 
     private nint _gamepad;
-    private ControllerState _eventState;
+    private readonly EventState _events;
     private int _connected = 1;
 
     private SdlSteamControllerSource(SdlSteamControllerInfo controller, nint gamepad)
     {
         Controller = controller;
         _gamepad = gamepad;
-        _eventState = ReadCurrentState(gamepad);
+        _events = new(controller.InstanceId, ReadCurrentState(gamepad));
     }
 
     // MARK: Publics
@@ -55,34 +55,7 @@ public sealed class SdlSteamControllerSource : IAsyncDisposable
             return false;
         }
 
-        if (!IsConnected)
-        {
-            return false;
-        }
-
-        if (type == SDL.EventType.GamepadAxisMotion && sdlEvent.GAxis.Which == Controller.InstanceId)
-        {
-            ApplyAxis((SDL.GamepadAxis)sdlEvent.GAxis.Axis, sdlEvent.GAxis.Value);
-            return false;
-        }
-
-        if ((type is SDL.EventType.GamepadButtonDown or SDL.EventType.GamepadButtonUp) &&
-            sdlEvent.GButton.Which == Controller.InstanceId)
-        {
-            ApplyButton(
-                (SDL.GamepadButton)sdlEvent.GButton.Button,
-                type == SDL.EventType.GamepadButtonDown);
-            return false;
-        }
-
-        if (type != SDL.EventType.GamepadUpdateComplete || sdlEvent.GDevice.Which != Controller.InstanceId)
-        {
-            return false;
-        }
-
-        state = _eventState;
-        timestamp = sdlEvent.GDevice.Timestamp;
-        return true;
+        return IsConnected && _events.TryRead(sdlEvent, out state, out timestamp);
     }
 
     /// <summary>Reads the current controller state.</summary>
@@ -126,30 +99,6 @@ public sealed class SdlSteamControllerSource : IAsyncDisposable
 
     // MARK: State Mapping
     // ========================================================================
-
-#pragma warning disable IDE0072 // Unknown SDL axes and buttons are intentionally ignored.
-    private void ApplyAxis(SDL.GamepadAxis axis, short value)
-    {
-        _eventState = axis switch
-        {
-            SDL.GamepadAxis.LeftX => _eventState with { LeftX = value },
-            SDL.GamepadAxis.LeftY => _eventState with { LeftY = value },
-            SDL.GamepadAxis.RightX => _eventState with { RightX = value },
-            SDL.GamepadAxis.RightY => _eventState with { RightY = value },
-            SDL.GamepadAxis.LeftTrigger => _eventState with { LeftTrigger = ToTrigger(value) },
-            SDL.GamepadAxis.RightTrigger => _eventState with { RightTrigger = ToTrigger(value) },
-            _ => _eventState,
-        };
-    }
-
-    private void ApplyButton(SDL.GamepadButton button, bool pressed)
-    {
-        ControllerButtons mapped = MapButton(button);
-        _eventState = _eventState with
-        {
-            Buttons = pressed ? _eventState.Buttons | mapped : _eventState.Buttons & ~mapped,
-        };
-    }
 
     private static ControllerState ReadCurrentState(nint gamepad)
     {
@@ -195,6 +144,7 @@ public sealed class SdlSteamControllerSource : IAsyncDisposable
             : buttons;
     }
 
+#pragma warning disable IDE0072 // Unknown SDL axes and buttons are intentionally ignored.
     private static ControllerButtons MapButton(SDL.GamepadButton button)
     {
         return button switch
@@ -217,10 +167,67 @@ public sealed class SdlSteamControllerSource : IAsyncDisposable
             _ => ControllerButtons.None,
         };
     }
-#pragma warning restore IDE0072
-
     private static ushort ToTrigger(short value)
     {
         return value <= 0 ? (ushort)0 : (ushort)value;
     }
+
+    internal sealed class EventState(uint instanceId, ControllerState initialState)
+    {
+        private ControllerState _state = initialState;
+
+        public bool TryRead(SDL.Event sdlEvent, out ControllerState state, out ulong timestamp)
+        {
+            state = ControllerState.Empty;
+            timestamp = 0;
+            SDL.EventType type = (SDL.EventType)sdlEvent.Type;
+            if (type == SDL.EventType.GamepadAxisMotion && sdlEvent.GAxis.Which == instanceId)
+            {
+                ApplyAxis((SDL.GamepadAxis)sdlEvent.GAxis.Axis, sdlEvent.GAxis.Value);
+                return false;
+            }
+
+            if ((type is SDL.EventType.GamepadButtonDown or SDL.EventType.GamepadButtonUp) &&
+                sdlEvent.GButton.Which == instanceId)
+            {
+                ApplyButton(
+                    (SDL.GamepadButton)sdlEvent.GButton.Button,
+                    type == SDL.EventType.GamepadButtonDown);
+                return false;
+            }
+
+            if (type != SDL.EventType.GamepadUpdateComplete || sdlEvent.GDevice.Which != instanceId)
+            {
+                return false;
+            }
+
+            state = _state;
+            timestamp = sdlEvent.GDevice.Timestamp;
+            return true;
+        }
+
+        private void ApplyAxis(SDL.GamepadAxis axis, short value)
+        {
+            _state = axis switch
+            {
+                SDL.GamepadAxis.LeftX => _state with { LeftX = value },
+                SDL.GamepadAxis.LeftY => _state with { LeftY = value },
+                SDL.GamepadAxis.RightX => _state with { RightX = value },
+                SDL.GamepadAxis.RightY => _state with { RightY = value },
+                SDL.GamepadAxis.LeftTrigger => _state with { LeftTrigger = ToTrigger(value) },
+                SDL.GamepadAxis.RightTrigger => _state with { RightTrigger = ToTrigger(value) },
+                _ => _state,
+            };
+        }
+
+        private void ApplyButton(SDL.GamepadButton button, bool pressed)
+        {
+            ControllerButtons mapped = MapButton(button);
+            _state = _state with
+            {
+                Buttons = pressed ? _state.Buttons | mapped : _state.Buttons & ~mapped,
+            };
+        }
+    }
+#pragma warning restore IDE0072
 }

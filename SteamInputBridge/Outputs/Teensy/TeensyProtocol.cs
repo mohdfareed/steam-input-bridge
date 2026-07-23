@@ -54,9 +54,9 @@ internal static class TeensyProtocol
 
         Span<byte> payload = destination.Slice(HeaderSize, MousePayloadSize);
         BinaryPrimitives.WriteUInt16LittleEndian(payload, unchecked((ushort)report.Buttons));
-        BinaryPrimitives.WriteInt16LittleEndian(payload[2..], ClampToInt16(report.DeltaX));
-        BinaryPrimitives.WriteInt16LittleEndian(payload[4..], ClampToInt16(report.DeltaY));
-        BinaryPrimitives.WriteInt16LittleEndian(payload[6..], ClampToInt16(report.WheelDelta));
+        BinaryPrimitives.WriteInt16LittleEndian(payload[2..], checked((short)report.DeltaX));
+        BinaryPrimitives.WriteInt16LittleEndian(payload[4..], checked((short)report.DeltaY));
+        BinaryPrimitives.WriteInt16LittleEndian(payload[6..], checked((short)report.WheelDelta));
 
         WriteChecksum(destination, MousePayloadSize);
         return FrameSize;
@@ -165,12 +165,5 @@ internal static class TeensyProtocol
         {
             frame[offset++] = firstByte;
         }
-    }
-
-    private static short ClampToInt16(int value)
-    {
-        return value > short.MaxValue
-            ? short.MaxValue
-            : value < short.MinValue ? short.MinValue : (short)value;
     }
 }

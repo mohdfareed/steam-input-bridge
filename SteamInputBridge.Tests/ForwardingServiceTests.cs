@@ -101,6 +101,41 @@ public sealed class ForwardingServiceTests
     }
 
     [TestMethod]
+    public async Task ServerMouseForwardingPreservesAnOrderedInputTraceExactly()
+    {
+        using TestProfileRuntime runtime = await TestProfileRuntime.CreateStartedAsync(MouseOutput.Viiper)
+            .ConfigureAwait(false);
+        TestMouseInputSource input = new();
+        TestMouseOutputFactory outputFactory = new();
+        await using ServerMouseForwardingService service = new(
+            runtime.ActiveProfiles,
+            new TestShortcutSource(),
+            new TestMouseInputSourceFactory(input),
+            outputFactory,
+            NullLogger<ServerMouseForwardingService>.Instance);
+
+        await service.StartAsync(default).ConfigureAwait(false);
+        await WaitUntilAsync(() => outputFactory.Outputs.Count == 1 && input.HandlerReady).ConfigureAwait(false);
+        await runtime.WaitForActiveProfileAsync().ConfigureAwait(false);
+
+        MouseInput[] expected =
+        [
+            new(new(MouseButtons.Left, 12, -34, 0), "mouse-a", 1),
+            new(new(MouseButtons.Left | MouseButtons.Right, -56, 78, 1), "mouse-b", 2),
+            new(new(MouseButtons.Right, 0, 0, -1), "mouse-b", 2),
+            new(new(MouseButtons.Back | MouseButtons.Forward, short.MaxValue, short.MinValue, 0), "mouse-a", 1),
+            new(MouseReport.Empty, "mouse-a", 1),
+        ];
+        foreach (MouseInput report in expected)
+        {
+            input.Send(in report);
+        }
+
+        CollectionAssert.AreEqual(expected, outputFactory.Outputs[0].Sent);
+        await service.StopAsync(default).ConfigureAwait(false);
+    }
+
+    [TestMethod]
     public async Task ServerControllerForwardingPublishesActiveClientOnly()
     {
         using TestProfileRuntime runtime = await TestProfileRuntime.CreateStartedAsync(
@@ -116,7 +151,10 @@ public sealed class ForwardingServiceTests
 
         await service.StartAsync(default).ConfigureAwait(false);
         await runtime.WaitForActiveProfileAsync().ConfigureAwait(false);
-        await WaitUntilAsync(() => runtime.ActiveClient.SetActiveCalls.Contains(true)).ConfigureAwait(false);
+        await WaitUntilAsync(() =>
+                runtime.ActiveClient.SetActiveCalls.Contains(true) &&
+                runtime.ActiveClient.PointerEnabledCalls.Contains(true))
+            .ConfigureAwait(false);
 
         Assert.IsTrue(runtime.ActiveClient.SetActiveCalls.Contains(true));
         Assert.IsFalse(runtime.InactiveClient.SetActiveCalls.Contains(true));
