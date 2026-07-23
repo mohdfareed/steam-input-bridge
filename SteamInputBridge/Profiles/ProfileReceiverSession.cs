@@ -132,6 +132,7 @@ internal sealed class ProfileReceiverSession : IDisposable
                     throw new InvalidOperationException($"Could not launch {_definition.Executable}.");
             }
 
+            bool launcherActivationCompleted = false;
             while (!cancellationToken.IsCancellationRequested)
             {
                 HashSet<int> observedReceivers = _findReceivers(_definition.ReceiverProcesses);
@@ -155,13 +156,18 @@ internal sealed class ProfileReceiverSession : IDisposable
                 }
 
                 // The launcher is only a temporary focus target. Receivers remain the tracked game lifetime.
-                if (!receiverSeen && !string.IsNullOrWhiteSpace(_definition.Executable))
+                if (!receiverSeen && !launcherActivationCompleted && !string.IsNullOrWhiteSpace(_definition.Executable))
                 {
                     HashSet<int> launcherProcessIds = [];
                     AddProcessIds(launcherProcessIds, ResolveLauncherWindowProcessName(_definition.Executable));
                     foreach (int launcherProcessId in launcherProcessIds)
                     {
-                        _ = _activateProcess(launcherProcessId);
+                        if (_activateProcess(launcherProcessId) != WindowActivationResult.WindowNotFound)
+                        {
+                            // Retry only while the process has not created its visible window yet.
+                            launcherActivationCompleted = true;
+                            break;
+                        }
                     }
                 }
 
