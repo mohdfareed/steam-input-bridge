@@ -162,9 +162,8 @@ internal sealed class ProfileReceiverSession : IDisposable
                     AddProcessIds(launcherProcessIds, ResolveLauncherWindowProcessName(_definition.Executable));
                     foreach (int launcherProcessId in launcherProcessIds)
                     {
-                        if (_activateProcess(launcherProcessId) != WindowActivationResult.WindowNotFound)
+                        if (_activateProcess(launcherProcessId) == WindowActivationResult.Activated)
                         {
-                            // Retry only while the process has not created its visible window yet.
                             launcherActivationCompleted = true;
                             break;
                         }
