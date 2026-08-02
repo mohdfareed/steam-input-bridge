@@ -98,10 +98,16 @@ creating the file. Logs are always written to a `logs` directory beside the
 selected settings file unless `Logging:LogDirectory` overrides it. Relative
 paths such as `./logs` are resolved from the settings file's directory.
 
-The installed `Install-App.ps1` also handles uninstallation:
+The installer places a standalone uninstaller beside the installed app:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\SteamInputBridge\Install-App.ps1" -Uninstall
+& "$env:LOCALAPPDATA\Programs\SteamInputBridge\Uninstall-App.ps1"
+```
+
+The repository copy runs the same uninstall:
+
+```powershell
+.\Scripts\Uninstall-App.ps1
 ```
 
 It preserves `%LOCALAPPDATA%\SteamInputBridge` by default; add `-Purge` to
@@ -111,10 +117,9 @@ remove that user data too. VIIPER is a shared dependency and is not uninstalled.
 
 - `.\Scripts\Build-Solution.ps1` - format and build the solution and Teensy firmware
 - `.\Scripts\Test-Solution.ps1` - run unit tests
-- `.\Scripts\Deploy-App.ps1 [-Start]` - publish the app
-- `.\Scripts\Install-App.ps1` - build and install from a remote or local deployment
-- `<install directory>\Install-App.ps1 -Uninstall [-Purge]` - uninstall the app
-- `.\Scripts\cli.ps1` - run CLI commands
+- `.\Scripts\Deploy-App.ps1 [-Start]` - publish the app and optionally start it
+- `.\Scripts\Install-App.ps1 -Local` - install and start the app from a local deployment
+- `.\Scripts\Uninstall-App.ps1 [-Purge]` - uninstall the app
 
 ## TODO
 

@@ -1,60 +1,52 @@
+<#
+.SYNOPSIS
+Formats and builds the .NET solution and Teensy firmware.
+
+.PARAMETER Configuration
+The .NET build configuration. Defaults to Debug.
+
+.PARAMETER FirmwareEnvironment
+The PlatformIO firmware environment. Defaults to teensy40.
+#>
 param(
     [string] $Configuration = "Debug",
-    [string] $FirmwareEnvironment = "teensy40",
-    [switch] $SkipFormat,
-    [switch] $SkipDotNet,
-    [switch] $SkipFirmware,
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]] $DotNetBuildArgs
+    [string] $FirmwareEnvironment = "teensy40"
 )
 
 $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot\Script-Helpers.ps1"
 
-$root = Resolve-Path "$PSScriptRoot\.."
-$solution = Join-Path $root "SteamInputBridge.slnx"
-$firmwareDirectory = Join-Path $root "SteamInputBridge.Firmware"
+# Repository paths
+# -----------------------------------------------------------------------------
 
-Push-Location $root
-try {
-    if (-not $SkipFormat) {
-        if (-not $SkipDotNet) {
-            Write-Host "Formatting solution"
-            dotnet format $solution
-            if ($LASTEXITCODE -ne 0) {
-                exit $LASTEXITCODE
-            }
-        }
+$repositoryPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$solutionPath = Join-Path $repositoryPath "SteamInputBridge.slnx"
+$firmwarePath = Join-Path $repositoryPath "SteamInputBridge.Firmware"
 
-        if (-not $SkipFirmware) {
-            $clangFormat = Find-ClangFormat
-            Format-Firmware -ClangFormat $clangFormat -FirmwareDirectory $firmwareDirectory
-        }
-    }
+# Format source
+# -----------------------------------------------------------------------------
 
-    if (-not $SkipDotNet) {
-        $buildArgs = @("build", $solution, "--configuration", $Configuration)
-        if ($DotNetBuildArgs) {
-            $buildArgs += $DotNetBuildArgs
-        }
-
-        Write-Host "Building solution"
-        & dotnet @buildArgs
-        if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-        }
-    }
-
-    if (-not $SkipFirmware) {
-        Write-Host "Building Teensy firmware"
-        $platformio = Find-PlatformIO
-        & $platformio run -d $firmwareDirectory -e $FirmwareEnvironment --silent
-        if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-        }
-    }
+Write-Host "Formatting .NET solution"
+dotnet format $solutionPath
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
 }
-finally {
-    Pop-Location
+
+Format-Firmware `
+    -ClangFormat (Find-ClangFormat) `
+    -FirmwareDirectory $firmwarePath
+
+# Build outputs
+# -----------------------------------------------------------------------------
+
+Write-Host "Building .NET solution ($Configuration)"
+dotnet build $solutionPath --configuration $Configuration
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
 }
+
+Build-Firmware `
+    -PlatformIO (Find-PlatformIO) `
+    -FirmwareDirectory $firmwarePath `
+    -FirmwareEnvironment $FirmwareEnvironment

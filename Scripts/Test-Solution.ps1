@@ -1,24 +1,14 @@
-param(
-    [ValidateSet("Normal", "Dependency", "Manual", "All")]
-    [string]$Tier = "Normal"
-)
+<#
+.SYNOPSIS
+Runs the Steam Input Bridge test project.
+#>
 
 $ErrorActionPreference = "Stop"
 
-Push-Location "$PSScriptRoot\.."
+# Resolve the project from the script location so this works from any directory.
+$testProject = [System.IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\SteamInputBridge.Tests\SteamInputBridge.Tests.csproj"))
 
-try {
-    $testArgs = @("test", ".\SteamInputBridge.Tests\SteamInputBridge.Tests.csproj")
-    switch ($Tier) {
-        "Normal" { $testArgs += @("--filter", "TestCategory!=Dependency&TestCategory!=Manual") }
-        "Dependency" { $testArgs += @("--filter", "TestCategory=Dependency") }
-        "Manual" { $testArgs += @("--filter", "TestCategory=Manual") }
-        "All" { }
-    }
-
-    $testArgs += $args
-    & dotnet @testArgs
-}
-finally {
-    Pop-Location
-}
+Write-Host "Running tests"
+dotnet test $testProject
+exit $LASTEXITCODE
