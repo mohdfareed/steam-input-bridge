@@ -24,7 +24,9 @@ internal sealed class TeensyFirmwareUploader(
 
     public async Task UploadAsync()
     {
-        string firmwareDirectory = ResolveFirmwareDirectory(settings.Current.Teensy.FirmwareDirectory);
+        string? configuredDirectory = settings.Current.Teensy.FirmwareDirectory;
+        string firmwareDirectory = settingsFile.ResolvePath(
+            string.IsNullOrWhiteSpace(configuredDirectory) ? "." : configuredDirectory);
         string firmwarePath = ResolveFirmwarePath(firmwareDirectory);
         string toolsDirectory = ResolveToolsDirectory();
         string uploaderPath = Path.Combine(toolsDirectory, TeensyUploaderExecutableName);
@@ -98,20 +100,6 @@ internal sealed class TeensyFirmwareUploader(
             throw new InvalidOperationException(
                 $"Teensy firmware upload failed with exit code {process.ExitCode}.{Environment.NewLine}{standardError}{standardOutput}".Trim());
         }
-    }
-
-    private string ResolveFirmwareDirectory(string? firmwareDirectory)
-    {
-        string settingsDirectory = Path.GetDirectoryName(settingsFile.Path) ?? environment.BaseDirectory;
-        if (string.IsNullOrWhiteSpace(firmwareDirectory))
-        {
-            return settingsDirectory;
-        }
-
-        string expanded = Environment.ExpandEnvironmentVariables(firmwareDirectory.Trim());
-        return Path.IsPathFullyQualified(expanded)
-            ? Path.GetFullPath(expanded)
-            : Path.GetFullPath(expanded, settingsDirectory);
     }
 
     private string ResolveToolsDirectory()

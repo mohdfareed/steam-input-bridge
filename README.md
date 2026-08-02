@@ -1,83 +1,126 @@
 # Steam Input Bridge
 
-Steam Input profile management of non-Steam games with controller/mouse emulation support.
+Steam Input profile management of non-Steam games with controller/mouse
+emulation support.
 
 ## Requirements
 
 - Steam, for Steam Input profiles and game shortcut support
-- [VIIPER](https://github.com/Alia5/VIIPER) server/runtime, for virtual controller and mouse emulation
-- Teensy 4.0 board (optional), for physical mouse emulation
-- [Steam ROM Manager](https://github.com/SteamGridDB/steam-rom-manager) (optional), only if export SRM manifest
+- [VIIPER](https://alia5.github.io/VIIPER/stable/getting-started/installation/)
+server/runtime, for virtual controller and mouse emulation
+- Teensy 4.0 board, for physical mouse emulation
+- [Steam ROM Manager](https://github.com/SteamGridDB/steam-rom-manager) (optional),
+only if export SRM manifest
 
 ## Usage
 
-- Start profiles through non-Steam games shortcut: `SteamInputBridge.App.exe shortcut <profile>`.
-- A game profile can provide a custom Steam app ID to share Steam Input configurations between games.
-- SRM manifest of all configured games can be exported for external management of non-Steam games.
-- Controller emulation adds support for Steam Input in non-Steam games that don't recognize it.
-  - It only support Steam Controllers to prevent double input.
-  - This is due to controller hiding limitations preventing a clean solution to double input.
-- Mouse emulation allows Steam Input to emulate a mouse in games that require a physical mouse.
-  - It supports both VIIPER and a Teensy board. Board firmware is bundled with the app.
-  - `"MouseInput": "Windows"` forwards Windows mouse input and is the default.
-  - `"MouseInput": "Steam"` maps the resolved Steam virtual controller directly in the active client:
-    right stick moves, RT/LT click left/right, RB/LB scroll down/up, and R3 middle-clicks.
-- Keyboard shortcuts allow the following actions to be mapped in Steam Input configurations:
-  - `Microphone` - toggles the system microphone, with an always-on-top indicator.
-  - `#RRGGBB` - adds the color to the stack of active action colors.
-    - Different sets/layers can map their always-on commands to shortcuts with different colors.
-    - The color is an always-on-top indicator of the active Steam Input action set/layer.
-  - `MousePointer` - toggles mouse outputs on/off (gyro control toggle).
-    - This can be mapped to action sets dedicated for menus where the Steam Input mouse is supported.
-    - If a game supports the Steam Input mouse, double input will occur if mouse output is not suppressed.
-- Useful CLI commands:
-  - `client run <profile>` - runs a profile and registers it with the server,
-  - `server status [--json]` - shows the status of the server and its clients,
-  - `steam list` - list installed Steam games and their app-ids,
-  - `steam open-config [app-id]` - opens a Steam Input configuration, defaulting to the desktop configuration
-  - `steam export [--path <path>]` - exports the SRM manifest for the configured game profiles.
+| Command                        | Description                                                              |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| `client run <profile>`         | Run a profile and register it with the server.                           |
+| `server status [--json]`       | Show the server and connected clients.                                   |
+| `steam list`                   | List installed Steam games and app IDs.                                  |
+| `steam open-config [app-id]`   | Open a Steam Input configuration; defaults to the desktop configuration. |
+| `steam export [--path <path>]` | Export configured profiles as a Steam ROM Manager manifest.              |
 
-The project provides support for two extra features/functionalities on DualSense controllers that I really liked:
+### Profiles and Steam shortcuts
 
-- **Action colors:** the ability to set always-on commands in Steam Input action sets/layers.
-  - This allows the controller to visually indicate the active action set/layer to know which controls are active.
-  - The app provides the ability to define assign keyboard shortcuts to different colors.
-  - The app provides an always-on-top indicator of the colors of the active keyboard shortcuts
-  - The shortcuts can be mapped to always-on commands for action sets/layers in Steam Input.
-  - This visually indicates the active Steam Input action set/layer and the active controls.
-- **Microphone toggle:** the ability to toggle the microphone on a system level with a visual mute indicator.
-  - This is a privacy feature to avoid accidentally talking in voice chat when not intended.
-  - Also, Steam Input and Windows don't provide a universal mute shortcut that can be mapped natively.
-  - The app provide an always-on-top indicator of mute and mic activity status.
-  - It also provides a configurable mute keyboard shortcut that can be mapped to any controller button in Steam Input.
+Launch a profile from a non-Steam game shortcut:
+
+```powershell
+SteamInputBridge.App.exe shortcut <profile>
+```
+
+Configured profiles can be exported as a Steam ROM Manager manifest to
+automate creating Steam shortcuts.
+A profile can specify a custom Steam app ID, allowing multiple games to share
+the same Steam Input configuration.
+
+### Controller emulation
+
+Controller emulation lets games that do not recognize Steam Input receive its
+controller output. Only Steam Controllers are forwarded. Supporting other
+physical controllers without reliable controller hiding could cause games to
+receive both the physical and emulated inputs.
+
+### Mouse emulation
+
+Mouse output can use VIIPER or a Teensy 4.0 board. The Teensy firmware is bundled
+with the app.
+
+Mouse input has two modes:
+
+- `"MouseInput": "Windows"` forwards Windows mouse input and is the default.
+- `"MouseInput": "Steam"` maps the active Steam virtual controller directly:
+  the right stick moves the pointer, RT/LT click left/right, RB/LB scroll
+  down/up, and R3 middle-clicks.
+
+### Steam Input shortcut actions
+
+Keyboard shortcuts expose app actions to Steam Input. This supports the two
+DualSense workflows that motivated the project—action-set color indicators and
+a controller-mappable system mute—along with mouse-output control:
+
+- `Microphone` toggles the system microphone and displays an always-on-top mute
+  and activity indicator. The shortcut can be mapped to any controller button.
+- `#RRGGBB` adds a color to the active color stack. Map different always-on
+  commands in each action set or layer to show which controls are active.
+- `MousePointer` toggles mouse output, which is useful for menu-specific action
+  sets. Disable emulated output when a game uses Steam Input's own mouse support
+  to avoid double input.
 
 ## Development
 
-The app can be built and deployed locally for development personal usage.
+The app can be built and installed locally for development and personal usage.
 
 **Requirements:**
 
 - .NET 10 SDK
-- PlatformIO CLI or the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide)
-- clang-format, available on PATH
+- PlatformIO CLI on PATH or the PlatformIO
+[VS Code extension](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide)
+- clang-format on PATH
 
 Run the following to build and deploy the app locally.
 
 ```powershell
 git clone "https://github.com/mohdfareed/steam-input-bridge.git"
 cd "steam-input-bridge"
-.\Scripts\Deploy-App.ps1 -Start
+.\Scripts\Install-App.ps1 -Local
 ```
 
-The following scripts are available for development:
+The installer uses Windows' current-user Programs directory (normally
+`%LOCALAPPDATA%\Programs\SteamInputBridge`), creates a Start Menu shortcut,
+installs VIIPER when needed, and starts the app.
 
-- `.\Scripts\Build-Solution.ps1` - format/build the solution and Teensy firmware
-- `.\Scripts\Test-Solution.ps1` - run unit tests and firmware tests
-- `.\Scripts\CLI.ps1` - run CLI commands
+At runtime, the first existing `appsettings.json` is used from the current
+working directory, the executable directory, or `%LOCALAPPDATA%\SteamInputBridge`,
+in that order. If none exists, the Local AppData path is selected without
+creating the file. Logs are always written to a `logs` directory beside the
+selected settings file unless `Logging:LogDirectory` overrides it. Relative
+paths such as `./logs` are resolved from the settings file's directory.
+
+The installed `Install-App.ps1` also handles uninstallation:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\SteamInputBridge\Install-App.ps1" -Uninstall
+```
+
+It preserves `%LOCALAPPDATA%\SteamInputBridge` by default; add `-Purge` to
+remove that user data too. VIIPER is a shared dependency and is not uninstalled.
+
+### Scripts
+
+- `.\Scripts\Build-Solution.ps1` - format and build the solution and Teensy firmware
+- `.\Scripts\Test-Solution.ps1` - run unit tests
+- `.\Scripts\Deploy-App.ps1 [-Start]` - publish the app
+- `.\Scripts\Install-App.ps1` - build and install from a remote or local deployment
+- `<install directory>\Install-App.ps1 -Uninstall [-Purge]` - uninstall the app
+- `.\Scripts\cli.ps1` - run CLI commands
 
 ## TODO
 
-- [ ] Benchmark and optimize mouse/controller emulation performance.
 - [ ] Packaging, versioning, deployment, and installation/update.
   - Bundle the PlatformIO Teensy board uploader with the app.
+  - [x] Add install/update scripts for the app
+  - [ ] Add workflows for building and deploying the app package
+  - [ ] Add support to install/update scripts for GitHub releases and/or artifacts
 - [ ] Machine-readable diagnostics, and richer observability/logging.

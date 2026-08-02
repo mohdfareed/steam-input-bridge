@@ -1,7 +1,10 @@
 using System;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Diagnostics;
 
@@ -14,6 +17,22 @@ public sealed class FileLoggerProvider : ILoggerProvider
     private readonly Lock _gate = new();
     private readonly string _path;
     private bool _disposed;
+
+    /// <summary>Creates a timestamped log path for the current process.</summary>
+    public static string CreateLogPath(
+        SettingsFile settingsFile,
+        string prefix = "",
+        string? logDirectory = null)
+    {
+        ArgumentNullException.ThrowIfNull(settingsFile);
+        ArgumentNullException.ThrowIfNull(prefix);
+
+        string directory = settingsFile.ResolvePath(
+            string.IsNullOrWhiteSpace(logDirectory) ? "logs" : logDirectory);
+        using Process process = Process.GetCurrentProcess();
+        string started = process.StartTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        return Path.Combine(directory, $"{prefix}{started}-{Environment.ProcessId}.log");
+    }
 
     /// <summary>Creates a provider that writes all log entries to the given file.</summary>
     public FileLoggerProvider(string path)

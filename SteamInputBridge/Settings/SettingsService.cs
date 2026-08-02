@@ -74,5 +74,21 @@ public sealed class ApplicationSettingsChangedEventArgs(SteamInputBridgeSettings
     public SteamInputBridgeSettings Settings { get; } = settings;
 }
 
-/// <summary>Application settings file metadata.</summary>
-public sealed record SettingsFile(string Path);
+/// <summary>Selected application settings file and base for configured relative paths.</summary>
+public sealed record SettingsFile(string Path)
+{
+    /// <summary>Directory containing the selected settings file.</summary>
+    public string DirectoryPath => System.IO.Path.GetDirectoryName(Path) ??
+        throw new InvalidOperationException($"The settings path has no directory: {Path}");
+
+    /// <summary>Resolves a configured path from the selected settings file.</summary>
+    public string ResolvePath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        string expanded = Environment.ExpandEnvironmentVariables(path.Trim());
+        return System.IO.Path.IsPathFullyQualified(expanded)
+            ? System.IO.Path.GetFullPath(expanded)
+            : System.IO.Path.GetFullPath(expanded, DirectoryPath);
+    }
+}

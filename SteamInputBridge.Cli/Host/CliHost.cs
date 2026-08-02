@@ -29,14 +29,14 @@ internal static class CliHost
     private static void ConfigureLogging(
         ILoggingBuilder logging,
         ConfigurationManager configuration,
-        IHostEnvironment environment)
+        SettingsFile settingsFile)
     {
         LoggingSettings settings = new();
         configuration.GetSection(LoggingSettings.SectionName).Bind(settings);
 
         _ = logging.ClearProviders();
         _ = logging.AddConsole();
-        _ = logging.AddCliFileLogger(environment.ContentRootPath);
+        _ = logging.AddCliFileLogger(settingsFile, settings.LogDirectory);
         _ = logging.SetMinimumLevel(settings.Level);
     }
 }

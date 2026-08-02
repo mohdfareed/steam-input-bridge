@@ -6,7 +6,7 @@ namespace SteamInputBridge.App;
 internal static class StartupRegistration
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "SteamInputBridge.Tray";
+    private static string ValueName => $"{ProductMetadata.Name}.Tray";
 
     // MARK: Publics
     // ========================================================================

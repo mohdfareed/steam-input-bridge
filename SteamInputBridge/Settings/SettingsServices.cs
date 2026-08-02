@@ -11,13 +11,13 @@ public static class SettingsServices
     public static IServiceCollection AddApplicationSettings(
         this IServiceCollection services,
         IConfiguration configuration,
-        string settingsPath)
+        SettingsFile settingsFile)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
+        ArgumentNullException.ThrowIfNull(settingsFile);
 
-        _ = services.AddSingleton(new SettingsFile(settingsPath));
+        _ = services.AddSingleton(settingsFile);
         _ = services.AddOptions<SteamInputBridgeSettings>()
             .Bind(configuration.GetSection(SteamInputBridgeSettings.SectionName))
             .Validate(static settings => SettingsValidation.TryValidate(settings, out _), "Settings are invalid.")

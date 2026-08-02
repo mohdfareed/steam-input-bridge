@@ -62,8 +62,6 @@ internal sealed class TrayContext : IDisposable
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(5);
     private static readonly MethodInfo? ShowNotifyIconContextMenu =
         typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static string AppName => "Steam Input Bridge";
-
     private readonly IHost _server = AppHost.CreateServer();
     private readonly RuntimeServices _runtime;
     private readonly SettingsFile _settingsFile;
@@ -103,7 +101,7 @@ internal sealed class TrayContext : IDisposable
         await _server.StartAsync(_stop.Token).ConfigureAwait(true);
 
         _tray.Icon = _icon;
-        _tray.Text = AppName;
+        _tray.Text = ProductMetadata.DisplayName;
 
         RebuildMenu();
 

@@ -1,11 +1,9 @@
 using System;
-using System.Diagnostics;
-using System.Globalization;
-using System.IO;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SteamInputBridge.Diagnostics;
 using SteamInputBridge.Hosting;
 using SteamInputBridge.Settings;
 
@@ -29,32 +27,23 @@ internal static class AppHost
     private static void ConfigureLogging(
         ILoggingBuilder logging,
         ConfigurationManager configuration,
-        IHostEnvironment hostEnvironment)
+        SettingsFile settingsFile)
     {
         LoggingSettings settings = new();
         configuration.GetSection(LoggingSettings.SectionName).Bind(settings);
 
         _ = logging.ClearProviders();
-        _ = logging.AddApplicationFileLogger(CreateEnvironment(hostEnvironment.ContentRootPath));
+        _ = logging.AddApplicationFileLogger(CreateEnvironment(settingsFile, settings.LogDirectory));
         _ = logging.SetMinimumLevel(settings.Level);
     }
 
-    private static AppEnvironment CreateEnvironment(string contentRootPath)
+    private static AppEnvironment CreateEnvironment(SettingsFile settingsFile, string? logDirectory)
     {
         string baseDirectory = AppContext.BaseDirectory;
         string executablePath = System.Environment.ProcessPath ??
             ProductMetadata.ResolveAppExecutablePath(baseDirectory);
-        string settingsPath = Path.Combine(contentRootPath, "appsettings.json");
-        string logPath = ResolveRunLogFilePath(contentRootPath);
+        string logPath = FileLoggerProvider.CreateLogPath(settingsFile, logDirectory: logDirectory);
         string version = ProductMetadata.Version(Assembly.GetExecutingAssembly());
-        return new AppEnvironment(contentRootPath, executablePath, settingsPath, logPath, version);
-    }
-
-    private static string ResolveRunLogFilePath(string contentRootPath)
-    {
-        string directory = Path.Combine(contentRootPath, "logs");
-        string start = Process.GetCurrentProcess().StartTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-        string fileName = $"{start}-{System.Environment.ProcessId.ToString(CultureInfo.InvariantCulture)}.log";
-        return Path.Combine(directory, fileName);
+        return new AppEnvironment(baseDirectory, executablePath, settingsFile.Path, logPath, version);
     }
 }

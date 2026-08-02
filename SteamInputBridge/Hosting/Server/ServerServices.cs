@@ -23,14 +23,14 @@ public static class ServerServices
     public static IServiceCollection AddBridgeServer(
         this IServiceCollection services,
         IConfiguration configuration,
-        string settingsPath)
+        SettingsFile settingsFile)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
+        ArgumentNullException.ThrowIfNull(settingsFile);
 
         // Configuration
-        _ = services.AddApplicationSettings(configuration, settingsPath);
+        _ = services.AddApplicationSettings(configuration, settingsFile);
 
         // Profile and client runtime state
         _ = services.AddSingleton<ProfileCatalogService>();

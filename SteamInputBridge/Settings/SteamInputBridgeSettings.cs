@@ -44,7 +44,7 @@ public sealed class LoggingSettings
     /// <summary>Minimum console log level.</summary>
     public LogLevel Level { get; set; } = LogLevel.Information;
 
-    /// <summary>Optional log directory retained for settings compatibility.</summary>
+    /// <summary>Optional log directory relative to the settings file.</summary>
     public string? LogDirectory { get; set; }
 }
 

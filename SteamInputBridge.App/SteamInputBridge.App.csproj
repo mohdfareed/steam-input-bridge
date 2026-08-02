@@ -20,12 +20,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="appsettings.json" Link="appsettings.json" CopyToOutputDirectory="Always" />
+    <None Include="appsettings.json"
+          Link="%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
     <None Include="appsettings.*.json"
           Link="%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
-    <None Include="srm-parser.ini" Link="srm/parser.ini" CopyToPublishDirectory="Always" />
+    <None Include="srm-parser.ini"
+          Link="srm/parser.ini"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

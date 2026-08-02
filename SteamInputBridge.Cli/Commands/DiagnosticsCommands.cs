@@ -1,9 +1,14 @@
 using System;
 using System.CommandLine;
-using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using SteamInputBridge.Cli.Host;
+using SteamInputBridge.Diagnostics;
+using SteamInputBridge.Settings;
 
 namespace SteamInputBridge.Cli.Commands;
 
@@ -24,8 +29,18 @@ internal static class DiagnosticsCommands
         try
         {
             // Set up logging
-            string path = LogPath(AppContext.BaseDirectory);
+            using IHost host = CliHost.CreateCli();
+            SettingsFile settingsFile = host.Services.GetRequiredService<SettingsFile>();
+            IConfiguration configuration = host.Services.GetRequiredService<IConfiguration>();
+            LoggingSettings settings = new();
+            configuration.GetSection(LoggingSettings.SectionName).Bind(settings);
+
+            string path = FileLoggerProvider.CreateLogPath(
+                settingsFile,
+                prefix: "diagnostics-",
+                logDirectory: settings.LogDirectory);
             _ = Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
             using FileStream stream = new(path, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
             using StreamWriter writer = new(stream) { AutoFlush = true };
 
@@ -42,13 +57,6 @@ internal static class DiagnosticsCommands
         {
             return 1;
         }
-    }
-
-    private static string LogPath(string baseDirectory)
-    {
-        string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-        string processId = Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
-        return Path.Combine(baseDirectory, "logs", $"diagnostics-{timestamp}-{processId}.log");
     }
 
     private static async Task WriteLineAsync(

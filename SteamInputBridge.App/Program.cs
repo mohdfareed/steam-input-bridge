@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -29,6 +31,8 @@ internal static class Program
 
     private static async Task<int> RunAsync(string[] args)
     {
+        StartViiperIfInstalled();
+
         if (args.Length == 0)
         {
             args = ["tray"];
@@ -41,5 +45,39 @@ internal static class Program
                 ? throw new ArgumentException("shortcut requires a profile id.")
                 : await ShortcutMode.RunAsync(args[1], CancellationToken.None).ConfigureAwait(false)
             : throw new ArgumentException($"Unknown app command '{args[0]}'.");
+    }
+
+    private static void StartViiperIfInstalled()
+    {
+        string executablePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VIIPER",
+            "viiper.exe");
+        if (!File.Exists(executablePath))
+        {
+            return;
+        }
+
+        Process[] runningProcesses = Process.GetProcessesByName("viiper");
+        bool isRunning = runningProcesses.Length != 0;
+        foreach (Process process in runningProcesses)
+        {
+            process.Dispose();
+        }
+
+        if (isRunning)
+        {
+            return;
+        }
+
+        ProcessStartInfo start = new(executablePath, "server")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            WorkingDirectory = Path.GetDirectoryName(executablePath),
+        };
+
+        using Process launchedProcess = Process.Start(start) ??
+            throw new InvalidOperationException("Could not start the installed VIIPER server.");
     }
 }

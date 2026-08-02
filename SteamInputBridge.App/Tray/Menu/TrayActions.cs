@@ -22,8 +22,6 @@ internal sealed class TrayActions(
     NotifyIcon tray,
     CancellationToken cancellationToken)
 {
-    private const string AppName = "Steam Input Bridge";
-
     // MARK: Publics
     // ========================================================================
 
@@ -45,11 +43,27 @@ internal sealed class TrayActions(
     {
         SettingsService settings = server.Services.GetRequiredService<SettingsService>();
         string manifestPath = SteamRomManagerExport.WriteManifest(settings, settingsFile, environment.ExecutablePath);
-        tray.ShowBalloonTip(5000, AppName, $"Exported SRM manifest to {manifestPath}.", ToolTipIcon.Info);
+        tray.ShowBalloonTip(
+            5000,
+            ProductMetadata.DisplayName,
+            $"Exported SRM manifest to {manifestPath}.",
+            ToolTipIcon.Info);
     }
 
     public void OpenSettings()
     {
+        if (!File.Exists(settingsFile.Path))
+        {
+            _ = Directory.CreateDirectory(settingsFile.DirectoryPath);
+            File.WriteAllText(
+                settingsFile.Path,
+                $$"""
+                {
+                  "{{SteamInputBridgeSettings.SectionName}}": {}
+                }
+                """);
+        }
+
         OpenFile(settingsFile.Path);
     }
 
