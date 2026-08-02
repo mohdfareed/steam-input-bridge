@@ -68,6 +68,7 @@ if (-not $userProgramsFolder) {
 $installPath = [System.IO.Path]::GetFullPath((Join-Path $userProgramsFolder.Self.Path $productName))
 $installedApp = Join-Path $installPath "SteamInputBridge.App.exe"
 $installedCli = Join-Path $installPath "SteamInputBridge.Cli.exe"
+$commandPath = Join-Path $installPath "bin"
 
 # Never recursively replace an unrelated directory at the product path.
 if ((Test-Path -LiteralPath $installPath) -and
@@ -106,6 +107,14 @@ Copy-Item -Destination $installPath -Recurse -Force
 $installedUninstaller = Join-Path $installPath "Uninstall-App.ps1"
 Copy-Item -LiteralPath $uninstallScript -Destination $installedUninstaller
 
+# Keep only the public command on PATH, not the app and uninstaller.
+New-Item -ItemType Directory -Path $commandPath | Out-Null
+@'
+@echo off
+"%~dp0..\SteamInputBridge.Cli.exe" %*
+exit /b %errorlevel%
+'@ | Set-Content -LiteralPath (Join-Path $commandPath "steam-input-bridge.cmd") -Encoding ascii
+
 # Create the Start Menu shortcut
 # -----------------------------------------------------------------------------
 
@@ -131,6 +140,26 @@ if (-not (Test-Path -LiteralPath $viiperPath -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $viiperPath -PathType Leaf)) {
     throw "VIIPER installation failed."
+}
+
+# Add the CLI command to the current user's PATH
+# -----------------------------------------------------------------------------
+
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$commandPathEntry = $commandPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+$hasCommandPath = @($userPath -split ";") | Where-Object {
+    $entry = $_.Trim().Trim('"').TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+    [string]::Equals($entry, $commandPathEntry, [StringComparison]::OrdinalIgnoreCase)
+}
+
+if (-not $hasCommandPath) {
+    $updatedUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) {
+        $commandPath
+    }
+    else {
+        "$userPath;$commandPath"
+    }
+    [Environment]::SetEnvironmentVariable("Path", $updatedUserPath, "User")
 }
 
 # Start the installed app

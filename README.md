@@ -79,6 +79,14 @@ The app can be built and installed locally for development and personal usage.
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide)
 - clang-format on PATH
 
+### Scripts
+
+- `.\Scripts\Build-Solution.ps1` - format and build the solution and Teensy firmware
+- `.\Scripts\Test-Solution.ps1` - run unit tests
+- `.\Scripts\Deploy-App.ps1 [-Start]` - publish the app and optionally start it
+
+### Installation
+
 Run the following to build and deploy the app locally.
 
 ```powershell
@@ -89,7 +97,13 @@ cd "steam-input-bridge"
 
 The installer uses Windows' current-user Programs directory (normally
 `%LOCALAPPDATA%\Programs\SteamInputBridge`), creates a Start Menu shortcut,
-installs VIIPER when needed, and starts the app.
+adds `steam-input-bridge` to the current user's PATH, installs VIIPER when
+needed, and starts the app. Open a new terminal after installation to use the
+CLI:
+
+```powershell
+steam-input-bridge --help
+```
 
 At runtime, the first existing `appsettings.json` is used from the current
 working directory, the executable directory, or `%LOCALAPPDATA%\SteamInputBridge`,
@@ -97,6 +111,8 @@ in that order. If none exists, the Local AppData path is selected without
 creating the file. Logs are always written to a `logs` directory beside the
 selected settings file unless `Logging:LogDirectory` overrides it. Relative
 paths such as `./logs` are resolved from the settings file's directory.
+
+### Uninstallation
 
 The installer places a standalone uninstaller beside the installed app:
 
@@ -111,15 +127,8 @@ The repository copy runs the same uninstall:
 ```
 
 It preserves `%LOCALAPPDATA%\SteamInputBridge` by default; add `-Purge` to
-remove that user data too. VIIPER is a shared dependency and is not uninstalled.
-
-### Scripts
-
-- `.\Scripts\Build-Solution.ps1` - format and build the solution and Teensy firmware
-- `.\Scripts\Test-Solution.ps1` - run unit tests
-- `.\Scripts\Deploy-App.ps1 [-Start]` - publish the app and optionally start it
-- `.\Scripts\Install-App.ps1 -Local` - install and start the app from a local deployment
-- `.\Scripts\Uninstall-App.ps1 [-Purge]` - uninstall the app
+remove that user data too. The CLI's PATH entry is removed automatically.
+VIIPER is a shared dependency and is not uninstalled.
 
 ## TODO
 

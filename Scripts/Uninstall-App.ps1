@@ -60,6 +60,7 @@ if (-not [string]::Equals($installPath, $expectedInstallPath, [StringComparison]
 
 $installedApp = Join-Path $installPath "SteamInputBridge.App.exe"
 $installedCli = Join-Path $installPath "SteamInputBridge.Cli.exe"
+$commandPath = Join-Path $installPath "bin"
 if (-not (Test-Path -LiteralPath $installedApp -PathType Leaf)) {
     throw "$expectedProductName is not installed."
 }
@@ -109,6 +110,18 @@ if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
     if ([string]::Equals($shortcut.TargetPath, $installedApp, [StringComparison]::OrdinalIgnoreCase)) {
         Remove-Item -LiteralPath $shortcutPath -Force
     }
+}
+
+# Remove only the CLI command directory owned by this installation.
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$commandPathEntry = $commandPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+$updatedUserPath = (@($userPath -split ";") | Where-Object {
+    $entry = $_.Trim().Trim('"').TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+    -not [string]::Equals($entry, $commandPathEntry, [StringComparison]::OrdinalIgnoreCase)
+}) -join ";"
+
+if (-not [string]::Equals($userPath, $updatedUserPath, [StringComparison]::Ordinal)) {
+    [Environment]::SetEnvironmentVariable("Path", $updatedUserPath, "User")
 }
 
 # Remove user data only when explicitly requested
