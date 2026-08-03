@@ -19,16 +19,12 @@ public sealed class FileLoggerProvider : ILoggerProvider
     private bool _disposed;
 
     /// <summary>Creates a timestamped log path for the current process.</summary>
-    public static string CreateLogPath(
-        SettingsFile settingsFile,
-        string prefix = "",
-        string? logDirectory = null)
+    public static string CreateLogPath(SettingsFile settingsFile, string logDirectory, string prefix = "")
     {
         ArgumentNullException.ThrowIfNull(settingsFile);
         ArgumentNullException.ThrowIfNull(prefix);
 
-        string directory = settingsFile.ResolvePath(
-            string.IsNullOrWhiteSpace(logDirectory) ? "logs" : logDirectory);
+        string directory = settingsFile.ResolvePath(logDirectory);
         using Process process = Process.GetCurrentProcess();
         string started = process.StartTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
         return Path.Combine(directory, $"{prefix}{started}-{Environment.ProcessId}.log");

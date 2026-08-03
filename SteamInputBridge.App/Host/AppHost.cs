@@ -37,7 +37,7 @@ internal static class AppHost
         _ = logging.SetMinimumLevel(settings.Level);
     }
 
-    private static AppEnvironment CreateEnvironment(SettingsFile settingsFile, string? logDirectory)
+    private static AppEnvironment CreateEnvironment(SettingsFile settingsFile, string logDirectory)
     {
         string baseDirectory = AppContext.BaseDirectory;
         string executablePath = System.Environment.ProcessPath ??

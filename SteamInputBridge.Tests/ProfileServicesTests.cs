@@ -220,7 +220,7 @@ public sealed class ProfileServicesTests
     public async Task ProfileReceiverSessionStopsClientWhenTrackedReceiverExits()
     {
         GameProfile profile = new();
-        profile.ReceiverProcesses.Add("test-receiver");
+        profile.GameProcesses.Add("test-receiver");
         bool receiverRunning = true;
         FakeClientApi control = new();
         using ProfileReceiverSession session = new(
@@ -272,15 +272,15 @@ public sealed class ProfileServicesTests
             MouseOutput = MouseOutput.Viiper,
             ControllerOutput = ControllerOutput.Xbox360,
         };
-        settings.Games[profileId].ReceiverProcesses.Add("definitely-not-running-test-receiver.exe");
+        settings.Games[profileId].GameProcesses.Add("definitely-not-running-test-receiver.exe");
         return settings;
     }
 
     private static SteamInputBridgeSettings SettingsWithCurrentReceiver(string profileId)
     {
         SteamInputBridgeSettings settings = SettingsWithProfile(profileId);
-        settings.Games[profileId].ReceiverProcesses.Clear();
-        settings.Games[profileId].ReceiverProcesses.Add(Process.GetCurrentProcess().ProcessName);
+        settings.Games[profileId].GameProcesses.Clear();
+        settings.Games[profileId].GameProcesses.Add(Process.GetCurrentProcess().ProcessName);
         return settings;
     }
 

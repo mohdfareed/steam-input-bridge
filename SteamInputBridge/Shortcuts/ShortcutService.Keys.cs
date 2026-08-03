@@ -93,10 +93,7 @@ public sealed partial class ShortcutService
 
         foreach ((int id, ShortcutEntry entry, ShortcutPhase phase) in events)
         {
-            if (entry.Target.HasValue)
-            {
-                Shortcut?.Invoke(this, new(id, entry.Keys, entry.Target.Value, entry.Action, phase));
-            }
+            Shortcut?.Invoke(this, new(id, entry.Keys, entry.Target, entry.Action, phase));
         }
 
         if (changed)

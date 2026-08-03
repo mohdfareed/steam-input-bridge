@@ -51,12 +51,7 @@ internal sealed class ShortcutsMenuSection
 
         foreach (ShortcutEntry shortcut in shortcuts)
         {
-            if (!shortcut.Target.HasValue)
-            {
-                continue;
-            }
-
-            string target = shortcut.Target.Value.ToString();
+            string target = shortcut.Target.ToString();
             string action = shortcut.Action.ToString();
             _ = menu.DropDownItems.Add(CreateShortcutMenu(
                 shortcut.Keys,
@@ -88,12 +83,7 @@ internal sealed class ShortcutsMenuSection
     {
         foreach (ShortcutEntry shortcut in shortcuts)
         {
-            if (!shortcut.Target.HasValue)
-            {
-                continue;
-            }
-
-            string target = shortcut.Target.Value.ToString();
+            string target = shortcut.Target.ToString();
             string action = shortcut.Action.ToString();
             UpdateShortcut(
                 shortcut.Keys,

@@ -254,7 +254,7 @@ public sealed class ShortcutServiceTests
         {
             Title = "Game",
         };
-        settings.Games["game"].ReceiverProcesses.Add(Process.GetCurrentProcess().ProcessName);
+        settings.Games["game"].GameProcesses.Add(Process.GetCurrentProcess().ProcessName);
         return settings;
     }
 

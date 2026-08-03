@@ -205,10 +205,7 @@ public sealed partial class ShortcutService : IHostedService, IDisposable, IShor
 
         foreach ((int id, ShortcutEntry entry, ShortcutPhase phase) in releases)
         {
-            if (entry.Target.HasValue)
-            {
-                Shortcut?.Invoke(this, new(id, entry.Keys, entry.Target.Value, entry.Action, phase));
-            }
+            Shortcut?.Invoke(this, new(id, entry.Keys, entry.Target, entry.Action, phase));
         }
 
         HashSet<ushort> observedKeys = [];
@@ -259,10 +256,7 @@ public sealed partial class ShortcutService : IHostedService, IDisposable, IShor
 
         foreach ((int id, ShortcutEntry entry, ShortcutPhase phase) in currentPresses)
         {
-            if (entry.Target.HasValue)
-            {
-                Shortcut?.Invoke(this, new(id, entry.Keys, entry.Target.Value, entry.Action, phase));
-            }
+            Shortcut?.Invoke(this, new(id, entry.Keys, entry.Target, entry.Action, phase));
         }
 
         StatusChanged?.Invoke(this, EventArgs.Empty);

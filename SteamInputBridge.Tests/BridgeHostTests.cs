@@ -74,7 +74,7 @@ public sealed class BridgeHostTests
 
         Assert.AreEqual(
             Path.Combine(settingsDirectory, "logs"),
-            Path.GetDirectoryName(FileLoggerProvider.CreateLogPath(settingsFile)));
+            Path.GetDirectoryName(FileLoggerProvider.CreateLogPath(settingsFile, new LoggingSettings().LogDirectory)));
         Assert.AreEqual(
             relativeDirectory,
             Path.GetDirectoryName(FileLoggerProvider.CreateLogPath(settingsFile, logDirectory: "./custom/logs")));

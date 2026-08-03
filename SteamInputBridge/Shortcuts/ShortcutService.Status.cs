@@ -20,14 +20,9 @@ public sealed partial class ShortcutService
             {
                 foreach (ShortcutEntry entry in entries)
                 {
-                    if (!entry.Target.HasValue)
-                    {
-                        continue;
-                    }
-
                     status.Add(new(
                         entry.Keys,
-                        entry.Target.Value.ToString(),
+                        entry.Target.ToString(),
                         entry.Action.ToString(),
                         _pressedShortcuts.Contains(shortcutId)));
                 }

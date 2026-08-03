@@ -10,6 +10,9 @@ namespace SteamInputBridge.Shortcuts;
 /// <summary>Named shortcut target.</summary>
 public enum ShortcutTarget
 {
+    /// <summary>No shortcut target was configured.</summary>
+    Unspecified,
+
     /// <summary>Virtual pointer report forwarding.</summary>
     MousePointer,
 
@@ -103,7 +106,10 @@ public readonly record struct ShortcutTargetSetting(ShortcutTarget Target, strin
 
     private static bool IsValidTarget(string value, out ShortcutTarget target)
     {
-        return Enum.TryParse(value, ignoreCase: true, out target) && Enum.IsDefined(target) && target != ShortcutTarget.ActionColor;
+        return Enum.TryParse(value, ignoreCase: true, out target) &&
+            Enum.IsDefined(target) &&
+            // Action colors are specified as hex colors.
+            target is not ShortcutTarget.Unspecified and not ShortcutTarget.ActionColor;
     }
 
     private static bool TryNormalizeColor(string value, [NotNullWhen(true)] out string? normalized)

@@ -213,7 +213,7 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
                 continue;
             }
 
-            return profile.Definition.Title ?? profile.Id;
+            return profile.Definition.Title;
         }
 
         return "None";

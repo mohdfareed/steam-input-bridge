@@ -16,7 +16,7 @@ internal static class FileLogging
     public static ILoggingBuilder AddCliFileLogger(
         this ILoggingBuilder logging,
         SettingsFile settingsFile,
-        string? logDirectory)
+        string logDirectory)
     {
         ArgumentNullException.ThrowIfNull(logging);
         ArgumentNullException.ThrowIfNull(settingsFile);

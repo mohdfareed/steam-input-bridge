@@ -9,6 +9,7 @@ namespace SteamInputBridge.Tests;
 [TestClass]
 public sealed class SteamControllerMouseMapperTests
 {
+    private const double MappingSensitivity = 4_000.0;
     private static readonly double DefaultSensitivity = new SteamInputBridgeSettings().MouseSensitivity;
 
     [TestMethod]
@@ -41,7 +42,7 @@ public sealed class SteamControllerMouseMapperTests
     [TestMethod]
     public void MapsStickLinearlyAndRetainsFractionalMovement()
     {
-        SteamControllerMouseMapper mapper = new(DefaultSensitivity);
+        SteamControllerMouseMapper mapper = new(MappingSensitivity);
         ControllerState full = ControllerState.Empty with { RightX = short.MaxValue, RightY = short.MinValue };
 
         Assert.IsFalse(mapper.TryMap(in full, TimeSpan.Zero, out _));
@@ -60,7 +61,7 @@ public sealed class SteamControllerMouseMapperTests
     [TestMethod]
     public void HeldStickContinuesMovingAcrossTicks()
     {
-        SteamControllerMouseMapper mapper = new(DefaultSensitivity);
+        SteamControllerMouseMapper mapper = new(MappingSensitivity);
         ControllerState held = ControllerState.Empty with { RightX = short.MaxValue };
 
         Assert.IsFalse(mapper.TryMap(in held, TimeSpan.Zero, out _));
@@ -73,7 +74,7 @@ public sealed class SteamControllerMouseMapperTests
     [TestMethod]
     public void StateChangeIntegratesThePreviouslyHeldValue()
     {
-        SteamControllerMouseMapper mapper = new(DefaultSensitivity);
+        SteamControllerMouseMapper mapper = new(MappingSensitivity);
         ControllerState held = ControllerState.Empty with { RightX = short.MaxValue };
         ControllerState released = ControllerState.Empty;
 

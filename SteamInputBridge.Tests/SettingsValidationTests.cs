@@ -57,7 +57,7 @@ public sealed class SettingsValidationTests
         StringAssert.Contains(errors, "shortcuts:Ctrl+Alt:target is required.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "shortcuts:F13:target is required.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "shortcuts:F13:action is invalid.", StringComparison.Ordinal);
-        StringAssert.Contains(errors, "games:bad:receiverProcesses is required when executable is missing.", StringComparison.Ordinal);
+        StringAssert.Contains(errors, "games:bad:gameProcesses is required when executable is missing.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:controllerOutput is invalid.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:mouseOutput is invalid.", StringComparison.Ordinal);
         StringAssert.Contains(errors, "games:bad:mouseInput is invalid.", StringComparison.Ordinal);
@@ -80,11 +80,13 @@ public sealed class SettingsValidationTests
             Executable = @"C:\Games\Game\game.exe",
         };
         settings.Games["attach"] = new GameProfile();
-        settings.Games["attach"].ReceiverProcesses.Add("Game.exe");
+        settings.Games["attach"].GameProcesses.Add("Game.exe");
 
         bool valid = SettingsValidation.TryValidate(settings, out string errors);
 
         Assert.IsTrue(valid, errors);
+        Assert.AreEqual("launched", settings.Games["launched"].Title);
+        Assert.AreEqual("attach", settings.Games["attach"].Title);
     }
 
     [TestMethod]
@@ -104,6 +106,7 @@ public sealed class SettingsValidationTests
             ShortcutTargetSetting.Parse(" #80a0ff "));
 
         _ = Assert.ThrowsExactly<FormatException>(() => ShortcutTargetSetting.Parse("ActionColor"));
+        _ = Assert.ThrowsExactly<FormatException>(() => ShortcutTargetSetting.Parse("Unspecified"));
     }
 
     [TestMethod]
@@ -132,7 +135,7 @@ public sealed class SettingsValidationTests
     {
         Dictionary<string, string?> values = new()
         {
-            ["SteamInputBridge:Games:test:ReceiverProcesses:0"] = "Game.exe",
+            ["SteamInputBridge:Games:test:GameProcesses:0"] = "Game.exe",
             ["SteamInputBridge:Games:test:MouseInput"] = "Steam",
         };
         IConfiguration configuration = new ConfigurationBuilder()
@@ -151,8 +154,8 @@ public sealed class SettingsValidationTests
         Dictionary<string, string?> values = new()
         {
             ["SteamInputBridge:MouseSensitivity"] = "4200",
-            ["SteamInputBridge:Games:default:ReceiverProcesses:0"] = "Default.exe",
-            ["SteamInputBridge:Games:override:ReceiverProcesses:0"] = "Override.exe",
+            ["SteamInputBridge:Games:default:GameProcesses:0"] = "Default.exe",
+            ["SteamInputBridge:Games:override:GameProcesses:0"] = "Override.exe",
             ["SteamInputBridge:Games:override:MouseSensitivity"] = "5100",
         };
         IConfiguration configuration = new ConfigurationBuilder()

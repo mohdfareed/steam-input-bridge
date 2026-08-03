@@ -48,7 +48,7 @@ internal sealed class ProfileReceiverSession : IDisposable
         _findReceivers = findReceivers ?? FindReceivers;
         _logger = logger;
         _receiversChanged = receiversChanged;
-        _receivers = _findReceivers(definition.ReceiverProcesses);
+        _receivers = _findReceivers(definition.GameProcesses);
         _startExecutable = _receivers.Count == 0;
         _receiverSeen = _receivers.Count != 0;
         _stop = new();
@@ -124,7 +124,7 @@ internal sealed class ProfileReceiverSession : IDisposable
                 {
                     FileName = _definition.Executable,
                     Arguments = _definition.Arguments ?? string.Empty,
-                    WorkingDirectory = _definition.WorkingDirectory ?? AppContext.BaseDirectory,
+                    WorkingDirectory = _definition.WorkingDirectory,
                     UseShellExecute = false,
                 };
 
@@ -135,7 +135,7 @@ internal sealed class ProfileReceiverSession : IDisposable
             bool launcherActivationCompleted = false;
             while (!cancellationToken.IsCancellationRequested)
             {
-                HashSet<int> observedReceivers = _findReceivers(_definition.ReceiverProcesses);
+                HashSet<int> observedReceivers = _findReceivers(_definition.GameProcesses);
                 int[] receiverProcessIds;
                 bool receiverSeen;
                 bool changed;

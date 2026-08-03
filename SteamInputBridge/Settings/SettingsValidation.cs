@@ -87,11 +87,11 @@ public static class SettingsValidation
                 failures.Add($"{prefix}:keys is invalid: {exception.Message}");
             }
 
-            if (!shortcut.Target.HasValue)
+            if (shortcut.Target.Target == ShortcutTarget.Unspecified)
             {
                 failures.Add($"{prefix}:target is required.");
             }
-            else if (!IsValidTarget(shortcut.Target.Value))
+            else if (!IsValidTarget(shortcut.Target))
             {
                 failures.Add($"{prefix}:target is invalid.");
             }
@@ -113,18 +113,22 @@ public static class SettingsValidation
                 continue;
             }
 
+            if (string.IsNullOrWhiteSpace(profile.Title))
+            {
+                profile.Title = profileId;
+            }
+
             bool hasExecutable = !string.IsNullOrWhiteSpace(profile.Executable);
-            bool hasReceivers = profile.ReceiverProcesses.Any(
-                static receiver => !string.IsNullOrWhiteSpace(receiver));
+            bool hasReceivers = profile.GameProcesses.Any(static receiver => !string.IsNullOrWhiteSpace(receiver));
 
             if (!hasExecutable && !hasReceivers)
             {
-                failures.Add($"games:{profileId}:receiverProcesses is required when executable is missing.");
+                failures.Add($"games:{profileId}:gameProcesses is required when executable is missing.");
             }
 
-            if (profile.ReceiverProcesses.Any(string.IsNullOrWhiteSpace))
+            if (profile.GameProcesses.Any(string.IsNullOrWhiteSpace))
             {
-                failures.Add($"games:{profileId}:receiverProcesses cannot contain empty values.");
+                failures.Add($"games:{profileId}:gameProcesses cannot contain empty values.");
             }
 
             if (profile.ControllerOutput.HasValue && !Enum.IsDefined(profile.ControllerOutput.Value))

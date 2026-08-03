@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Microsoft.Extensions.Logging;
@@ -25,8 +26,9 @@ public sealed class SteamInputBridgeSettings
     /// <summary>Steam integration settings.</summary>
     public SteamSettings Steam { get; set; } = new();
 
+    // REVIEW: Find better default that balances range and resolution.
     /// <summary>Default full-stick Steam mouse speed in pixels per second.</summary>
-    public double MouseSensitivity { get; set; } = 4_000.0;
+    public double MouseSensitivity { get; set; } = 32_768.0;
 
     /// <summary>Global keyboard shortcut settings.</summary>
     public Collection<ShortcutEntry> Shortcuts { get; } = [];
@@ -44,8 +46,8 @@ public sealed class LoggingSettings
     /// <summary>Minimum console log level.</summary>
     public LogLevel Level { get; set; } = LogLevel.Information;
 
-    /// <summary>Optional log directory relative to the settings file.</summary>
-    public string? LogDirectory { get; set; }
+    /// <summary>Log directory relative to the settings file.</summary>
+    public string LogDirectory { get; set; } = "logs";
 }
 
 /// <summary>VIIPER output settings.</summary>
@@ -71,7 +73,7 @@ public sealed class TeensySettings
     public string? Port { get; set; }
 
     /// <summary>Directory searched by the tray firmware upload action.</summary>
-    public string? FirmwareDirectory { get; set; } = ".";
+    public string FirmwareDirectory { get; set; } = ".";
 }
 
 /// <summary>Steam integration settings.</summary>
@@ -80,18 +82,18 @@ public sealed class SteamSettings
     /// <summary>Configuration section name for Steam integration settings.</summary>
     public const string SectionName = SteamInputBridgeSettings.SectionName + ":Steam";
 
-    /// <summary>Default Steam ROM Manager manifest export path.</summary>
-    public string? SrmExportPath { get; set; }
+    /// <summary>Steam ROM Manager manifest export path.</summary>
+    public string SrmExportPath { get; set; } = "srm/manifest.json";
 }
 
 /// <summary>Global shortcut binding.</summary>
 public sealed class ShortcutEntry
 {
     /// <summary>Keyboard combination such as Ctrl+Alt+F13.</summary>
-    public string Keys { get; set; } = "";
+    public string Keys { get; set; } = string.Empty;
 
     /// <summary>Shortcut target controlled by this shortcut.</summary>
-    public ShortcutTargetSetting? Target { get; set; }
+    public ShortcutTargetSetting Target { get; set; }
 
     /// <summary>State applied when the shortcut is pressed.</summary>
     public ShortcutValue Action { get; set; } = ShortcutValue.Enable;
@@ -100,37 +102,37 @@ public sealed class ShortcutEntry
 /// <summary>Configuration for one game profile.</summary>
 public sealed class GameProfile
 {
-    /// <summary>Display title.</summary>
-    public string Title { get; set; } = "";
+    /// <summary>Optional display title. Defaults to the profile ID if not specified.</summary>
+    public string Title { get; set; } = string.Empty;
 
     /// <summary>Optional Steam app id used when the client cannot read one from Steam.</summary>
     public uint? SteamAppId { get; set; }
 
-    /// <summary>Optional executable path used to start the game.</summary>
+    /// <summary>Optional executable to start the game.</summary>
     public string? Executable { get; set; }
 
-    /// <summary>Optional working directory.</summary>
-    public string? WorkingDirectory { get; set; }
+    /// <summary>Optional executable working directory.</summary>
+    public string WorkingDirectory { get; set; } = AppContext.BaseDirectory;
 
-    /// <summary>Optional process arguments.</summary>
+    /// <summary>Optional executable process arguments.</summary>
     public string? Arguments { get; set; }
 
     /// <summary>Processes that identify the receiver game.</summary>
-    public Collection<string> ReceiverProcesses { get; } = [];
+    public Collection<string> GameProcesses { get; } = [];
 
-    /// <summary>Virtual replacement controller output.</summary>
+    /// <summary>Optional virtual replacement controller output.</summary>
     public ControllerOutput? ControllerOutput { get; set; }
 
-    /// <summary>Virtual pointer output.</summary>
+    /// <summary>Optional virtual pointer output.</summary>
     public MouseOutput? MouseOutput { get; set; }
 
-    /// <summary>Source used for mouse forwarding.</summary>
+    /// <summary>Source used for mouse forwarding if enabled.</summary>
     public MouseInputMode MouseInput { get; set; } = MouseInputMode.Windows;
 
-    /// <summary>Optional full-stick Steam mouse speed overriding the application default.</summary>
+    /// <summary>Optional Steam Input controller mouse speed override.</summary>
     public double? MouseSensitivity { get; set; }
 
-    /// <summary>Keyboard shortcuts active only while this profile is active.</summary>
+    /// <summary>Keyboard shortcuts active while the profile is active.</summary>
     public Collection<ShortcutEntry> Shortcuts { get; } = [];
 }
 

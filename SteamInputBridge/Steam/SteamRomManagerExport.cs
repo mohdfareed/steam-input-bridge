@@ -56,9 +56,8 @@ public static class SteamRomManagerExport
         ArgumentNullException.ThrowIfNull(settingsFile);
         ArgumentException.ThrowIfNullOrWhiteSpace(appPath);
 
-        string? configuredPath = manifestPathOverride ?? settings.Current.Steam.SrmExportPath;
-        string manifestPath = settingsFile.ResolvePath(
-            string.IsNullOrWhiteSpace(configuredPath) ? "srm-manifest.json" : configuredPath);
+        string configuredPath = manifestPathOverride ?? settings.Current.Steam.SrmExportPath;
+        string manifestPath = settingsFile.ResolvePath(configuredPath);
         string manifest = CreateJson(settings.Current.Games, appPath);
 
         string? directory = Path.GetDirectoryName(manifestPath);

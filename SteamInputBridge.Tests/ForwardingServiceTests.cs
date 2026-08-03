@@ -334,7 +334,7 @@ public sealed class ForwardingServiceTests
                 MouseOutput = mouseOutput,
                 ControllerOutput = ControllerOutput.Xbox360,
             };
-            settings.Games["active"].ReceiverProcesses.Add(currentProcessName);
+            settings.Games["active"].GameProcesses.Add(currentProcessName);
             if (includeInactiveClient)
             {
                 settings.Games["inactive"] = new GameProfile
@@ -342,7 +342,7 @@ public sealed class ForwardingServiceTests
                     Title = "Inactive",
                     ControllerOutput = ControllerOutput.Xbox360,
                 };
-                settings.Games["inactive"].ReceiverProcesses.Add("definitely-not-running-test-receiver.exe");
+                settings.Games["inactive"].GameProcesses.Add("definitely-not-running-test-receiver.exe");
             }
 
             TestOptionsMonitor<SteamInputBridgeSettings> monitor = new(settings);
