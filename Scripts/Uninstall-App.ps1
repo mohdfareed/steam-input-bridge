@@ -26,7 +26,7 @@ $scriptPath = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $repositoryPath = [System.IO.Path]::GetFullPath((Join-Path $scriptPath ".."))
 $propertiesPath = Join-Path $repositoryPath "Directory.Build.props"
 $isRepositoryCopy = (Test-Path -LiteralPath (Join-Path $repositoryPath ".git")) -and
-    (Test-Path -LiteralPath $propertiesPath -PathType Leaf)
+(Test-Path -LiteralPath $propertiesPath -PathType Leaf)
 
 if ($isRepositoryCopy) {
     # Directory.Build.props is the source of the product metadata used by builds.
@@ -76,6 +76,7 @@ if ([string]::IsNullOrWhiteSpace($displayName) -or
 # Stop only processes running from this exact installation
 # -----------------------------------------------------------------------------
 
+Write-Host "Stopping installed application processes"
 foreach ($path in @($installedApp, $installedCli)) {
     $targetPath = [System.IO.Path]::GetFullPath($path)
     Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($path)) -ErrorAction SilentlyContinue |
@@ -89,6 +90,7 @@ foreach ($path in @($installedApp, $installedCli)) {
 # Remove Windows integration owned by this installation
 # -----------------------------------------------------------------------------
 
+Write-Host "Removing Windows integration"
 $runKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
     "Software\Microsoft\Windows\CurrentVersion\Run",
     $true)
@@ -116,9 +118,9 @@ if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $commandPathEntry = $commandPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
 $updatedUserPath = (@($userPath -split ";") | Where-Object {
-    $entry = $_.Trim().Trim('"').TrimEnd([System.IO.Path]::DirectorySeparatorChar)
-    -not [string]::Equals($entry, $commandPathEntry, [StringComparison]::OrdinalIgnoreCase)
-}) -join ";"
+        $entry = $_.Trim().Trim('"').TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+        -not [string]::Equals($entry, $commandPathEntry, [StringComparison]::OrdinalIgnoreCase)
+    }) -join ";"
 
 if (-not [string]::Equals($userPath, $updatedUserPath, [StringComparison]::Ordinal)) {
     [Environment]::SetEnvironmentVariable("Path", $updatedUserPath, "User")
@@ -128,6 +130,7 @@ if (-not [string]::Equals($userPath, $updatedUserPath, [StringComparison]::Ordin
 # -----------------------------------------------------------------------------
 
 if ($Purge) {
+    Write-Host "Removing user settings and logs"
     $dataPath = Join-Path `
     ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
         $productName
@@ -139,6 +142,7 @@ if ($Purge) {
 # Remove the installed application
 # -----------------------------------------------------------------------------
 
+Write-Host "Removing installed application from $installPath"
 Set-Location ([System.IO.Path]::GetTempPath())
 Remove-Item -LiteralPath $installPath -Recurse -Force
 Write-Host "Uninstalled $displayName"

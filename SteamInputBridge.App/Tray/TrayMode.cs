@@ -77,6 +77,7 @@ internal sealed class TrayContext : IDisposable
 
     private bool _trayShortcutPressed;
     private bool _disposed;
+    private bool _serverStarted;
     private bool _shutdownStarted;
 
     // MARK: Lifecycle
@@ -99,6 +100,7 @@ internal sealed class TrayContext : IDisposable
     {
         LogAppEnvironment();
         await _server.StartAsync(_stop.Token).ConfigureAwait(true);
+        _serverStarted = true;
 
         _tray.Icon = _icon;
         _tray.Text = ProductMetadata.DisplayName;
@@ -121,7 +123,10 @@ internal sealed class TrayContext : IDisposable
         if (!_shutdownStarted)
         {
             _shutdownStarted = true;
-            _ = StopServerAsync().ConfigureAwait(true).GetAwaiter().GetResult();
+            if (_serverStarted)
+            {
+                _ = StopServerAsync().ConfigureAwait(true).GetAwaiter().GetResult();
+            }
         }
 
         try

@@ -42,12 +42,14 @@ $cliPath = Join-Path $outputPath "SteamInputBridge.Cli.exe"
 # Stop the existing deployment
 # -----------------------------------------------------------------------------
 
+Write-Host "Stopping existing deployment in $outputPath"
 Stop-DeployedApp -Path $appPath
 Stop-DeployedApp -Path $cliPath
 
 # Publish application executables
 # -----------------------------------------------------------------------------
 
+Write-Host "Publishing application executables"
 Deploy-Project `
     -Configuration $Configuration `
     -Runtime $Runtime `
@@ -63,6 +65,7 @@ Deploy-Project `
 # Package Teensy firmware and uploader
 # -----------------------------------------------------------------------------
 
+Write-Host "Packaging Teensy firmware and uploader"
 Deploy-Firmware `
     -PlatformIO (Find-PlatformIO) `
     -FirmwareProject $firmwareProject `
@@ -77,5 +80,6 @@ Copy-TeensyTools `
 # -----------------------------------------------------------------------------
 
 if ($Start) {
+    Write-Host "Starting deployed app"
     Start-DeployedApp -Path $appPath
 }

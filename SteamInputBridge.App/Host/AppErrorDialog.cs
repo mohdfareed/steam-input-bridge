@@ -1,5 +1,7 @@
 using System;
 using System.Windows.Forms;
+using Vanara.PInvoke;
+using static Vanara.PInvoke.User32;
 
 namespace SteamInputBridge.App.Host;
 
@@ -48,9 +50,18 @@ internal static partial class AppErrorDialog
                 },
             };
 
+            page.Created += (_, _) =>
+            {
+                IntPtr handle = page.BoundDialog?.Handle ?? IntPtr.Zero;
+                if (handle != IntPtr.Zero)
+                {
+                    _ = SetForegroundWindow(new HWND(handle));
+                }
+            };
+
             page.Buttons.Add(copyDetails);
             page.Buttons.Add(TaskDialogButton.OK);
-            _ = TaskDialog.ShowDialog(page);
+            _ = TaskDialog.ShowDialog(page, TaskDialogStartupLocation.CenterScreen);
         }
         catch (Exception dialogException) when (dialogException is not OutOfMemoryException and not StackOverflowException)
         {
@@ -62,7 +73,7 @@ internal static partial class AppErrorDialog
                 {DialogErrorText}
                 {dialogException}
                 """;
-            _ = MessageBox.Show(fallbackText, Caption, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _ = System.Windows.Forms.MessageBox.Show(fallbackText, Caption, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

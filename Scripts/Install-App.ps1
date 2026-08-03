@@ -38,6 +38,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $repositoryPath ".git")) -or
 # Build the local deployment
 # -----------------------------------------------------------------------------
 
+Write-Host "Building local deployment"
 & $deployScript
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
@@ -93,6 +94,7 @@ foreach ($path in @($installedApp, $installedCli)) {
 # Install application files
 # -----------------------------------------------------------------------------
 
+Write-Host "Installing application files to $installPath"
 if (Test-Path -LiteralPath $installPath) {
     Remove-Item -LiteralPath $installPath -Recurse -Force
 }
@@ -118,6 +120,7 @@ exit /b %errorlevel%
 # Create the Start Menu shortcut
 # -----------------------------------------------------------------------------
 
+Write-Host "Creating Start Menu shortcut"
 $shortcutPath = Join-Path `
 ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)) `
     "$displayName.lnk"
@@ -131,6 +134,7 @@ $shortcut.Save()
 # Install the shared VIIPER dependency when missing
 # -----------------------------------------------------------------------------
 
+Write-Host "Checking VIIPER dependency"
 $localApplicationData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $viiperPath = Join-Path $localApplicationData "VIIPER\viiper.exe"
 if (-not (Test-Path -LiteralPath $viiperPath -PathType Leaf)) {
@@ -145,6 +149,7 @@ if (-not (Test-Path -LiteralPath $viiperPath -PathType Leaf)) {
 # Add the CLI command to the current user's PATH
 # -----------------------------------------------------------------------------
 
+Write-Host "Configuring steam-input-bridge command on the user PATH"
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $commandPathEntry = $commandPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
 $hasCommandPath = @($userPath -split ";") | Where-Object {
@@ -165,6 +170,7 @@ if (-not $hasCommandPath) {
 # Start the installed app
 # -----------------------------------------------------------------------------
 
+Write-Host "Starting installed app"
 Start-Process -FilePath $installedApp -WorkingDirectory $installPath
 Write-Host "Installed $displayName to $installPath"
 Write-Host "Uninstall with: $installedUninstaller"

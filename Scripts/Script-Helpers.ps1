@@ -165,6 +165,7 @@ function Deploy-Project {
     New-Item -ItemType Directory -Path $publishPath -Force | Out-Null
 
     try {
+        Write-Host "Publishing $([System.IO.Path]::GetFileNameWithoutExtension($ProjectPath))"
         dotnet publish $ProjectPath `
             --configuration $Configuration `
             --runtime $Runtime `
@@ -240,9 +241,11 @@ function Copy-TeensyTools {
     }
 
     if (Test-Path -LiteralPath $destination) {
+        Write-Host "Removing existing Teensy upload tools"
         Remove-Item -LiteralPath $destination -Recurse -Force
     }
 
+    Write-Host "Copying Teensy upload tools"
     New-Item -ItemType Directory -Path $destination -Force | Out-Null
     Copy-Item -Path (Join-Path $source "*") -Destination $destination -Recurse -Force
     Write-Host "Deployed Teensy upload tools to $destination"
@@ -290,7 +293,6 @@ function Start-DeployedApp {
 
     Start-Process `
         -FilePath $Path `
-        -WorkingDirectory (Split-Path -Parent $Path) `
-        -WindowStyle Hidden
+        -WorkingDirectory (Split-Path -Parent $Path)
     Write-Host "Started Steam Input Bridge"
 }
