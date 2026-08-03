@@ -49,6 +49,14 @@ public static class ProductMetadata
 
         string? version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ??
             assembly.GetName().Version?.ToString();
-        return string.IsNullOrWhiteSpace(version) ? "unknown" : version;
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return "unknown";
+        }
+
+        int metadataSeparator = version.IndexOf('+', StringComparison.Ordinal);
+        return metadataSeparator >= 0 && version.Length > metadataSeparator + 9
+            ? version[..(metadataSeparator + 9)]
+            : version;
     }
 }

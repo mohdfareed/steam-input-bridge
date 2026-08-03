@@ -22,10 +22,16 @@ internal sealed class TrayActions(
     NotifyIcon tray,
     CancellationToken cancellationToken)
 {
+    private const string UninstallScriptName = "Uninstall-App.ps1";
+
     // MARK: Publics
     // ========================================================================
 
     public static bool StartupEnabled => StartupRegistration.IsEnabled();
+
+    public string Version => environment.Version;
+
+    public bool CanUninstall => File.Exists(Path.Combine(environment.BaseDirectory, UninstallScriptName));
 
     public async Task OpenDesktopSteamInputConfigAsync()
     {
@@ -95,6 +101,40 @@ internal sealed class TrayActions(
     public Task StopClientAsync(Guid connectionId)
     {
         return bridgeService.StopClientAsync(connectionId);
+    }
+
+    public void Uninstall()
+    {
+        string scriptPath = Path.Combine(environment.BaseDirectory, UninstallScriptName);
+        if (!File.Exists(scriptPath))
+        {
+            throw new FileNotFoundException("The uninstall script does not exist beside the application.", scriptPath);
+        }
+
+        DialogResult confirmation = MessageBox.Show(
+            "Uninstall Steam Input Bridge? Settings and logs will be preserved.",
+            ProductMetadata.DisplayName,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+        if (confirmation != DialogResult.Yes)
+        {
+            return;
+        }
+
+        ProcessStartInfo start = new()
+        {
+            FileName = "powershell.exe",
+            WorkingDirectory = environment.BaseDirectory,
+            UseShellExecute = true,
+        };
+        start.ArgumentList.Add("-NoProfile");
+        start.ArgumentList.Add("-NoExit");
+        start.ArgumentList.Add("-ExecutionPolicy");
+        start.ArgumentList.Add("Bypass");
+        start.ArgumentList.Add("-File");
+        start.ArgumentList.Add(scriptPath);
+        _ = Process.Start(start) ?? throw new InvalidOperationException("Could not start the uninstaller.");
     }
 
     // MARK: Implementation

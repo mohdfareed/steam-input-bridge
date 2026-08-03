@@ -111,6 +111,11 @@ internal sealed class TrayMenu(TrayActions actions, Action restart, Action exit,
             _ = Menu.Items.Add(new ToolStripSeparator());
 
             // Lifecycle
+            ToolStripMenuItem version = TrayMenuItems.Menu($"Version {actions.Version}");
+            ToolStripMenuItem uninstall = TrayMenuItems.ActionItem("Uninstall...", actions.Uninstall, onError);
+            uninstall.Enabled = actions.CanUninstall;
+            _ = version.DropDownItems.Add(uninstall);
+            _ = Menu.Items.Add(version);
             _ = Menu.Items.Add(CreateStartupItem(state.StartupEnabled));
             _ = Menu.Items.Add(TrayMenuItems.ActionItem("Restart", restart, onError));
             _ = Menu.Items.Add(TrayMenuItems.ActionItem("Exit", exit, onError));

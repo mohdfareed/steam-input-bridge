@@ -137,4 +137,6 @@ VIIPER is a shared dependency and is not uninstalled.
   - [x] Add install/update scripts for the app
   - [ ] Add workflows for building and deploying the app package
   - [ ] Add support to install/update scripts for GitHub releases and/or artifacts
+    - [ ] Tray app update button and indicator
+    - [x] Tray app uninstall button
 - [ ] Machine-readable diagnostics, and richer observability/logging.

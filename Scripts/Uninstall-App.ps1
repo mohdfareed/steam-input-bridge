@@ -73,76 +73,120 @@ if ([string]::IsNullOrWhiteSpace($displayName) -or
     throw "The installed app's product metadata does not match this uninstaller."
 }
 
-# Stop only processes running from this exact installation
+# Run independent cleanup actions and retain every failure for the final summary
 # -----------------------------------------------------------------------------
 
-Write-Host "Stopping installed application processes"
-foreach ($path in @($installedApp, $installedCli)) {
-    $targetPath = [System.IO.Path]::GetFullPath($path)
-    Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($path)) -ErrorAction SilentlyContinue |
-    Where-Object {
-        try { [string]::Equals($_.Path, $targetPath, [StringComparison]::OrdinalIgnoreCase) }
-        catch { $false }
-    } |
-    Stop-Process -Force
+$uninstallWarnings = [System.Collections.Generic.List[string]]::new()
+function Invoke-UninstallAction {
+    param(
+        [string] $Description,
+        [scriptblock] $Action
+    )
+
+    Write-Host $Description
+    try {
+        & $Action
+    }
+    catch {
+        $warning = "$Description failed: $($_.Exception.Message)"
+        $uninstallWarnings.Add($warning)
+        Write-Warning $warning
+    }
 }
 
-# Remove Windows integration owned by this installation
-# -----------------------------------------------------------------------------
-
-Write-Host "Removing Windows integration"
-$runKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
-    "Software\Microsoft\Windows\CurrentVersion\Run",
-    $true)
-if ($runKey) {
-    $startupName = "$productName.Tray"
-    if ($runKey.GetValue($startupName) -eq ('"' + $installedApp + '"')) {
-        $runKey.DeleteValue($startupName, $false)
+# Stop only processes running from this exact installation.
+foreach ($path in @($installedApp, $installedCli)) {
+    $targetPath = [System.IO.Path]::GetFullPath($path)
+    $processName = [System.IO.Path]::GetFileNameWithoutExtension($path)
+    Invoke-UninstallAction "Stopping $processName processes from $targetPath" {
+        Get-Process -Name $processName -ErrorAction SilentlyContinue |
+        Where-Object {
+            try { [string]::Equals($_.Path, $targetPath, [StringComparison]::OrdinalIgnoreCase) }
+            catch { $false }
+        } |
+        Stop-Process -Force
     }
-    $runKey.Dispose()
+}
+
+# Remove Windows integration owned by this installation.
+Invoke-UninstallAction "Removing startup registration" {
+    $runKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
+        "Software\Microsoft\Windows\CurrentVersion\Run",
+        $true)
+    try {
+        if ($runKey) {
+            $startupName = "$productName.Tray"
+            if ($runKey.GetValue($startupName) -eq ('"' + $installedApp + '"')) {
+                $runKey.DeleteValue($startupName, $false)
+            }
+        }
+    }
+    finally {
+        if ($runKey) {
+            $runKey.Dispose()
+        }
+    }
 }
 
 # Preserve a same-named shortcut if the user has pointed it somewhere else.
 $shortcutPath = Join-Path `
 ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)) `
     "$displayName.lnk"
-if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
-    $shortcutShell = New-Object -ComObject WScript.Shell
-    $shortcut = $shortcutShell.CreateShortcut($shortcutPath)
-    if ([string]::Equals($shortcut.TargetPath, $installedApp, [StringComparison]::OrdinalIgnoreCase)) {
-        Remove-Item -LiteralPath $shortcutPath -Force
+Invoke-UninstallAction "Removing Start Menu shortcut $shortcutPath" {
+    if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
+        $shortcutShell = New-Object -ComObject WScript.Shell
+        $shortcut = $shortcutShell.CreateShortcut($shortcutPath)
+        try {
+            if ([string]::Equals($shortcut.TargetPath, $installedApp, [StringComparison]::OrdinalIgnoreCase)) {
+                Remove-Item -LiteralPath $shortcutPath -Force
+            }
+        }
+        finally {
+            [void] [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut)
+            [void] [System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcutShell)
+        }
     }
 }
 
 # Remove only the CLI command directory owned by this installation.
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$commandPathEntry = $commandPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
-$updatedUserPath = (@($userPath -split ";") | Where-Object {
-        $entry = $_.Trim().Trim('"').TrimEnd([System.IO.Path]::DirectorySeparatorChar)
-        -not [string]::Equals($entry, $commandPathEntry, [StringComparison]::OrdinalIgnoreCase)
-    }) -join ";"
+Invoke-UninstallAction "Removing $commandPath from the user PATH" {
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $commandPathEntry = $commandPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+    $updatedUserPath = (@($userPath -split ";") | Where-Object {
+            $entry = $_.Trim().Trim('"').TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+            -not [string]::Equals($entry, $commandPathEntry, [StringComparison]::OrdinalIgnoreCase)
+        }) -join ";"
 
-if (-not [string]::Equals($userPath, $updatedUserPath, [StringComparison]::Ordinal)) {
-    [Environment]::SetEnvironmentVariable("Path", $updatedUserPath, "User")
-}
-
-# Remove user data only when explicitly requested
-# -----------------------------------------------------------------------------
-
-if ($Purge) {
-    Write-Host "Removing user settings and logs"
-    $dataPath = Join-Path `
-    ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
-        $productName
-    if (Test-Path -LiteralPath $dataPath) {
-        Remove-Item -LiteralPath $dataPath -Recurse -Force
+    if (-not [string]::Equals($userPath, $updatedUserPath, [StringComparison]::Ordinal)) {
+        [Environment]::SetEnvironmentVariable("Path", $updatedUserPath, "User")
     }
 }
 
-# Remove the installed application
-# -----------------------------------------------------------------------------
+# Remove user data only when explicitly requested.
+if ($Purge) {
+    $dataPath = Join-Path `
+    ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
+        $productName
+    Invoke-UninstallAction "Removing user settings and logs from $dataPath" {
+        if (Test-Path -LiteralPath $dataPath) {
+            Remove-Item -LiteralPath $dataPath -Recurse -Force
+        }
+    }
+}
 
-Write-Host "Removing installed application from $installPath"
+# Remove the installed application last.
 Set-Location ([System.IO.Path]::GetTempPath())
-Remove-Item -LiteralPath $installPath -Recurse -Force
-Write-Host "Uninstalled $displayName"
+Invoke-UninstallAction "Removing installed application from $installPath" {
+    Remove-Item -LiteralPath $installPath -Recurse -Force
+}
+
+Write-Host # separator
+if ($uninstallWarnings.Count -eq 0) {
+    Write-Host "Uninstalled $displayName"
+}
+else {
+    Write-Warning "Uninstall completed with $($uninstallWarnings.Count) warning(s):"
+    foreach ($warning in $uninstallWarnings) {
+        Write-Warning " - $warning"
+    }
+}
